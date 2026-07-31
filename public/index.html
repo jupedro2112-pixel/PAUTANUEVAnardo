@@ -614,6 +614,13 @@
                 .chat-section .chat-container { min-height:0; }
                 /* Panel del home colapsable: "subir" el menú agranda el chat. */
                 #homePanel { overflow:hidden; transition:max-height .3s ease; }
+                /* "Ocultar menú" deja SÓLO la fila de reembolsos + el perfil
+                   (.dash-top). Se esconde el resto: casino/saldo, comunidad y
+                   bono de instalación. El cartel de verificar teléfono vive fuera
+                   de este panel y lo oculta el JS (ver app.js applyHomePanel). */
+                #homePanel.collapsed > *:not(.dash-top) { display:none !important; }
+                /* Sin el margen de abajo el bloque queda pegado al botón. */
+                #homePanel.collapsed .dash-top { margin-bottom:0; }
                 #homePanelToggle {
                     flex:0 0 auto; display:flex; align-items:center; justify-content:center;
                     gap:8px; margin:3px 8px 0; padding:5px 12px; cursor:pointer;

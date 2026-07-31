@@ -248,16 +248,35 @@ function setupEventListeners() {
         if (homePanel && homePanelToggle) {
             const hptLabel = homePanelToggle.querySelector('.hpt-label');
             const hptChevron = homePanelToggle.querySelector('.hpt-chevron');
+            // "Ocultar menú" NO esconde todo: deja a la vista la fila de REEMBOLSOS
+            // y el perfil del usuario (`.dash-top`), que es lo que el cliente mira
+            // todo el tiempo. Se ocultan el casino/saldo, la comunidad, el bono de
+            // instalación y —a pedido del owner— el cartel de verificar teléfono,
+            // que vive FUERA del panel pero ocupa media pantalla.
+            // El recorte de los hijos lo hace el CSS (`#homePanel.collapsed`); acá
+            // sólo se anima la altura para que no salte.
+            const verifyBanner = document.getElementById('verifyPhoneBanner');
             const applyHomePanel = (collapsed, animate) => {
                 if (collapsed) {
+                    homePanel.classList.add('collapsed');
+                    // Con `collapsed` puesto, scrollHeight ya es el alto reducido
+                    // (sólo .dash-top): se anima hacia ese valor, no hacia 0.
                     if (animate) {
                         homePanel.style.maxHeight = homePanel.scrollHeight + 'px';
-                        void homePanel.offsetHeight; // fuerza reflow para animar
-                        homePanel.style.maxHeight = '0px';
+                        setTimeout(() => {
+                            if (homePanel.classList.contains('collapsed')) homePanel.style.maxHeight = 'none';
+                        }, 320);
                     } else {
-                        homePanel.style.maxHeight = '0px';
+                        homePanel.style.maxHeight = 'none';
                     }
-                    homePanel.classList.add('collapsed');
+                    // El cartel de verificar teléfono se esconde con el menú. Se
+                    // recuerda si estaba visible para poder restaurarlo tal cual:
+                    // si no, al volver a abrir el menú reaparecería en alguien que
+                    // ya verificó (o quedaría oculto en alguien que no).
+                    if (verifyBanner) {
+                        if (verifyBanner.style.display !== 'none') verifyBanner.dataset.wasVisible = '1';
+                        verifyBanner.style.display = 'none';
+                    }
                     homePanelToggle.setAttribute('aria-expanded', 'false');
                     if (hptLabel) hptLabel.textContent = 'Ver menú';
                     if (hptChevron) hptChevron.textContent = '▼';
@@ -270,6 +289,10 @@ function setupEventListeners() {
                         }, 320);
                     } else {
                         homePanel.style.maxHeight = 'none';
+                    }
+                    if (verifyBanner && verifyBanner.dataset.wasVisible === '1') {
+                        verifyBanner.style.display = '';
+                        delete verifyBanner.dataset.wasVisible;
                     }
                     homePanelToggle.setAttribute('aria-expanded', 'true');
                     if (hptLabel) hptLabel.textContent = 'Ocultar menú';
