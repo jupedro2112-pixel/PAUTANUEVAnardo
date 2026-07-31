@@ -36,6 +36,7 @@
  * en el entorno de EB y no en SSM). Mismo patrón correcto que hgcashService.js:19.
  */
 const axios = require('axios');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 
@@ -522,12 +523,38 @@ async function depositToUser(username, amount, description = '', reference = nul
     if (wagering.bonusMultiplier != null) body.bonus_multiplier = Number(wagering.bonusMultiplier);
   }
 
-  const r = await _request({
+  let r = await _request({
     method: 'post',
     path: `/players/${encodeURIComponent(String(username))}/deposit`,
     body,
     label: `deposit(${username}, $${amt}, ref=${body.reference})`
   });
+
+  // RED DE SEGURIDAD — auto-creación del jugador.
+  // JUGAYGANA creaba la cuenta sola dentro del depósito, así que un usuario que
+  // existía en VIPCARGAS pero no en la plataforma se arreglaba solo en la primera
+  // carga. 1girox NO hace eso: devuelve `player_not_found` y la carga falla.
+  // Sin esto, cualquier usuario que se haya creado sin llegar a la plataforma (alta
+  // vieja, migración incompleta, caída momentánea de la API) queda imposible de
+  // cargar, y el cliente transfirió la plata. Se crea al vuelo y se reintenta UNA vez
+  // con la MISMA reference (así el reintento sigue siendo idempotente).
+  if (!r.ok && r.code === 'player_not_found') {
+    logger.warn(`[girox] deposit(${username}) — el jugador no existe en la plataforma; creándolo al vuelo`);
+    // Contraseña random: acá no tenemos la del usuario. No lo deja afuera (al casino
+    // se entra por SSO) y la real se sincroniza en su próximo login.
+    const provisional = crypto.randomBytes(12).toString('base64url');
+    const created = await createPlatformUser({ username, password: provisional });
+    if (created.success || created.alreadyExists) {
+      r = await _request({
+        method: 'post',
+        path: `/players/${encodeURIComponent(String(username))}/deposit`,
+        body,
+        label: `deposit-retry(${username}, $${amt}, ref=${body.reference})`
+      });
+    } else {
+      logger.error(`[girox] deposit(${username}) — no se pudo crear al jugador: ${created.error}`);
+    }
+  }
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
 

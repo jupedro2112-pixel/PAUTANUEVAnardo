@@ -8,6 +8,48 @@
 
 ## Sesión 2026-07-31
 
+### 98. FIX post-migración: el alta del panel no creaba al jugador + red de seguridad en la carga
+- **Síntoma reportado por el owner:** "creé un usuario en VIPCARGAS y no se creó en 1girox,
+  y el botón CASINO no abre la sesión directo".
+- **Causa raíz — hay DOS endpoints de alta y el panel usa el que nunca sincronizó:**
+  `POST /api/users` (L5245) sí creaba el jugador en la plataforma, pero el panel llama a
+  `POST /api/admin/users` (L13672), que **sólo creaba el usuario local**. Esto NO lo rompió
+  la migración: venía de antes. No se notaba porque **JUGAYGANA creaba la cuenta sola
+  dentro de `depositToUser`** (3 intentos de CREATEUSER + re-lookups), así que el jugador
+  aparecía en la plataforma recién en la primera carga. **1girox no hace eso**: devuelve
+  `player_not_found` y la carga falla → la cadena se cortó al migrar.
+- **Fix en 3 capas:**
+  1. `POST /api/admin/users` ahora **crea al jugador en la plataforma con await** y
+     devuelve `platformWarning` si falla (antes, con el fire-and-forget de `/api/users`,
+     un fallo no dejaba ni rastro: el agente veía "creado exitosamente", el estado quedaba
+     en `pending` para siempre y el cliente terminaba sin cuenta sin que nadie se enterara).
+     Ante error se persiste `giroxSyncStatus:'error'` + `giroxSyncError`.
+  2. **Red de seguridad en `girox.depositToUser`:** si la plataforma responde
+     `player_not_found`, se crea el jugador al vuelo y se reintenta UNA vez **con la misma
+     reference** (sigue siendo idempotente). Replica lo que hacía JUGAYGANA y cubre a
+     cualquier usuario que haya quedado sin cuenta (alta vieja, migración incompleta, caída
+     momentánea de la API). Sin esto, un cliente que transfirió no se podía cargar.
+  3. **Validación de username en los 3 puntos de alta** (`/api/users`, `/api/admin/users`,
+     `check-username`): las reglas de VIPCARGAS son más permisivas (3-30 con punto y guion)
+     que las de 1girox (3-18, sólo letras/números/_). Antes se podía crear `juan.perez`
+     localmente y ese usuario **nunca** iba a poder existir en el casino.
+- **Sync de contraseñas en el login: RE-ACTIVADO** (`GIROX_SYNC_PASSWORD_ON_LOGIN=0` lo
+  apaga). Se había dejado apagado por el rate limit, pero ahora es necesario: los jugadores
+  auto-creados (por la migración o por la red de seguridad de la carga) tienen contraseña
+  random y sin este sync no podrían entrar nunca a 1girox.com por fuera del SSO. Corre una
+  sola vez por usuario.
+- **Nuevo `GET /api/admin/girox/health`** — diagnóstico en un solo lugar: qué env vars están
+  presentes (nunca los valores), si la Partner API responde, si el panel de reportes
+  autentica, y el estado de la base (cuántos usuarios sincronizados / pendientes / con error
+  / con username inválido / sin ID de plataforma). Es lo primero a mirar ante cualquier
+  "no funciona".
+- **Auditados los 8 puntos de `User.create` del repo:** los 6 restantes están bien (registro
+  sincroniza antes de crear; el auto-import del login viene DE la plataforma; los otros crean
+  cuentas internas admin/publisher_admin, que no son jugadores).
+- **⚠️ EL BLOQUEANTE SIGUE SIENDO `GIROX_API_URL`.** Mientras esa variable no esté cargada,
+  `girox.isEnabled()` es false y NADA funciona: ni altas, ni cargas, ni retiros, ni el botón
+  CASINO. Los síntomas reportados son exactamente eso. El endpoint de health lo dice explícito.
+
 ### 97. MIGRACIÓN COMPLETA de la plataforma externa: JUGAYGANA → 1girox
 - **Pedido del owner:** reemplazar la plataforma de juego por **1girox** (nueva, hecha a
   medida para él), incluido el pedido explícito de que el botón **CASINO** entre a la

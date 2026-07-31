@@ -3633,18 +3633,16 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // Fire-and-forget a propósito: si la plataforma está lenta o caída, el usuario
     // igual entra a VIPCARGAS. Nunca bloquea ni demora el login.
     //
-    // ⚠️ APAGADO POR DEFECTO (`GIROX_SYNC_PASSWORD_ON_LOGIN=1` para prenderlo).
-    // Motivo: `giroxPasswordSynced` arranca en false para TODA la base migrada, así
-    // que el día del deploy cada login dispararía un PUT extra. El rate limit de la
-    // Partner API (55/min por proceso) es COMPARTIDO con cargas y retiros → un pico de
-    // logins podría hacer que a un cliente le falle una carga con "plataforma
-    // saturada". Y el beneficio es marginal: al casino se entra por SSO, el jugador no
-    // necesita su contraseña de la plataforma.
-    // El camino que SÍ importa (cambio de clave del usuario) sigue sincronizando
-    // siempre, vía syncPasswordToJugaygana.
-    // Nota extra: este endpoint cierra las sesiones abiertas del jugador en el casino,
-    // así que prenderlo a lo bruto también lo patearía de una partida en curso.
-    if (process.env.GIROX_SYNC_PASSWORD_ON_LOGIN === '1' &&
+    // ACTIVADO por defecto (`GIROX_SYNC_PASSWORD_ON_LOGIN=0` para apagarlo si hiciera
+    // falta). Es necesario porque hay jugadores creados con contraseña RANDOM: los que
+    // migró el script, y los que la carga auto-crea cuando no existían en la
+    // plataforma. Sin este sync, esos usuarios no podrían entrar nunca a 1girox.com
+    // por fuera del SSO.
+    // Corre UNA sola vez por usuario (`giroxPasswordSynced`), así que no es un costo
+    // recurrente; el pico se reparte a medida que la gente va entrando.
+    // Nota: este endpoint cierra las sesiones abiertas del jugador en el casino — por
+    // eso se hace sólo una vez y no en cada login.
+    if (process.env.GIROX_SYNC_PASSWORD_ON_LOGIN !== '0' &&
         !isAdminRole(userObj.role) && userObj.giroxPasswordSynced !== true) {
       girox.changeUserPassword(userObj.username, password)
         .then(async (r) => {
@@ -4283,6 +4281,16 @@ const platformSessionLimiter = rateLimit({
 
 async function platformSessionHandler(req, res) {
   try {
+    // Si falta la config, se corta acá con un log EXPLÍCITO. Sin esto, el fallo se ve
+    // como "el botón CASINO no abre" y hay que ir a adivinar por qué.
+    if (!girox.isEnabled()) {
+      logger.error('[girox-sso] IMPOSIBLE: la Partner API no está configurada — ' +
+        `GIROX_API_URL=${process.env.GIROX_API_URL ? 'ok' : 'FALTA'} ` +
+        `GIROX_API_KEY=${process.env.GIROX_API_KEY ? 'ok' : 'FALTA'}. ` +
+        'Revisar GET /api/admin/girox/health.');
+      return res.status(503).json({ error: 'El casino no está disponible en este momento. Escribinos por chat.' });
+    }
+
     const user = await User.findOne({ id: req.user.userId }).select('id username isBlocked isActive giroxSyncStatus');
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -5271,8 +5279,23 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
     
+    // Las reglas de username de VIPCARGAS son MÁS PERMISIVAS que las de la plataforma
+    // (acá se aceptan 3-30 caracteres con punto y guion; 1girox exige 3-18 sólo con
+    // letras, números y guion bajo). Si no se valida acá, el agente crea un usuario
+    // que en la plataforma NUNCA va a poder existir, y se entera recién cuando el
+    // cliente no puede jugar.
+    if (role === 'user') {
+      const _gxFmt = girox.validateUsername(username);
+      if (!_gxFmt.valid) {
+        return res.status(400).json({
+          error: `El usuario no sirve para la plataforma de juego: ${_gxFmt.reason}. ` +
+                 'Usá 3 a 18 caracteres, sólo letras, números y guion bajo.'
+        });
+      }
+    }
+
     const userId = uuidv4();
-    
+
     const newUser = await User.create({
       id: userId,
       username,
@@ -5285,21 +5308,29 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
       createdAt: new Date(),
       lastLogin: null,
       isActive: true,
-      jugayganaUserId: null,
-      jugayganaUsername: null,
-      jugayganaSyncStatus: role === 'user' ? 'pending' : 'not_applicable'
+      giroxUserId: null,
+      giroxSyncStatus: role === 'user' ? 'pending' : 'not_applicable',
+      // Se crea en la plataforma con la MISMA contraseña que acá → ya sincronizadas.
+      giroxPasswordSynced: role === 'user'
     });
 
     // NO creamos ChatStatus acá: se crea recién cuando el usuario ingresa
     // (welcome) o envía su primer mensaje, para no mostrar chats vacíos de
     // usuarios que nunca entraron.
 
-    // Sincronizar con JUGAYGANA solo si es usuario normal
+    // Crear el jugador en la plataforma (sólo si es usuario normal).
+    //
+    // ⚠️ Se hace CON await y el resultado se informa. Antes era fire-and-forget y, si
+    // fallaba, no quedaba rastro: el agente veía "Usuario creado exitosamente", el
+    // `giroxSyncStatus` se quedaba en 'pending' para siempre y el cliente terminaba
+    // sin cuenta en el casino sin que nadie se enterara.
+    let platformWarning = null;
     if (role === 'user') {
-      girox.syncUserToPlatform({
-        username: newUser.username,
-        password: password
-      }).then(async (result) => {
+      try {
+        const result = await girox.syncUserToPlatform({
+          username: newUser.username,
+          password: password
+        });
         if (result.success) {
           // La Partner API no devuelve el ID numérico del jugador; `giroxUserId` lo
           // completa después `resolveGiroxUserId` (backfill al vuelo) la primera vez
@@ -5308,12 +5339,31 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
             { id: userId },
             { giroxSyncStatus: result.alreadyExists ? 'linked' : 'synced' }
           );
+        } else {
+          platformWarning = result.error || 'No se pudo crear en la plataforma de juego';
+          await User.updateOne({ id: userId }, {
+            giroxSyncStatus: 'error',
+            giroxSyncError: String(platformWarning).slice(0, 500)
+          });
+          logger.error(`[users] ${newUser.username} creado en VIPCARGAS pero NO en 1girox: ${platformWarning}`);
         }
-      }).catch((e) => logger.warn(`[users] sync a 1girox falló para ${newUser.username}: ${e.message}`));
+      } catch (e) {
+        platformWarning = e.message;
+        await User.updateOne({ id: userId }, {
+          giroxSyncStatus: 'error',
+          giroxSyncError: String(e.message).slice(0, 500)
+        }).catch(() => {});
+        logger.error(`[users] excepción creando ${newUser.username} en 1girox: ${e.message}`);
+      }
     }
-    
+
     res.status(201).json({
-      message: 'Usuario creado exitosamente',
+      message: platformWarning
+        ? 'Usuario creado en VIPCARGAS, PERO NO en la plataforma de juego'
+        : 'Usuario creado exitosamente',
+      // El panel muestra esto en rojo: el agente tiene que saber que la cuenta quedó
+      // a medias y que el cliente todavía no puede jugar.
+      platformWarning,
       user: {
         id: newUser.id,
         username: newUser.username,
@@ -5327,6 +5377,86 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
     console.error('Error creando usuario:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
+});
+
+// ============================================
+// DIAGNÓSTICO DE LA PLATAFORMA (1girox)
+// ============================================
+// GET /api/admin/girox/health
+// Dice en un solo lugar QUÉ está configurado y QUÉ responde la plataforma. Es lo
+// primero que hay que mirar cuando "no se crea el usuario" o "el botón CASINO no
+// entra": el 99% de las veces es una variable de entorno que falta.
+// NUNCA devuelve la API key ni la contraseña del panel — sólo si están presentes.
+app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, res) => {
+  const out = {
+    partnerApi: {
+      configurada: girox.isEnabled(),
+      baseUrl: girox.getBaseUrl() || null,
+      apiKeyPresente: !!process.env.GIROX_API_KEY,
+      sitioDeJuego: girox.getPlayUrl()
+    },
+    panelReportes: {
+      configurado: giroxReports.isEnabled(),
+      baseUrl: process.env.GIROX_ADMIN_BASE_URL || 'https://admin.1girox.com (default)',
+      usuarioPresente: !!process.env.GIROX_ADMIN_USER,
+      passwordPresente: !!process.env.GIROX_ADMIN_PASS,
+      alcanceNetwin: giroxReports.getNetwinScope()
+    },
+    pruebas: {}
+  };
+
+  // Falta lo básico → no tiene sentido probar nada contra la red.
+  if (!out.partnerApi.configurada) {
+    out.diagnostico = 'FALTA CONFIGURAR LA PARTNER API. ' +
+      (!out.partnerApi.baseUrl ? 'Falta GIROX_API_URL (la Base URL que tiene que dar 1girox). ' : '') +
+      (!out.partnerApi.apiKeyPresente ? 'Falta GIROX_API_KEY. ' : '') +
+      'Sin esto NO funciona nada: ni el alta de jugadores, ni las cargas, ni los retiros, ni el botón CASINO.';
+    return res.json(out);
+  }
+
+  // Prueba real contra la Partner API: se consulta un jugador que no existe.
+  // Respuesta esperada: null (404 player_not_found) → la URL y la key son correctas.
+  try {
+    const probeUser = 'zz_probe_' + Date.now().toString(36).slice(-8);
+    const info = await girox.getUserInfoByName(probeUser);
+    out.pruebas.consultaJugador = (info === null)
+      ? 'OK — la plataforma responde y la key es válida'
+      : 'RARO — devolvió datos para un usuario inexistente';
+  } catch (e) {
+    out.pruebas.consultaJugador = 'FALLÓ: ' + e.message;
+  }
+
+  // Prueba del panel de reportes (login + una consulta liviana).
+  if (out.panelReportes.configurado) {
+    try {
+      const agentId = giroxReports.getAgentUserId();
+      out.pruebas.panelReportes = agentId
+        ? `OK — sesión iniciada (agente ${agentId})`
+        : 'Sin sesión todavía (se inicia en la primera consulta de netwin)';
+    } catch (e) {
+      out.pruebas.panelReportes = 'FALLÓ: ' + e.message;
+    }
+  } else {
+    out.pruebas.panelReportes = 'NO CONFIGURADO — los reembolsos y las comisiones de referidos no se van a poder calcular';
+  }
+
+  // Estado de la base de usuarios respecto de la plataforma.
+  try {
+    out.usuarios = {
+      total: await User.countDocuments({ role: 'user' }),
+      enLaPlataforma: await User.countDocuments({ role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] } }),
+      pendientes: await User.countDocuments({ role: 'user', giroxSyncStatus: 'pending' }),
+      conError: await User.countDocuments({ role: 'user', giroxSyncStatus: 'error' }),
+      usernameInvalido: await User.countDocuments({ role: 'user', giroxSyncStatus: 'invalid_username' }),
+      sinIdDePlataforma: await User.countDocuments({ role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] }, giroxUserId: null })
+    };
+  } catch (_) {}
+
+  out.diagnostico = out.pruebas.consultaJugador && out.pruebas.consultaJugador.startsWith('OK')
+    ? 'La Partner API responde correctamente.'
+    : 'La Partner API NO está respondiendo como se espera — revisá GIROX_API_URL y GIROX_API_KEY.';
+
+  res.json(out);
 });
 
 app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
@@ -13566,9 +13696,22 @@ app.post('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =
     if (existingUser) {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
-    
+
+    // Reglas de username de la plataforma (más estrictas que las de VIPCARGAS):
+    // 3-18 caracteres, sólo letras/números/guion bajo. Se valida ANTES de crear nada,
+    // para no dejar un usuario local que en el casino nunca va a poder existir.
+    if (role === 'user') {
+      const _gxFmt = girox.validateUsername(username);
+      if (!_gxFmt.valid) {
+        return res.status(400).json({
+          error: `El usuario no sirve para la plataforma de juego: ${_gxFmt.reason}. ` +
+                 'Usá 3 a 18 caracteres, sólo letras, números y guion bajo.'
+        });
+      }
+    }
+
     const userId = uuidv4();
-    
+
     const newUser = await User.create({
       id: userId,
       username,
@@ -13581,18 +13724,51 @@ app.post('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =
       createdAt: new Date(),
       lastLogin: null,
       isActive: true,
-      jugayganaUserId: null,
-      jugayganaUsername: null,
-      jugayganaSyncStatus: role === 'user' ? 'pending' : 'not_applicable'
+      giroxUserId: null,
+      giroxSyncStatus: role === 'user' ? 'pending' : 'not_applicable',
+      giroxPasswordSynced: role === 'user'
     });
-    
+
     // NO creamos ChatStatus acá (ver nota en publisher-admin/create-user):
     // se crea recién cuando el usuario ingresa o envía su primer mensaje, para
     // no llenar el panel de chats vacíos de usuarios que nunca entraron.
 
+    // ⚠️ ESTE endpoint (el que usa el panel) NUNCA creaba al jugador en la plataforma.
+    // Con JUGAYGANA no se notaba porque su `depositToUser` creaba la cuenta sola en la
+    // primera carga. 1girox NO hace eso: si el jugador no existe, la carga falla con
+    // `player_not_found`. Por eso ahora se crea acá, explícitamente y con feedback.
+    let platformWarning = null;
+    if (role === 'user') {
+      try {
+        const result = await girox.syncUserToPlatform({ username: newUser.username, password });
+        if (result.success) {
+          await User.updateOne({ id: userId }, {
+            giroxSyncStatus: result.alreadyExists ? 'linked' : 'synced'
+          });
+        } else {
+          platformWarning = result.error || 'No se pudo crear en la plataforma de juego';
+          await User.updateOne({ id: userId }, {
+            giroxSyncStatus: 'error',
+            giroxSyncError: String(platformWarning).slice(0, 500)
+          });
+          logger.error(`[admin/users] ${newUser.username} creado en VIPCARGAS pero NO en 1girox: ${platformWarning}`);
+        }
+      } catch (e) {
+        platformWarning = e.message;
+        await User.updateOne({ id: userId }, {
+          giroxSyncStatus: 'error',
+          giroxSyncError: String(e.message).slice(0, 500)
+        }).catch(() => {});
+        logger.error(`[admin/users] excepción creando ${newUser.username} en 1girox: ${e.message}`);
+      }
+    }
+
     res.status(201).json({
       success: true,
-      message: role === 'user' ? 'Usuario creado correctamente' : 'Administrador creado correctamente',
+      message: platformWarning
+        ? '⚠️ Usuario creado en VIPCARGAS, PERO NO en el casino. Todavía no va a poder jugar ni recibir cargas.'
+        : (role === 'user' ? 'Usuario creado correctamente' : 'Administrador creado correctamente'),
+      platformWarning,
       user: {
         id: newUser.id,
         username: newUser.username,
