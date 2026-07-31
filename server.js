@@ -5491,6 +5491,57 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
   res.json(out);
 });
 
+// GET /api/admin/girox/test-sso?username=XXXX
+// Diagnóstico del login único. Pide UN link de acceso y lo devuelve CRUDO, sin
+// redirigir ni consumirlo, para poder abrirlo a mano y ver qué pasa.
+//
+// Sirve para separar dos cosas que desde el front no se distinguen:
+//   (a) el link nace inválido/vencido  → problema de la plataforma o de cómo lo pedimos
+//   (b) el link es válido pero se rompe al usarlo → problema del navegador (iframe,
+//       cookies, doble carga)
+// Si al abrir este link A MANO, en el acto, también dice "El enlace expiró", entonces
+// es (a) y hay que reclamarle a 1girox.
+app.get('/api/admin/girox/test-sso', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const username = String(req.query.username || '').trim();
+    if (!username) {
+      return res.status(400).json({ error: 'Falta ?username=' });
+    }
+    const t0 = Date.now();
+    const session = await girox.createSession(username);
+    const ms = Date.now() - t0;
+
+    if (!session.success) {
+      return res.json({
+        ok: false,
+        username,
+        tardoMs: ms,
+        error: session.error,
+        code: session.code,
+        httpStatus: session.httpStatus,
+        queHacer: 'La plataforma no emitió el link. Revisá que el jugador exista en 1girox.'
+      });
+    }
+
+    res.json({
+      ok: true,
+      username,
+      tardoMs: ms,
+      redirectUrl: session.redirectUrl,
+      tieneToken: !!session.token,
+      queHacer: [
+        '1. COPIÁ el redirectUrl de arriba y pegalo en el navegador AHORA MISMO (el código vence en 60s y es de un solo uso).',
+        '2. Si entra al casino logueado → el link está bien; el problema es cómo lo abre la app (iframe/cookies).',
+        '3. Si dice "El enlace expiró" incluso abriéndolo al instante → el código nace inválido. Es un problema de 1girox: pasales este dato.',
+        '4. NO lo abras dos veces: el segundo intento SIEMPRE va a decir que expiró, porque es de un solo uso.'
+      ]
+    });
+  } catch (err) {
+    logger.error(`[girox/test-sso] ${err.message}`);
+    res.status(500).json({ error: 'Error del servidor', detalle: err.message });
+  }
+});
+
 app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
