@@ -1,7 +1,8 @@
 // ========================================
 // INSTALL BONUS - Bono one-time por instalar la app
 // ========================================
-// Muestra un cartel en el chat con un botón para reclamar $5.000. El bono solo
+// Muestra un cartel en el chat con un botón para reclamar el 100% en la próxima
+// carga. NO acredita plata: deja el bono pendiente para que el agente lo aplique. Solo
 // se acredita estando dentro de la app instalada (display-mode: standalone).
 // Si el usuario no está en la app instalada, se le explica cómo instalarla;
 // si insiste y sigue fallando, se le explica borrar caché y reinstalar.
@@ -70,7 +71,7 @@ VIP.installBonus = (function () {
                 if (banner) banner.style.display = 'none';
                 localStorage.removeItem('installBonusFailedAttempts');
                 VIP.ui.adjustLayout();
-                VIP.ui.showToast('🎁 ¡Bono de $5.000 acreditado!', 'success');
+                VIP.ui.showToast('🎁 ¡Tenés un 100% de bono en tu próxima carga!', 'success');
                 setTimeout(() => VIP.ui.syncBalance(), 1000);
                 setTimeout(() => VIP.chat.loadMessages(), 800);
             } else if (data.code === 'NOT_STANDALONE') {
@@ -100,7 +101,7 @@ VIP.installBonus = (function () {
         } catch (e) {
             VIP.ui.showToast('Error de conexión', 'error');
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '🎁 Reclamar $5.000'; }
+            if (btn) { btn.disabled = false; btn.textContent = '🎁 Reclamar mi 100%'; }
         }
     }
 
@@ -138,7 +139,7 @@ VIP.installBonus = (function () {
                     <li>Borrá / desinstalá la app de tu pantalla de inicio.</li>
                     <li>En el navegador, borrá el <strong>caché</strong> y los datos del sitio.</li>
                     <li>Volvé a abrir la página y reinstalá la app con los pasos de arriba.</li>
-                    <li>Abrí la app instalada y tocá de nuevo <strong>"🎁 Reclamar $5.000"</strong>.</li>
+                    <li>Abrí la app instalada y tocá de nuevo <strong>"🎁 Reclamar mi 100%"</strong>.</li>
                 </ol>
             </div>` : '';
 
@@ -146,11 +147,11 @@ VIP.installBonus = (function () {
         modal.className = 'ios-install-modal';
         modal.innerHTML = `
             <div class="ios-install-content">
-                <h3>🎁 Reclamá tu bono de $5.000</h3>
+                <h3>🎁 Reclamá tu 100% de bono</h3>
                 <p style="color:#f7931e;margin-bottom:10px;">El bono se reclama <strong>desde la app instalada</strong>. Parece que todavía no la estás usando instalada.</p>
                 <p style="color:#fff;font-size:13px;margin-bottom:8px;text-align:left;">Hacé estos pasos:</p>
                 <ol style="text-align:left;">${installSteps.map(s => `<li>${s}</li>`).join('')}</ol>
-                <p style="color:#00ff88;font-size:13px;margin-top:10px;">Ya dentro de la app instalada, tocá <strong>"🎁 Reclamar $5.000"</strong> y el bono se acredita al instante.</p>
+                <p style="color:#00ff88;font-size:13px;margin-top:10px;">Ya dentro de la app instalada, tocá <strong>"🎁 Reclamar mi 100%"</strong> y el bono se acredita al instante.</p>
                 ${reinstallHtml}
                 <button onclick="this.closest('.ios-install-modal').remove()" class="btn btn-primary" style="margin-top:15px;">Entendido</button>
             </div>

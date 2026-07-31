@@ -426,14 +426,42 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
-  // Bono one-time por instalar la app (PWA). Se acredita una sola vez cuando el
-  // usuario toca "Reclamar" estando dentro de la app instalada (standalone).
+  // Bono one-time por instalar la app (PWA). Se reclama una sola vez, estando
+  // dentro de la app instalada (standalone).
+  //
+  // ⚠️ CAMBIÓ DE NATURALEZA (owner, 2026-07-31): antes acreditaba $5.000 al saldo
+  // en el acto. Ahora NO acredita nada: le deja al jugador un **100% en su próxima
+  // carga**, que el AGENTE aplica a mano cuando el cliente carga. Motivo: el bono
+  // en efectivo se lo llevaban cuentas que no cargaban nunca; atado a una carga,
+  // el beneficio sólo se paga si el cliente efectivamente deposita.
+  //
+  // `installBonusClaimed` sigue siendo el candado de "una vez por cuenta".
   installBonusClaimed: {
     type: Boolean,
     default: false
   },
   installBonusClaimedAt: {
     type: Date,
+    default: null
+  },
+
+  // Estado del 100% en la próxima carga:
+  //   'none'    = nunca lo reclamó
+  //   'pending' = lo reclamó y está esperando usarlo en su próxima carga
+  //   'used'    = el agente ya se lo aplicó → NO puede volver a reclamarlo nunca
+  firstChargeBonusStatus: {
+    type: String,
+    enum: ['none', 'pending', 'used'],
+    default: 'none',
+    index: true
+  },
+  // Quién y cuándo lo marcó como usado (trazabilidad: es plata que regala el agente).
+  firstChargeBonusUsedAt: {
+    type: Date,
+    default: null
+  },
+  firstChargeBonusUsedBy: {
+    type: String,
     default: null
   },
 

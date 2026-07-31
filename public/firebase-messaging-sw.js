@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v55'; // v55: rangos de reembolso (Bronce/Plata/Oro) + perfil
+const CACHE_VERSION = 'v56'; // v56: bono 100% en proxima carga + fix menu colapsado
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

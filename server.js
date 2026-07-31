@@ -9291,6 +9291,11 @@ app.get('/api/install-bonus/status', authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json({
       claimed: user.installBonusClaimed === true,
+      // 'none' | 'pending' (lo tiene para usar) | 'used' (el agente ya se lo aplicó)
+      bonusStatus: user.firstChargeBonusStatus || 'none',
+      bonusType: 'first_charge_100',
+      // Se mantiene por compatibilidad con versiones cacheadas de la PWA que
+      // todavía leen `amount` para armar el cartel. Ya no se acredita.
       amount: INSTALL_BONUS_AMOUNT
     });
   } catch (error) {
@@ -9360,66 +9365,37 @@ app.post('/api/install-bonus/claim', authMiddleware, async (req, res) => {
       }
     }
 
-    // Reserva atómica del bono: setea el flag SOLO si todavía no fue
-    // reclamado. Si otro request concurrente ganó la carrera, éste recibe
-    // null y aborta — sin esto, dos requests simultáneos cobraban doble.
+    // Reserva atómica: setea el flag SOLO si todavía no fue reclamado. Si otro
+    // request concurrente ganó la carrera, éste recibe null y aborta — sin esto,
+    // dos requests simultáneos dejaban dos bonos pendientes.
+    //
+    // ⚠️ NO SE ACREDITA PLATA. El bono ahora es un 100% en la PRÓXIMA CARGA que
+    // aplica el agente a mano. Por eso acá no hay llamada a la plataforma ni
+    // Transaction: todavía no se movió un peso. La plata se mueve recién cuando el
+    // cliente carga y el agente le duplica el monto.
     const reserved = await User.findOneAndUpdate(
       { id: req.user.userId, installBonusClaimed: { $ne: true } },
-      { $set: { installBonusClaimed: true, installBonusClaimedAt: new Date() } }
+      { $set: {
+        installBonusClaimed: true,
+        installBonusClaimedAt: new Date(),
+        firstChargeBonusStatus: 'pending'
+      } }
     );
     if (!reserved) {
       return res.status(400).json({
-        error: 'Ya reclamaste el bono por instalar la app.',
+        error: 'Ya reclamaste tu bono del 100%.',
         code: 'ALREADY_CLAIMED'
       });
     }
 
-    // Acreditar el bono en la plataforma. Si falla, revertimos la reserva para
-    // que el usuario pueda reintentar más tarde.
-    // La `reference` sale del userId: el bono de instalación es UNO POR USUARIO
-    // para siempre, así que es la llave natural. Aunque la reserva se revierta y el
-    // usuario reintente, 1girox reconoce la operación y nunca lo paga dos veces.
-    const creditResult = await girox.creditUserBalance(
-      user.username,
-      INSTALL_BONUS_AMOUNT,
-      `vip-install-${req.user.userId}`
-    );
-    if (!creditResult || !creditResult.success) {
-      logger.error(`install-bonus: fallo al acreditar a ${user.username}: ${creditResult && creditResult.error}`);
-      await User.updateOne(
-        { id: req.user.userId },
-        { $set: { installBonusClaimed: false, installBonusClaimedAt: null } }
-      ).catch(() => {});
-      return res.status(400).json({ error: 'No se pudo acreditar el bono. Intentá de nuevo en unos minutos.' });
-    }
-
-    // Trazabilidad: registramos el bono como Transaction type='bonus' (NO 'deposit'),
-    // así nunca puede sumar al Revenue de la campaña del publicista. El listado de
-    // transacciones del usuario refleja correctamente el origen como bono de instalación.
-    try {
-      await Transaction.create({
-        id: uuidv4(),
-        type: 'bonus',
-        amount: INSTALL_BONUS_AMOUNT,
-        username: user.username,
-        userId: user.id,
-        description: 'Bono $5.000 por instalar la app',
-        transactionId: creditResult.data?.transfer_id || creditResult.data?.transferId,
-        metadata: { source: 'install_bonus' },
-        timestamp: new Date()
-      });
-    } catch (txErr) {
-      // No bloquea: el bono ya se acreditó en Jugaygana. El log queda para auditar.
-      logger.warn(`[install-bonus] no se pudo registrar Transaction para ${user.username}: ${txErr.message}`);
-    }
-
-    // Mensaje de confirmación en el chat (editable desde COMANDOS /sys_install_bonus).
-    // Template usa "${amount}"; reemplazamos {amount} por el monto formateado
-    // sin el signo $ (el $ va en el template).
+    // Mensaje al cliente en el chat (editable desde COMANDOS /sys_install_bonus).
     const installBonusContent = await renderSystemCommand(
       '/sys_install_bonus',
-      '🎁 ¡Felicitaciones {username}! Te acreditamos tu BONO DE ${amount} por instalar la app. ¡Gracias por sumarte! 🥳',
-      { username: user.username, amount: INSTALL_BONUS_AMOUNT.toLocaleString('es-AR') }
+      '🎁 ¡Listo {username}! Tenés un *100% de bono en tu próxima carga*.\n\n' +
+      'Cuando vayas a cargar, avisale al agente que tenés el bono del 100% por instalar la app ' +
+      'y te lo aplica en el momento. 🥳\n\n' +
+      '⚠️ Es por única vez.',
+      { username: user.username }
     );
     if (installBonusContent) await Message.create({ // null = /sys_install_bonus vaciado → no enviar
       id: uuidv4(),
@@ -9434,20 +9410,86 @@ app.post('/api/install-bonus/claim', authMiddleware, async (req, res) => {
       read: false
     });
 
-    const balanceResult = await girox.getUserBalance(user.username);
-    const newBalance = balanceResult.success ? balanceResult.balance : null;
+    // AVISO AL AGENTE (nota interna, sólo la ve el panel): sin esto el agente se
+    // entera únicamente si el cliente se acuerda de decírselo, y el bono queda
+    // colgado o se aplica dos veces.
+    await _emitAdminOnlyChatNote(
+      user.id,
+      user.username,
+      '🎁 BONO 100% PENDIENTE — este cliente reclamó el 100% por instalar la app.\n' +
+      '👉 En su PRÓXIMA CARGA, duplicale el monto y después marcalo como usado ' +
+      'desde el botón del chat. Es por única vez.'
+    ).catch(() => {});
 
     res.json({
       success: true,
-      // FIX: antes usaba `amountFmt` (variable de OTRO handler, el de retiro) → no existía
-      // acá → ReferenceError → 500 DESPUÉS de acreditar el bono. El cliente veía error y
-      // reintentaba. El monto correcto es INSTALL_BONUS_AMOUNT.
-      message: `Bono de $${INSTALL_BONUS_AMOUNT.toLocaleString('es-AR')} acreditado`,
-      amount: INSTALL_BONUS_AMOUNT,
-      newBalance
+      message: '¡Tenés un 100% de bono en tu próxima carga!',
+      bonusType: 'first_charge_100',
+      status: 'pending'
     });
   } catch (error) {
     logger.error(`Error en install-bonus/claim: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================
+// BONO 100% — el agente lo marca como usado
+// ============================================
+// POST /api/admin/users/:userId/first-charge-bonus/use
+// Lo llama el agente desde el chat, DESPUÉS de haberle duplicado la carga al cliente.
+// Es de una sola vez por usuario: una vez marcado, no se puede volver a reclamar
+// ni a aplicar.
+app.post('/api/admin/users/:userId/first-charge-bonus/use', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId);
+
+    // Marca atómica: sólo pasa de 'pending' a 'used'. Si dos agentes tocan el botón
+    // a la vez, sólo uno gana — el otro recibe null y se entera de que ya estaba
+    // aplicado, en vez de pisar el registro de quién lo hizo.
+    const updated = await User.findOneAndUpdate(
+      { id: userId, firstChargeBonusStatus: 'pending' },
+      { $set: {
+        firstChargeBonusStatus: 'used',
+        firstChargeBonusUsedAt: new Date(),
+        firstChargeBonusUsedBy: req.user.username
+      } },
+      { new: true }
+    ).select('id username firstChargeBonusStatus firstChargeBonusUsedAt firstChargeBonusUsedBy').lean();
+
+    if (!updated) {
+      // O no existe, o no estaba pendiente. Se distingue para que el agente sepa
+      // si ya lo usó otro o si el cliente nunca lo reclamó.
+      const actual = await User.findOne({ id: userId })
+        .select('username firstChargeBonusStatus firstChargeBonusUsedAt firstChargeBonusUsedBy').lean();
+      if (!actual) return res.status(404).json({ error: 'Usuario no encontrado' });
+      if (actual.firstChargeBonusStatus === 'used') {
+        return res.status(400).json({
+          error: `Este bono YA fue usado${actual.firstChargeBonusUsedBy ? ' por ' + actual.firstChargeBonusUsedBy : ''}.`,
+          code: 'ALREADY_USED',
+          usedAt: actual.firstChargeBonusUsedAt,
+          usedBy: actual.firstChargeBonusUsedBy
+        });
+      }
+      return res.status(400).json({
+        error: 'Este cliente no tiene ningún bono del 100% pendiente.',
+        code: 'NOT_PENDING'
+      });
+    }
+
+    logger.info(`[bono-100] ${updated.username} — marcado como USADO por ${req.user.username}`);
+
+    // Queda registrado en el chat para que cualquier agente que lo atienda después
+    // vea que ya se aplicó (y no se lo den de nuevo).
+    await _emitAdminOnlyChatNote(
+      updated.id,
+      updated.username,
+      `✅ BONO 100% USADO — aplicado por ${req.user.username}. Este cliente ya no tiene bono pendiente.`
+    ).catch(() => {});
+
+    res.json({ success: true, status: 'used', usedBy: req.user.username, usedAt: updated.firstChargeBonusUsedAt });
+  } catch (error) {
+    logger.error(`Error marcando bono 100% como usado: ${error.message}`);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });

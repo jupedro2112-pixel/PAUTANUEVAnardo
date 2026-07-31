@@ -1679,6 +1679,9 @@ async function selectConversation(userId, username) {
     // Reset banner de bloqueo y botones hasta que loadUserInfo confirme el estado
     if (elements.chatBlockedBanner) elements.chatBlockedBanner.style.display = 'none';
     { const _fb = document.getElementById('chatFraudBanner'); if (_fb) { _fb.style.display = 'none'; _fb.innerHTML = ''; } }
+    // Idem el del bono: si no se limpia, al cambiar de chat el agente vería el bono
+    // del cliente ANTERIOR y podría dárselo a quien no le corresponde.
+    { const _bb = document.getElementById('chatBonusBanner'); if (_bb) { _bb.style.display = 'none'; _bb.innerHTML = ''; } }
     if (elements.chatBlockedReason) elements.chatBlockedReason.textContent = '';
     if (elements.btnBlock) elements.btnBlock.style.display = 'none';
     if (elements.btnUnblock) elements.btnUnblock.style.display = 'none';
@@ -2530,6 +2533,10 @@ async function loadUserInfo(userId) {
 
         // Alerta de posible multicuenta (fire-and-forget; nunca frena el chat).
         renderFraudBanner(userId);
+
+        // Bono del 100% en la próxima carga. Se dibuja con los datos que ya trajo
+        // `user`, sin pedir nada extra al servidor.
+        renderFirstChargeBonusBanner(user);
 
         // Publicista de adquisición: si el cliente llegó por un link de pauta,
         // mostrar el nombre del publicista al lado del nombre en la cabecera.
@@ -4156,6 +4163,73 @@ async function handleToggleLoginNoPwd(userId, username, enabled) {
 
 window.openUserPasswordModal = openUserPasswordModal;
 window.openBlockModal = openBlockModal;
+
+// === BONO 100% en la próxima carga ===
+// El cliente lo reclama desde la app y queda 'pending'. El agente lo ve acá al abrir
+// el chat, le duplica la carga a mano, y lo marca como usado. Es una sola vez por
+// cuenta: una vez usado no se puede volver a reclamar ni a aplicar.
+function renderFirstChargeBonusBanner(user) {
+    const banner = document.getElementById('chatBonusBanner');
+    if (!banner) return;
+    const status = user && user.firstChargeBonusStatus;
+
+    if (status === 'pending') {
+        banner.style.display = '';
+        banner.innerHTML =
+            '<div style="background:linear-gradient(135deg,#1f7a3d,#2ecc71);color:#fff;border-radius:10px;' +
+            'padding:10px 12px;margin:6px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                '<span style="font-size:20px;">🎁</span>' +
+                '<div style="flex:1;min-width:180px;">' +
+                    '<strong style="font-size:13px;display:block;">BONO 100% PENDIENTE</strong>' +
+                    '<span style="font-size:11.5px;opacity:.92;">En su próxima carga, duplicale el monto. ' +
+                    'Después marcalo como usado — es por única vez.</span>' +
+                '</div>' +
+                '<button onclick="markFirstChargeBonusUsed(\'' + escapeHtml(user.id) + '\')" ' +
+                    'style="background:#0b3d1f;color:#7fffb0;border:1px solid rgba(255,255,255,0.3);' +
+                    'border-radius:8px;padding:8px 14px;font-weight:800;font-size:12px;cursor:pointer;">' +
+                    '✅ Marcar como usado</button>' +
+            '</div>';
+        return;
+    }
+
+    if (status === 'used') {
+        // Se muestra en gris para que quede claro que YA se aplicó: sin esto, otro
+        // agente podría dárselo de nuevo sin enterarse.
+        const quien = user.firstChargeBonusUsedBy ? (' por ' + escapeHtml(user.firstChargeBonusUsedBy)) : '';
+        banner.style.display = '';
+        banner.innerHTML =
+            '<div style="background:rgba(255,255,255,0.05);color:#888;border-radius:10px;' +
+            'padding:7px 12px;margin:6px 0;font-size:11.5px;">' +
+                '✅ Bono 100% ya utilizado' + quien + '. No le corresponde otro.' +
+            '</div>';
+        return;
+    }
+
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+}
+
+// Marca el bono como usado. Confirma primero: es plata que regala el agente y la
+// acción no se puede deshacer desde el panel.
+async function markFirstChargeBonusUsed(userId) {
+    if (!confirm('¿Ya le duplicaste la carga a este cliente?\n\nAl marcarlo como usado, el bono se consume y NO va a poder reclamarlo de nuevo.')) return;
+    try {
+        const resp = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/first-charge-bonus/use`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}`, 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast('✅ Bono marcado como usado', 'success');
+            // Refresca el header para que el banner pase a gris al instante.
+            if (activeConversationId) loadUserInfo(activeConversationId);
+        } else {
+            showToast(data.error || 'No se pudo marcar el bono', 'error');
+        }
+    } catch (e) {
+        showToast('Error de conexión al marcar el bono', 'error');
+    }
+}
 
 // === Alerta de POSIBLE MULTICUENTA en el header del chat ===
 // Consulta el fraud-check del usuario y, si es sospechoso, muestra un banner rojo

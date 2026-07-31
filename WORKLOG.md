@@ -8,6 +8,40 @@
 
 ## Sesión 2026-07-31
 
+### 100. El bono por instalar la app pasa a ser 100% en la próxima carga (lo aplica el agente)
+- **Pedido del owner:** reemplazar los $5.000 que se acreditaban gratis por un **100% en
+  la próxima carga**; que al reclamarlo le aparezca al agente que el cliente lo tiene
+  pendiente, y que una vez marcado como usado no se pueda volver a reclamar. Una sola vez
+  por usuario.
+- **Cambio de fondo:** el reclamo **YA NO ACREDITA PLATA**. Antes `POST /api/install-bonus/claim`
+  llamaba a la plataforma y depositaba $5.000. Ahora sólo deja el bono en estado `pending`;
+  la plata se mueve recién cuando el cliente carga y el agente le duplica el monto a mano.
+  Motivo del owner: el bono en efectivo se lo llevaban cuentas que no cargaban nunca.
+- **Modelo (`User`):** `firstChargeBonusStatus` (`none`|`pending`|`used`, indexado),
+  `firstChargeBonusUsedAt`, `firstChargeBonusUsedBy`. `installBonusClaimed` se conserva
+  como el candado de "una vez por cuenta" (ya tenía las defensas anti-multicuenta:
+  standalone + token FCM + teléfono verificado + dispositivo).
+- **Aviso al agente:** al reclamar se emite una nota admin-only en el chat del cliente
+  ("BONO 100% PENDIENTE"). Sin esto el agente sólo se enteraría si el cliente se acuerda
+  de decírselo, y el bono quedaría colgado o se aplicaría dos veces.
+- **`POST /api/admin/users/:userId/first-charge-bonus/use`** (adminMiddleware): marca
+  `pending → used` de forma ATÓMICA (findOneAndUpdate con el estado en el filtro), así dos
+  agentes tocando el botón a la vez no se pisan. Registra quién y cuándo, y deja otra nota
+  admin-only para que cualquier agente posterior vea que ya se aplicó.
+- **Panel:** banner verde en el chat cuando está pendiente, con botón "Marcar como usado"
+  (con confirmación, porque es plata y no se deshace). Cuando ya se usó, banner gris con
+  quién lo aplicó. Se limpia al cambiar de chat — si no, el agente vería el bono del
+  cliente ANTERIOR y podría dárselo a quien no le corresponde.
+- **PWA:** el cartel pasó de "Bono de $5.000" a "100% de bono en tu próxima carga";
+  el botón, a "Reclamar mi 100%".
+- **FIX del menú colapsable (#99):** el selector escondía los reembolsos. `.dash-top` NO
+  es hijo directo de `#homePanel` — está dentro de `.home-dash`, así que
+  `#homePanel.collapsed > *:not(.dash-top)` ocultaba `.home-dash` entera y se llevaba los
+  reembolsos puestos. Ahora son dos reglas. El botón RETIRAR MI PREMIO ya estaba fuera del
+  panel, así que sigue visible.
+- **Validado:** `node --check` OK en los 6 archivos tocados. SW del cliente a **v56**.
+
+
 ### 99. Rangos de reembolso (Bronce/Plata/Oro) + perfil del jugador + menú colapsable
 - **Pedido del owner:** sistema de niveles para los reembolsos, que al tocar el perfil se
   vea el detalle y cuánto falta para subir, y que "Ocultar menú" deje sólo los reembolsos.
