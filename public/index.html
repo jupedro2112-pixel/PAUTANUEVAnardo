@@ -543,6 +543,15 @@
                     justify-content:center; gap:3px; color:#fff;
                     background:linear-gradient(135deg,#1a0033,#2d0052); border:1px solid #1a0033;
                     border-radius:11px; padding:8px 5px; overflow:hidden;
+                    cursor:pointer; /* se toca para ver el detalle del perfil y los rangos */
+                }
+                .dash-user:active { transform:scale(.97); }
+                /* Medallita del rango sobre el botón de cada reembolso. */
+                .refund-btn { position:relative; }
+                .refund-tier {
+                    position:absolute; top:-6px; right:-4px; font-size:13px; line-height:1;
+                    background:#1a0033; border:1.5px solid #d4af37; border-radius:50%;
+                    padding:2px 3px; pointer-events:none;
                 }
                 .dash-user-avatar {
                     font-size:18px; width:32px; height:32px; display:flex;
@@ -665,7 +674,7 @@
                         </div>
                         <button id="unifiedRefundBtn" class="refund-btn unified-refund-btn" title="Reembolsos" onclick="VIP.refunds.showUnifiedRefundModal()" style="display:none;">🎁 Reembolsos</button>
                     </div>
-                    <div class="dash-user">
+                    <div class="dash-user" onclick="VIP.refunds.showProfileModal()" title="Ver mi perfil y mis rangos">
                         <span class="dash-user-avatar">👤</span>
                         <span class="dash-user-label">USUARIO</span>
                         <span class="dash-user-name" id="dashUserName">Usuario</span>

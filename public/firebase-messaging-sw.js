@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v54'; // v54: ocultar menu deja solo los reembolsos
+const CACHE_VERSION = 'v55'; // v55: rangos de reembolso (Bronce/Plata/Oro) + perfil
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

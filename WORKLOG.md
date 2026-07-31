@@ -8,6 +8,36 @@
 
 ## Sesión 2026-07-31
 
+### 99. Rangos de reembolso (Bronce/Plata/Oro) + perfil del jugador + menú colapsable
+- **Pedido del owner:** sistema de niveles para los reembolsos, que al tocar el perfil se
+  vea el detalle y cuánto falta para subir, y que "Ocultar menú" deje sólo los reembolsos.
+- **RANGOS — `src/utils/refundTiers.js` (nuevo):**
+  | Pérdida del período | Rango | Reembolso |
+  |---|---|---|
+  | hasta $30.000 | 🥉 Bronce | 3% |
+  | $30.001 a $100.000 | 🥈 Plata | 6% |
+  | más de $100.000 | 🥇 Oro | 10% |
+- **⚠️ El rango se calcula sobre la pérdida DEL PERÍODO QUE SE RECLAMA**, no sobre un
+  acumulado histórico (decisión del owner, se le ofrecieron las 3 opciones). Consecuencia:
+  un mismo jugador puede ser Oro en el mensual y Bronce en el diario al mismo tiempo — son
+  períodos distintos. La UI lo aclara para que nadie crea que "bajó de categoría".
+- **Reemplaza a los porcentajes fijos** (eran 20/10/5 configurables desde el panel). El
+  endpoint `/api/admin/refund-percents` se conserva para no romper el front pero ahora
+  devuelve `enUso:false` + un aviso, así el admin no cree que cambiando eso cambia algo.
+- **Aplicado en los 4 lugares**: `/api/refunds/status` (los 3 potenciales) y los 3
+  `POST /api/refunds/claim/*` (que son los que pagan de verdad).
+- **Front:** medallita del rango sobre cada botón de reembolso, y el recuadro USUARIO
+  ahora es clickeable → modal de perfil con usuario, saldo, el rango de cada reembolso,
+  cuánto falta para subir al siguiente, y la escala completa. La escala la manda el
+  backend (`tiers`) para no duplicar los umbrales en el front.
+- **"Ocultar menú"** ahora deja sólo la fila de reembolsos + perfil (`.dash-top`): oculta
+  casino/saldo, comunidad, bono de instalación y —a pedido— el cartel de verificar
+  teléfono, que vive FUERA del panel y lo esconde el JS recordando si estaba visible
+  (si no, reaparecería en usuarios que ya verificaron).
+- **Validado:** `node --check` OK. Cortes verificados: $30.000→Bronce, $30.001→Plata,
+  $100.000→Plata, $100.001→Oro. SW del cliente a **v55**.
+
+
 ### 98. FIX post-migración: el alta del panel no creaba al jugador + red de seguridad en la carga
 - **Síntoma reportado por el owner:** "creé un usuario en VIPCARGAS y no se creó en 1girox,
   y el botón CASINO no abre la sesión directo".

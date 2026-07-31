@@ -56,6 +56,21 @@ VIP.refunds = (function () {
 
         amount.textContent = `$${data.potentialAmount.toLocaleString()}`;
 
+        // Medallita del rango (🥉/🥈/🥇) arriba a la derecha del botón. El rango sale
+        // de la pérdida DE ESE período, así que cada reembolso puede tener el suyo:
+        // el mismo jugador puede ser Oro en el mensual y Bronce en el diario.
+        if (btn && data.tier) {
+            let badge = btn.querySelector('.refund-tier');
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'refund-tier';
+                btn.appendChild(badge);
+            }
+            badge.textContent = data.tier.emoji;
+            badge.title = `${data.tier.name} — ${data.tier.pct}% de reembolso`;
+            badge.style.borderColor = data.tier.color;
+        }
+
         btn.disabled = false;
         btn.classList.remove('claimed');
 
@@ -308,6 +323,121 @@ VIP.refunds = (function () {
         VIP.ui.showModal('unifiedRefundModal');
     }
 
+    // ============================================
+    // PERFIL DEL JUGADOR + RANGOS
+    // ============================================
+
+    /**
+     * Modal que se abre al tocar el recuadro USUARIO. Muestra los datos de la cuenta,
+     * el rango de cada reembolso y cuánto le falta para subir al siguiente.
+     *
+     * ⚠️ El rango NO es del usuario: es DE CADA REEMBOLSO. Se calcula sobre lo que
+     * perdió en ese período puntual, así que el mismo jugador puede ser Oro en el
+     * mensual y Bronce en el diario. La UI lo dice explícitamente para que nadie
+     * crea que "bajó de categoría".
+     */
+    async function showProfileModal() {
+        if (!VIP.state.refundStatus) {
+            await loadRefundStatus();
+        }
+        const s = VIP.state.refundStatus;
+        const user = VIP.state.currentUser || {};
+        const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR');
+
+        // Tabla de rangos: viene del backend para no duplicar los umbrales acá.
+        const tiers = (s && s.tiers) || [];
+        const tiersHtml = tiers.map((t) => {
+            const rango = t.max === null
+                ? `más de ${money(t.max === null ? t.min : t.max)}`
+                : (t.min === 0 ? `hasta ${money(t.max)}` : `${money(t.min)} a ${money(t.max)}`);
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;
+                        padding:9px 12px;background:rgba(255,255,255,0.04);border-radius:9px;
+                        border-left:3px solid ${t.color};">
+                        <span style="font-size:13px;font-weight:800;color:#fff;">${t.emoji} ${t.name}</span>
+                        <span style="font-size:11px;color:#aaa;flex:1;text-align:center;">${rango}</span>
+                        <span style="font-size:14px;font-weight:900;color:${t.color};">${t.pct}%</span>
+                    </div>`;
+        }).join('');
+
+        // Estado por período: rango actual + cuánto falta para el siguiente.
+        const periodo = (label, d) => {
+            if (!d || !d.tier) return '';
+            const t = d.tier;
+            const falta = t.faltaParaSubir != null && t.next
+                ? `<div style="font-size:11px;color:#ffd479;margin-top:3px;">
+                     Te faltan <strong>${money(t.faltaParaSubir)}</strong> de pérdida para ${t.next.emoji} ${t.next.name} (${t.next.pct}%)
+                   </div>`
+                : `<div style="font-size:11px;color:#7fe07f;margin-top:3px;">¡Estás en el rango máximo! 🎉</div>`;
+            return `<div style="padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span style="font-size:12px;font-weight:800;color:#d4af37;">${label}</span>
+                            <span style="font-size:12px;font-weight:900;color:${t.color};">${t.emoji} ${t.name} · ${t.pct}%</span>
+                        </div>
+                        <div style="font-size:11px;color:#aaa;margin-top:3px;">
+                            Perdiste ${money(d.netAmount)} · te corresponden <strong style="color:#7fe07f;">${money(d.potentialAmount)}</strong>
+                        </div>
+                        ${falta}
+                    </div>`;
+        };
+
+        let overlay = document.getElementById('profileModal');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'profileModal';
+            overlay.style.cssText =
+                'position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.85);display:flex;' +
+                'align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) VIP.refunds.closeProfileModal();
+            });
+            document.body.appendChild(overlay);
+        }
+
+        overlay.innerHTML =
+            `<div style="background:linear-gradient(135deg,#1a0033,#2d0052);border:1px solid rgba(212,175,55,0.4);
+                        border-radius:16px;max-width:420px;width:100%;padding:18px;max-height:92vh;overflow-y:auto;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <span style="font-size:17px;font-weight:900;color:#d4af37;">👤 Mi perfil</span>
+                    <button type="button" onclick="VIP.refunds.closeProfileModal()"
+                        style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;line-height:1;">×</button>
+                </div>
+
+                <div style="background:rgba(0,0,0,0.3);border-radius:10px;padding:12px;margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                        <span style="color:#aaa;font-size:12px;">Usuario</span>
+                        <span style="color:#fff;font-size:12px;font-weight:800;">${user.username || '—'}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;gap:8px;">
+                        <span style="color:#aaa;font-size:12px;">Saldo</span>
+                        <span style="color:#7fe07f;font-size:12px;font-weight:800;">${money((s && s.user && s.user.currentBalance) || user.balance || 0)}</span>
+                    </div>
+                </div>
+
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">🏆 Tus rangos</div>
+                <div style="font-size:11px;color:#999;margin-bottom:10px;line-height:1.45;">
+                    Cuanto más perdés en un período, mayor es el porcentaje que te devolvemos.
+                    El rango se calcula por separado en cada reembolso.
+                </div>
+                ${periodo('📅 Diario', s && s.daily)}
+                ${periodo('🗓️ Semanal', s && s.weekly)}
+                ${periodo('📆 Mensual', s && s.monthly)}
+
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 8px;">Escala de rangos</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">${tiersHtml}</div>
+
+                <button type="button" onclick="VIP.refunds.closeProfileModal()"
+                    style="width:100%;margin-top:16px;background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;
+                           border:none;padding:12px;border-radius:22px;font-weight:800;font-size:14px;cursor:pointer;">
+                    Cerrar</button>
+            </div>`;
+        overlay.style.display = 'flex';
+    }
+
+    function closeProfileModal() {
+        const overlay = document.getElementById('profileModal');
+        if (overlay) overlay.style.display = 'none';
+    }
+
     return {
         loadRefundStatus,
         updateRefundButtons,
@@ -315,7 +445,9 @@ VIP.refunds = (function () {
         startCountdown,
         showRefundModal,
         claimRefund,
-        showUnifiedRefundModal
+        showUnifiedRefundModal,
+        showProfileModal,
+        closeProfileModal
     };
 
 })();

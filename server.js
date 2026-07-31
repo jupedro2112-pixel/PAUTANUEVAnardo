@@ -429,6 +429,8 @@ const { resolveGiroxUserId } = require('./src/services/giroxUserLinkService');
 const giroxPublisherKeys = require('./src/services/giroxPublisherKeys');
 // Rangos de fecha en hora argentina para los períodos de reembolso.
 const periodRanges = require('./src/utils/periodRanges');
+// Rangos de reembolso Bronce/Plata/Oro según la pérdida del período.
+const refundTiers = require('./src/utils/refundTiers');
 
 // NOTA: acá vivían los requires de los 4 clientes de JUGAYGANA (jugaygana.js,
 // jugaygana-movements.js, jugayganaService.js, jugayganaPublisherSessions.js) y de
@@ -6379,11 +6381,25 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
 
     logger.info(`[REFUND] status — ${username} NETWIN daily:${dN.totalGgr}→${dailyNetLoss} weekly:${wN.totalGgr}→${weeklyNetLoss} monthly:${mN.totalGgr}→${monthlyNetLoss}`);
 
-    // Porcentajes configurables desde el panel (default 8/3/3).
-    const pct = await getRefundPercents();
-    const dailyPotential = Math.round(dailyNetLoss * (pct.daily / 100));
-    const weeklyPotential = Math.round(weeklyNetLoss * (pct.weekly / 100));
-    const monthlyPotential = Math.round(monthlyNetLoss * (pct.monthly / 100));
+    // RANGOS (Bronce/Plata/Oro): el porcentaje sale de cuánto perdió EN ESE PERÍODO,
+    // no de una config fija ni de un acumulado histórico. Ver src/utils/refundTiers.js.
+    // Por eso el rango se calcula por separado para cada reembolso: un mismo jugador
+    // puede ser Oro en el mensual y Bronce en el diario.
+    const dailyCalc = refundTiers.calcRefund(dailyNetLoss);
+    const weeklyCalc = refundTiers.calcRefund(weeklyNetLoss);
+    const monthlyCalc = refundTiers.calcRefund(monthlyNetLoss);
+
+    // `tier` se manda entero (nombre, emoji, color, cuánto falta para subir y cuál es
+    // el siguiente) para que el front lo muestre sin tener que duplicar la tabla.
+    const tierOut = (c) => ({
+      key: c.tier.key,
+      name: c.tier.name,
+      emoji: c.tier.emoji,
+      color: c.tier.color,
+      pct: c.tier.pct,
+      faltaParaSubir: c.tier.faltaParaSubir,
+      next: c.tier.next
+    });
 
     res.json({
       user: {
@@ -6391,25 +6407,30 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
         currentBalance,
         jugayganaLinked: !!userInfo
       },
+      // Tabla de rangos, para la pantalla de perfil (así el front no la hardcodea).
+      tiers: refundTiers.listTiers(),
       daily: {
         ...dailyStatus,
-        potentialAmount: dailyPotential,
+        potentialAmount: dailyCalc.amount,
         netAmount: dailyNetLoss,
-        percentage: pct.daily,
+        percentage: dailyCalc.pct,
+        tier: tierOut(dailyCalc),
         period: yesterdayRange.dateStr
       },
       weekly: {
         ...weeklyStatus,
-        potentialAmount: weeklyPotential,
+        potentialAmount: weeklyCalc.amount,
         netAmount: weeklyNetLoss,
-        percentage: pct.weekly,
+        percentage: weeklyCalc.pct,
+        tier: tierOut(weeklyCalc),
         period: `${lastWeekRange.fromDateStr} a ${lastWeekRange.toDateStr}`
       },
       monthly: {
         ...monthlyStatus,
-        potentialAmount: monthlyPotential,
+        potentialAmount: monthlyCalc.amount,
         netAmount: monthlyNetLoss,
-        percentage: pct.monthly,
+        percentage: monthlyCalc.pct,
+        tier: tierOut(monthlyCalc),
         period: `${lastMonthRange.fromDateStr} a ${lastMonthRange.toDateStr}`
       }
     });
@@ -6482,11 +6503,14 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
       }
 
       // Calcular monto del reembolso (% diario configurable, default 8%)
-      const pct = await getRefundPercents();
-      const dailyPct = pct.daily;
-      const refundAmount = Math.round(netLoss * (dailyPct / 100));
+      // El % sale del RANGO que le corresponde a la pérdida de ESTE período
+      // (Bronce 3% / Plata 6% / Oro 10%). Ver src/utils/refundTiers.js.
+      const _calc = refundTiers.calcRefund(netLoss);
+      const dailyPct = _calc.pct;
+      const refundAmount = _calc.amount;
 
-      logger.info('[REFUND] daily — calculado para', username, 'netLoss:', netLoss, 'pct:', dailyPct, 'refund:', refundAmount);
+      logger.info('[REFUND] daily — calculado para', username, 'netLoss:', netLoss,
+        'rango:', _calc.tier.name, 'pct:', dailyPct, 'refund:', refundAmount);
 
       // CANDADO REAL contra doble cobro: RESERVAR el reclamo (índice único
       // userId+type+periodKey) ANTES de acreditar. Antes se acreditaba y RECIÉN
@@ -6627,11 +6651,12 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
       }
 
       // Calcular monto del reembolso (% semanal configurable, default 3%)
-      const pct = await getRefundPercents();
-      const weeklyPct = pct.weekly;
-      const refundAmount = Math.round(netLoss * (weeklyPct / 100));
+      const _calc = refundTiers.calcRefund(netLoss);
+      const weeklyPct = _calc.pct;
+      const refundAmount = _calc.amount;
 
-      logger.info('[REFUND] weekly — calculado para', username, 'netLoss:', netLoss, 'pct:', weeklyPct, 'refund:', refundAmount);
+      logger.info('[REFUND] weekly — calculado para', username, 'netLoss:', netLoss,
+        'rango:', _calc.tier.name, 'pct:', weeklyPct, 'refund:', refundAmount);
 
       // CANDADO REAL contra doble cobro (ver comentario en el reembolso diario):
       // reservar el reclamo (índice único) ANTES de acreditar.
@@ -6768,11 +6793,12 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
       }
 
       // Calcular monto del reembolso (% mensual configurable, default 3%)
-      const pct = await getRefundPercents();
-      const monthlyPct = pct.monthly;
-      const refundAmount = Math.round(netLoss * (monthlyPct / 100));
+      const _calc = refundTiers.calcRefund(netLoss);
+      const monthlyPct = _calc.pct;
+      const refundAmount = _calc.amount;
 
-      logger.info('[REFUND] monthly — calculado para', username, 'netLoss:', netLoss, 'pct:', monthlyPct, 'refund:', refundAmount);
+      logger.info('[REFUND] monthly — calculado para', username, 'netLoss:', netLoss,
+        'rango:', _calc.tier.name, 'pct:', monthlyPct, 'refund:', refundAmount);
 
       // CANDADO REAL contra doble cobro (ver comentario en el reembolso diario):
       // reservar el reclamo (índice único) ANTES de acreditar.
@@ -6892,13 +6918,26 @@ app.get('/api/refunds/all', authMiddleware, adminMiddleware, async (req, res) =>
 // Permite ajustar los % de reembolso diario/semanal/mensual desde el panel.
 // adminMiddleware deja entrar a depositor/withdrawer/comunidad, por eso se
 // re-chequea role==='admin' explícito: SOLO el admin general puede ver/editar.
+// ⚠️ OJO: desde que existen los RANGOS (Bronce/Plata/Oro, 2026-07-31) estos
+// porcentajes YA NO se usan para calcular reembolsos. El % ahora sale de cuánto
+// perdió el jugador en el período (src/utils/refundTiers.js). Este endpoint y su
+// pantalla del panel se conservan para no romper el front, pero se marca
+// `enUso: false` para que el admin no crea que cambiando esto cambia algo.
+// Si se quiere volver a porcentajes fijos, hay que revertir los 3 claims + status.
 app.get('/api/admin/refund-percents', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Solo el admin general puede ver los porcentajes de reembolso.' });
     }
     const percents = await getRefundPercents();
-    res.json({ percents, defaults: REFUND_PCT_DEFAULTS });
+    res.json({
+      percents,
+      defaults: REFUND_PCT_DEFAULTS,
+      enUso: false,
+      aviso: 'Estos porcentajes ya NO se aplican. Los reembolsos usan rangos por pérdida: ' +
+             refundTiers.listTiers().map((t) => `${t.emoji} ${t.name} ${t.pct}%`).join(' · '),
+      tiers: refundTiers.listTiers()
+    });
   } catch (error) {
     console.error('Error obteniendo porcentajes de reembolso:', error);
     res.status(500).json({ error: 'Error del servidor' });
