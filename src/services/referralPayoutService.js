@@ -1,6 +1,8 @@
 /**
  * Servicio de Pagos de Referidos
- * Fase B: agrupa comisiones calculadas, acredita fichas y marca como pagado.
+ * Fase B: agrupa comisiones calculadas, acredita fichas en 1girox y marca como pagado.
+ * (Migrado de JUGAYGANA a 1girox en 2026-07: `giroxService.creditUserBalance` con
+ * reference de idempotencia derivada del ReferralPayout.id — ver buildPayoutReference.)
  * Soporta pagos incrementales: si el referido sigue jugando después de un pago,
  * el siguiente cálculo detecta el delta y este servicio puede pagar solo ese nuevo monto.
  *
@@ -13,9 +15,37 @@
  */
 const { v4: uuidv4 } = require('uuid');
 const { User, Transaction, Message, ReferralCommission, ReferralPayout, mongoose } = require('../models');
-const jugayganaService = require('./jugayganaService');
+const giroxService = require('./giroxService');
 const logger = require('../utils/logger');
 const { getPeriodLabel } = require('../utils/periodKey');
+
+/**
+ * Reference (llave de idempotencia) que se manda a 1girox para acreditar la comisión.
+ *
+ * ⚠️ ES PLATA: 1girox deduplica por `reference`. Dos reglas que NO se pueden violar:
+ *   • Dos pagos DISTINTOS nunca pueden compartir reference → el segundo volvería con
+ *     `duplicate:true` y el referidor NO cobraría.
+ *   • Un reintento del MISMO pago nunca puede cambiar de reference → se pagaría dos veces.
+ *
+ * Por eso se deriva del `id` del documento ReferralPayout: es un UUID único por
+ * operación de pago, se persiste en Mongo ANTES de llamar a la plataforma y sobrevive
+ * a un reinicio del server. Además, si un intento anterior de este mismo pago quedó en
+ * pending/failed, más abajo se REUTILIZA ese documento (mismo id ⇒ misma reference),
+ * así el reintento es idempotente de punta a punta.
+ *
+ * @param {string} payoutId - ReferralPayout.id
+ * @returns {string} ej. "vip-refcom-3f2a...-..." (máx. 100 chars en 1girox; entra holgado)
+ */
+function buildPayoutReference(payoutId) {
+  return `vip-refcom-${payoutId}`;
+}
+
+/** Compara dos listas de ids sin importar el orden (para detectar el MISMO pago). */
+function sameIdSet(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const setA = new Set(a.map(String));
+  return b.every(id => setA.has(String(id)));
+}
 
 /**
  * Drop the stale unique index on referralpayouts {periodKey, referrerUserId} at runtime.
@@ -219,53 +249,101 @@ async function executePayoutsForPeriod(periodKey, options = {}) {
         }
       });
 
-      // Always create a new payout document (incremental settlement support).
+      // ── Reintento del MISMO pago: reusar el documento (y su reference) ────────
+      // Si un intento anterior de ESTE pago quedó sin acreditar (status pending por
+      // un crash a mitad de camino, o failed por un error de la plataforma), hay que
+      // reintentarlo con la MISMA reference. Si no, 1girox lo trataría como un pago
+      // nuevo y, en el caso feo (la acreditación salió bien pero se perdió la
+      // respuesta), el referidor cobraría dos veces.
+      //
+      // Se reusa sólo si es indudablemente el mismo pago: mismo período, mismo
+      // referidor, mismo monto y exactamente el mismo set de comisiones. Si algo de
+      // eso cambió es OTRO pago y le corresponde una reference nueva.
+      const reusableCandidate = await ReferralPayout.findOne({
+        periodKey: safePeriodKey,
+        referrerUserId: safeRefId,
+        status: { $in: ['pending', 'failed'] },
+        totalCommissionAmount: totalAmount
+      }).sort({ createdAt: -1 }).lean();
+
+      const reusablePayout = reusableCandidate &&
+        sameIdSet(reusableCandidate.details && reusableCandidate.details.commissionIds,
+                  eligibleCommissions.map(c => c.id))
+        ? reusableCandidate
+        : null;
+
+      if (reusablePayout) {
+        logger.warn(
+          `[ReferralPayout] Reintento de un pago previo sin acreditar — se reusa el payout ` +
+          `${reusablePayout.id} (status=${reusablePayout.status}) para conservar la reference ` +
+          `${buildPayoutReference(reusablePayout.id)} e impedir un doble crédito. ` +
+          `referrer=${group.referrerUsername} period=${periodKey} monto=${totalAmount.toFixed(2)}`
+        );
+        payoutDoc = await ReferralPayout.findOneAndUpdate(
+          { _id: reusablePayout._id },
+          {
+            $set: {
+              ...buildPayoutData(reusablePayout.id),
+              // el id no se toca (es lo que hace estable la reference)
+              id: reusablePayout.id,
+              errorMessage: null
+            }
+          },
+          { new: true }
+        );
+      }
+
+      // Sin intento previo reusable, se crea un documento nuevo (incremental
+      // settlement support: varios payouts por período+referidor).
       // If E11000 is raised on the {periodKey, referrerUserId} compound index it means the
       // startup migration has not yet run or failed silently.  We recover at runtime by
       // dropping the stale unique index and retrying once.
-      const payoutId = uuidv4();
-      try {
-        payoutDoc = await ReferralPayout.create(buildPayoutData(payoutId));
-      } catch (createErr) {
-        const isDuplicateOnCompound =
-          (createErr.code === 11000 || /E11000|duplicate key/.test(createErr.message)) &&
-          /periodKey.*referrerUserId|referrerUserId.*periodKey|periodKey_1_referrerUserId_1/.test(createErr.message);
+      const payoutId = reusablePayout ? reusablePayout.id : uuidv4();
+      if (!payoutDoc) {
+        try {
+          payoutDoc = await ReferralPayout.create(buildPayoutData(payoutId));
+        } catch (createErr) {
+          const isDuplicateOnCompound =
+            (createErr.code === 11000 || /E11000|duplicate key/.test(createErr.message)) &&
+            /periodKey.*referrerUserId|referrerUserId.*periodKey|periodKey_1_referrerUserId_1/.test(createErr.message);
 
-        if (isDuplicateOnCompound) {
-          logger.warn(
-            `[ReferralPayout] E11000 on {periodKey, referrerUserId} detected — stale unique index present. ` +
-            `Attempting runtime index drop and retry. referrer=${group.referrerUsername} period=${periodKey}`
-          );
-          let dropped = false;
-          try {
-            dropped = await dropStalePayoutUniqueIndexIfPresent();
-          } catch (dropErr) {
-            logger.error(
-              `[ReferralPayout] Index drop for 'periodKey_1_referrerUserId_1' threw unexpectedly: ` +
-              `${dropErr.message} referrer=${group.referrerUsername} period=${periodKey}`
+          if (isDuplicateOnCompound) {
+            logger.warn(
+              `[ReferralPayout] E11000 on {periodKey, referrerUserId} detected — stale unique index present. ` +
+              `Attempting runtime index drop and retry. referrer=${group.referrerUsername} period=${periodKey}`
             );
-          }
-          if (dropped) {
-            // Retry with the same payoutId — the original create failed before writing to DB
-            // (E11000 rejects before commit), so the UUID was never persisted.
+            let dropped = false;
             try {
-              payoutDoc = await ReferralPayout.create(buildPayoutData(payoutId));
-              logger.info(
-                `[ReferralPayout] Retry after index drop succeeded. referrer=${group.referrerUsername} period=${periodKey} ` +
-                `actionSupported=true`
-              );
-            } catch (retryErr) {
+              dropped = await dropStalePayoutUniqueIndexIfPresent();
+            } catch (dropErr) {
               logger.error(
-                `[ReferralPayout] Retry after index drop also failed: ${retryErr.message} ` +
-                `referrer=${group.referrerUsername} period=${periodKey}`
+                `[ReferralPayout] Index drop for 'periodKey_1_referrerUserId_1' threw unexpectedly: ` +
+                `${dropErr.message} referrer=${group.referrerUsername} period=${periodKey}`
               );
-              throw retryErr;
+            }
+            if (dropped) {
+              // Retry with the same payoutId — the original create failed before writing to DB
+              // (E11000 rejects before commit), so the UUID was never persisted.
+              // Mantener el MISMO payoutId también mantiene la misma reference de 1girox.
+              try {
+                payoutDoc = await ReferralPayout.create(buildPayoutData(payoutId));
+                logger.info(
+                  `[ReferralPayout] Retry after index drop succeeded. referrer=${group.referrerUsername} period=${periodKey} ` +
+                  `actionSupported=true`
+                );
+              } catch (retryErr) {
+                logger.error(
+                  `[ReferralPayout] Retry after index drop also failed: ${retryErr.message} ` +
+                  `referrer=${group.referrerUsername} period=${periodKey}`
+                );
+                throw retryErr;
+              }
+            } else {
+              throw createErr;
             }
           } else {
             throw createErr;
           }
-        } else {
-          throw createErr;
         }
       }
 
@@ -275,55 +353,71 @@ async function executePayoutsForPeriod(periodKey, options = {}) {
         `payoutIndex=${payoutIndex} isDelta=${isDeltaPayout} adminUsername=${adminUsername || 'system'}`
       );
 
-      // Acreditar fichas en JUGAYGANA usando DepositMoney + childid
-      // (restaurado al comportamiento correcto de PR #189 — CREDITBALANCE causa "action does not exist")
+      // Acreditar las fichas de la comisión en 1girox.
+      // creditUserBalance() = depósito libre (sin rollover): el referidor puede usar
+      // y retirar la plata al instante, igual que con el `bonus` de JUGAYGANA.
+      // 1girox trabaja por USERNAME (no hay id de plataforma en esta llamada).
       const referrer = await User.findOne({ id: refId }).lean();
       if (!referrer) {
         throw new Error(`Referidor ${refId} no encontrado en DB local`);
       }
 
-      const jugayganaUsername = referrer.jugayganaUsername || referrer.username;
+      // Llave de idempotencia: única por pago y estable entre reintentos (ver
+      // buildPayoutReference). El payoutDoc ya está persistido en Mongo en este punto.
+      const payoutReference = buildPayoutReference(payoutDoc.id);
 
       logger.info(
-        `[ReferralPayout] referralPayoutProviderAction=DepositMoney ` +
-        `referralPayoutProviderPayloadShape=childid+amount+currency+deposit_type ` +
-        `usesChildId=true usesUsername=false ` +
+        `[ReferralPayout] referralPayoutProviderAction=girox.creditUserBalance ` +
         `providerCallSource=referralPayoutService/executePayoutsForPeriod ` +
         `isDeltaPayout=${isDeltaPayout} periodKey=${periodKey} referrer=${group.referrerUsername} ` +
-        `commissionToPay=${totalAmount.toFixed(2)} jugayganaUsername=${jugayganaUsername} ` +
+        `commissionToPay=${totalAmount.toFixed(2)} username=${referrer.username} ` +
+        `reference=${payoutReference} ` +
         `referrerUserId=${refId} paymentType=${payoutType} paymentApplied=false`
       );
 
-      const creditResult = await jugayganaService.bonus(
-        jugayganaUsername,
+      const creditResult = await giroxService.creditUserBalance(
+        referrer.username,
         totalAmount,
-        description
+        payoutReference,
+        { description }
       );
 
       if (!creditResult.success) {
-        // Ensure the error is a plain string — creditResult.error may be an object from the API
+        // En 1girox `error` siempre es string (a diferencia de JUGAYGANA, que a veces
+        // devolvía un objeto {code,message}); igual se normaliza defensivamente.
         const rawErr = creditResult.error;
-        const errStr =
-          typeof rawErr === 'string'
-            ? rawErr
-            : (rawErr && typeof rawErr === 'object'
-                ? (rawErr.message || rawErr.reason || rawErr.code || JSON.stringify(rawErr))
-                : 'Error al acreditar en JUGAYGANA');
+        const errStr = typeof rawErr === 'string' && rawErr
+          ? rawErr
+          : 'Error al acreditar la comisión en 1girox';
         logger.error(
-          `[ReferralPayout] referralPayoutProviderAction=DepositMoney usesChildId=true ` +
+          `[ReferralPayout] referralPayoutProviderAction=girox.creditUserBalance ` +
           `providerResponse=${errStr} ` +
-          `errorCode=${rawErr && rawErr.code ? rawErr.code : 'n/a'} ` +
+          `errorCode=${creditResult.code || 'n/a'} httpStatus=${creditResult.httpStatus || 'n/a'} ` +
           `errorMessage=${errStr} referrer=${group.referrerUsername} ` +
-          `referrerUserId=${refId} period=${periodKey} ` +
+          `referrerUserId=${refId} period=${periodKey} reference=${payoutReference} ` +
           `isDeltaPayout=${isDeltaPayout} commissionToPay=${totalAmount.toFixed(2)} ` +
           `finalPayoutStatus=failed paymentApplied=false`
         );
         throw new Error(errStr);
       }
 
+      // duplicate=true ⇒ 1girox ya había procesado ESTA reference: la plata se acreditó
+      // en un intento anterior de este mismo pago (crash/timeout antes de guardar el
+      // resultado). NO es un error: se sigue el flujo para dejar el ledger consistente,
+      // y NO se vuelve a acreditar nada.
+      if (creditResult.duplicate) {
+        logger.warn(
+          `[ReferralPayout] 1girox respondió duplicate=true para reference=${payoutReference} — ` +
+          `la comisión ya estaba acreditada de un intento anterior. Se completa el registro ` +
+          `local sin volver a pagar. referrer=${group.referrerUsername} period=${periodKey} ` +
+          `monto=${totalAmount.toFixed(2)}`
+        );
+      }
+
       logger.info(
-        `[ReferralPayout] providerResponse=success referralPayoutProviderAction=DepositMoney ` +
-        `usesChildId=true referrer=${group.referrerUsername} period=${periodKey} ` +
+        `[ReferralPayout] providerResponse=success referralPayoutProviderAction=girox.creditUserBalance ` +
+        `referrer=${group.referrerUsername} period=${periodKey} reference=${payoutReference} ` +
+        `duplicate=${!!creditResult.duplicate} ` +
         `isDeltaPayout=${isDeltaPayout} commissionToPay=${totalAmount.toFixed(2)} ` +
         `finalPayoutStatus=success paymentApplied=true`
       );

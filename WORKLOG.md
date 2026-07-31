@@ -4,7 +4,98 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-07-09**
+> **Última actualización: 2026-07-31**
+
+## Sesión 2026-07-31
+
+### 97. MIGRACIÓN COMPLETA de la plataforma externa: JUGAYGANA → 1girox
+- **Pedido del owner:** reemplazar la plataforma de juego por **1girox** (nueva, hecha a
+  medida para él), incluido el pedido explícito de que el botón **CASINO** entre a la
+  plataforma **ya logueado** (antes el usuario copiaba y pegaba usuario y contraseña).
+  Se trabaja contra un servidor aparte, así que se hizo un **reemplazo total** (sin flag
+  de convivencia): cuando esté verificado, se activa para todos.
+- **La API nueva es mucho mejor**: REST/JSON con `X-Api-Key` fija (adiós sesión
+  renovable, mutex de login y manejo de HTML de Cloudflare), montos en **PESOS** (adiós
+  ×100 de centavos) e **idempotencia por `reference`**. Un solo cliente reemplaza a los
+  4 de JUGAYGANA.
+- **Módulos nuevos:**
+  - `src/services/giroxService.js` — Partner API v1.7 completa: altas, saldo, cargas,
+    retiros, bonos, cambio de clave y **login único (SSO)**. Rate limit local (55/min,
+    con margen sobre el tope de 60), reintentos 2s/5s/15s reusando SIEMPRE la misma
+    reference, y traducción de los códigos de error de 1girox a mensajes en castellano.
+  - `src/services/giroxReportsService.js` — netwin/GGR por jugador. ⚠️ **NO es la
+    Partner API**: la Partner API NO expone reportes. Pega contra el panel
+    `admin.1girox.com/api/config/reports/global` (capturado con F12 por el owner), con
+    Bearer de sesión **auto-renovable** — el login devuelve un payload base64 +
+    raw-deflate del que salen el token y el `user.id` del agente.
+  - `src/services/giroxUserLinkService.js` — resuelve y cachea `User.giroxUserId`.
+  - `src/services/giroxPublisherKeys.js` — alta con la API key del publicista.
+  - `src/utils/periodRanges.js` — los rangos de fecha (puros) que vivían en jugaygana.js.
+  - `scripts/migrate-users-to-girox.js` — migración masiva de usuarios.
+- **IDEMPOTENCIA — lo más delicado de toda la migración.** Las firmas cambiaron de forma
+  peligrosa: el 4º arg de `depositToUser` pasó de ser el `jugayganaUserId` a ser la
+  **llave de idempotencia**, y el 3º de `creditUserBalance` lo mismo. Migrar a ciegas
+  habría metido el ID del usuario como reference → **la segunda carga a ese usuario
+  devolvería `duplicate:true` y no acreditaría nada** (el cliente transfiere y no recibe
+  las fichas). Por eso cada flujo deriva su reference de una llave que ya es única Y
+  estable entre reintentos:
+  | Flujo | Reference | Por qué |
+  |---|---|---|
+  | Reembolsos | `vip-rf-{periodKey}-{userId}` | **NO** del id del RefundClaim: si el crédito falla el handler BORRA el claim y el reintento generaría un id nuevo → un fallo FALSO (timeout con la plata ya acreditada) pagaría dos veces. El período es estable para siempre. |
+  | Auto-carga hgcash | `vip-hg-{coelsa/movementId}` | Identifica la transferencia bancaria; misma garantía que el candado local, ahora también del lado de la plataforma. |
+  | Ruleta | `vip-roulette-{spinId}` | La MISMA que usa el reintento manual del panel → un premio ya acreditado no se paga de nuevo. |
+  | Fueguito | `vip-fire-{userId}-d{día}-{fecha}` | Usuario+día solo no alcanza: el mismo hito se puede volver a alcanzar en una racha futura y sería un premio legítimo distinto. |
+  | Bono instalación | `vip-install-{userId}` | Es uno por usuario para siempre. |
+  | Retiros/devoluciones de payout | `vip-payout-{id}` / `vip-payoutref-{id}` | El payout es único por solicitud. |
+  | Cargas/retiros/bonos manuales | `vip-dep-` / `vip-wd-` / `vip-bonus-{uuid}` | El uuid se genera ANTES de llamar y se guarda como `Transaction.id` → la fila local y la operación remota quedan atadas. |
+  | Comisiones de referidos | `vip-refcom-{payoutId}` | Con reuso del payout `pending`/`failed` del mismo período para que el reintento mantenga la reference. |
+- **Botón CASINO (SSO)** — lo que pidió el owner: `POST /api/platform/session` pide a
+  1girox un link de acceso directo (código de UN SOLO USO que vence a los 60s) y el
+  front redirige. Se reutilizó el endpoint huérfano `POST /api/auth/platform-login`, que
+  existía sin que el front lo llamara nunca (un SSO que había quedado a medias).
+  - ⚠️ **Pop-up blocker:** la pestaña se abre ANTES del fetch (dentro del gesto del
+    usuario) y recién después se le cambia la URL. Si se abriera después, mobile la mata.
+  - **Auto-reparación:** si el jugador no existe en 1girox, se crea al vuelo y se
+    reintenta → nadie queda afuera aunque la migración masiva no lo haya alcanzado.
+  - Cupo **por usuario, no por IP**: con el CGNAT de las telefónicas argentinas, limitar
+    por IP dejaría barrios enteros compartiendo cupo.
+  - El modal viejo (usuario + contraseña para copiar) queda sólo como **respaldo** si el
+    SSO falla. Se eliminó el `jugayganaToken` del login: el front lo guardaba y no lo
+    usaba en ningún lado.
+- **Contraseñas:** las locales están en bcrypt y son **irrecuperables**, así que los
+  usuarios migrados se crean en 1girox con clave random. No deja a nadie afuera (se entra
+  por SSO) y la clave real se sincroniza **en el próximo login**, que es el único momento
+  en que la tenemos en texto plano (`giroxPasswordSynced` evita repetirlo).
+- **Decisiones del owner:** el reembolso se calcula **sólo sobre el netwin de CASINO**
+  (sports queda afuera; `GIROX_NETWIN_SCOPE=total` lo incluiría) y la **comisión de
+  referidos es 8%** — 1girox devuelve todos los `commission` en 0, así que la tasa dejó
+  de venir del proveedor y ahora es nuestra (`GIROX_REFERRAL_COMMISSION_PCT`).
+- **Publicistas:** el pool de sesiones por campaña se reemplazó por **una API key por
+  publicista** (`Campaign.giroxApiKey`, select:false, + espejo booleano `hasGiroxKey`
+  para el listado del panel). En 1girox la key define bajo qué cuenta caen los jugadores
+  y de qué saldo salen las cargas.
+- **Rollover:** el owner tiene el feat ACTIVO (verificado en su panel), así que los
+  retiros ahora validan contra `wagering.available` y no contra `balance` — si no, la
+  plataforma los rechazaría con `rollover_locked` y quedarían colgados.
+- **Bonos "a reclamar" (v1.7, del mismo día):** un bono dado por `POST /players/{u}/bonus`
+  ya NO se libera solo, queda esperando que el jugador lo reclame en el casino. Por eso
+  reembolsos, ruleta, fueguito y bono de instalación se acreditan con **depósito libre**.
+  Si se usara `/bonus`, el cliente vería "reembolso acreditado" y no la plata.
+- **FIX de un bug latente:** `server.js` (ruleta) leía `credit.transactionId ||
+  credit.transferId`, campos que el cliente nunca devolvió en la raíz → el `creditTxId`
+  de **todos** los giros se guardó siempre en `null`. Ahora lee `credit.data.transfer_id`.
+- **Front:** una sola URL hardcodeada en la PWA (`ui.js`), más los copys del backend
+  (bienvenida, avisos de depósito/bono) y las plantillas `/sys_*`. ⚠️ **Las plantillas
+  guardadas en la BASE todavía tienen la URL vieja** — hay que migrarlas por script o
+  editarlas desde COMANDOS. Service workers: cliente **v51**, panel **v25**.
+- **Validado:** `node --check` OK en los 15 archivos tocados. Grep: **0 consumidores**
+  de los módulos viejos (sólo se referencian entre ellos). Los archivos de JUGAYGANA
+  quedan en el repo para poder revertir; se borran cuando 1girox esté verificado.
+- **PENDIENTE / BLOQUEANTE:** falta la **`GIROX_API_URL`** (Base URL de la Partner API).
+  Se probaron 20 hosts y 8 rutas: `api-lbvip.com/api/v1` ES la Partner API (formato de
+  error idéntico al del manual) pero **rechaza la key del owner con 401** → es la
+  instalación de otra marca. Ningún `api-*.1girox.*` resuelve en DNS. Está pedido a
+  1girox. Sin ese dato no se puede probar nada contra el servidor real.
 
 ## Sesión 2026-07-09
 

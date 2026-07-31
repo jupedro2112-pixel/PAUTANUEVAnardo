@@ -307,17 +307,16 @@ VIP.auth = (function () {
                     VIP.pixel.trackWithId(metaEventId, 'Login', { content_name: 'login' });
                 }
 
-                // Guardar contraseña en memoria de sesión para mostrarla en el modal de plataforma
+                // Guardar contraseña en memoria de sesión: la usa el modal de acceso
+                // manual al casino, que ahora es sólo el camino de RESPALDO (si el
+                // login único falla). El camino normal es VIP.ui.enterCasino().
                 VIP.state.sessionPassword = password;
 
-                // Guardar token de JUGAYGANA en sessionStorage (expira al cerrar el navegador)
-                if (data.jugayganaToken) {
-                    VIP.state.jugayganaToken = data.jugayganaToken;
-                    sessionStorage.setItem('jugayganaToken', data.jugayganaToken);
-                } else {
-                    VIP.state.jugayganaToken = null;
-                    sessionStorage.removeItem('jugayganaToken');
-                }
+                // El `jugayganaToken` que guardábamos acá ya no existe: el backend dejó
+                // de emitirlo. Se limpia por si quedó de una sesión anterior en un
+                // navegador que todavía no recargó la versión nueva de la app.
+                VIP.state.jugayganaToken = null;
+                sessionStorage.removeItem('jugayganaToken');
 
                 try {
                     await initializeSession(false);

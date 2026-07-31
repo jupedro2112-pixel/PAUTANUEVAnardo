@@ -160,12 +160,55 @@ const userSchema = new mongoose.Schema({
     type: String, 
     default: null 
   },
-  source: { 
-    type: String, 
-    enum: ['local', 'jugaygana'], 
-    default: 'local' 
+  source: {
+    type: String,
+    enum: ['local', 'jugaygana'],
+    default: 'local'
   },
-  
+
+  // ============================================
+  // Campos 1girox (plataforma NUEVA)
+  // ============================================
+  // Se agregan APARTE de los de JUGAYGANA a propósito: mientras dure la migración
+  // los dos conviven, y si hay que revertir no se perdió el vínculo viejo.
+  //
+  // La Partner API de 1girox trabaja SÓLO por username (no devuelve IDs). Pero el
+  // panel de reportes —de donde sale el netwin para reembolsos y comisiones de
+  // referidos— exige el ID numérico del jugador (`player_id`). Por eso hace falta
+  // guardarlo igual, resuelto contra el panel. Mismo rol que `jugayganaUserId`:
+  // ⚠️ sin este ID NO se puede calcular el reembolso de ese usuario.
+  giroxUserId: {
+    type: Number,
+    default: null,
+    index: true
+  },
+  giroxSyncStatus: {
+    type: String,
+    // pending  = todavía no se intentó crear en 1girox
+    // synced   = lo creamos nosotros
+    // linked   = ya existía en 1girox y quedó vinculado
+    // error    = falló la creación (ver giroxSyncError)
+    // invalid_username = el username no cumple las reglas de 1girox (3-18 chars,
+    //            sólo letras/números/_) → necesita decisión manual, no se puede crear
+    // not_applicable = admins y roles internos (no son jugadores)
+    enum: ['pending', 'synced', 'linked', 'error', 'invalid_username', 'not_applicable'],
+    default: 'pending',
+    index: true
+  },
+  giroxSyncError: {
+    type: String,
+    default: null
+  },
+  // true cuando la contraseña de VIPCARGAS ya se replicó en 1girox. Los usuarios
+  // migrados arrancan en false (se crean con una clave random porque la local está
+  // en bcrypt y es irrecuperable) y pasan a true en su próximo login o cambio de
+  // clave. No afecta al acceso: al casino se entra por SSO, no con la contraseña.
+  giroxPasswordSynced: {
+    type: Boolean,
+    default: false
+  },
+
+
   // Token FCM para notificaciones push (último registrado – se mantiene para compatibilidad y vista admin)
   fcmToken: { 
     type: String, 

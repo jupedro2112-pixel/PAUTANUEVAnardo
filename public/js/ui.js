@@ -726,8 +726,80 @@ VIP.ui.copyPlatformUsername = function() {
   });
 };
 
+// ============================================
+// ENTRAR AL CASINO — login único (SSO) contra 1girox
+// ============================================
+//
+// Antes: se abría el casino y el usuario tenía que copiar y pegar su usuario y
+// contraseña a mano. Ahora el backend pide un link de acceso directo
+// (POST /api/platform/session → 1girox POST /players/{username}/session) y el
+// usuario entra ya logueado.
+//
+// ⚠️ POP-UP BLOCKER: el link viene de un fetch (asíncrono) y los navegadores —sobre
+// todo en mobile— bloquean window.open si no ocurre DENTRO del gesto del usuario.
+// Por eso la pestaña se abre PRIMERO, vacía, y recién después se le cambia la URL.
+// Además el código de acceso vence a los 60 segundos, así que no se cachea nada.
+VIP.ui._casinoOpening = false;
+
+VIP.ui.enterCasino = async function() {
+  if (VIP.ui._casinoOpening) return; // anti doble-click
+  VIP.ui._casinoOpening = true;
+
+  // 1) Abrir la pestaña YA, dentro del gesto del usuario (si no, la bloquean).
+  let win = null;
+  try {
+    win = window.open('', '_blank');
+    if (win && win.document) {
+      win.document.write(
+        '<!doctype html><meta charset="utf-8">' +
+        '<title>Entrando al casino…</title>' +
+        '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
+        'height:100vh;background:#12101a;color:#d4af37;font-family:system-ui,sans-serif;' +
+        'font-size:18px;font-weight:700">🎰 Entrando al casino…</body>'
+      );
+    }
+  } catch (e) { win = null; }
+
+  try {
+    const response = await fetch(`${VIP.config.API_URL}/api/platform/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${VIP.state.currentToken}`
+      }
+    });
+    const data = await response.json();
+
+    if (response.ok && data.success && data.redirectUrl) {
+      // 2) Redirigir apenas llega: el código es de un solo uso y vence en 60s.
+      if (win && !win.closed) {
+        win.location.href = data.redirectUrl;
+      } else {
+        // La pestaña fue bloqueada → navegamos en la actual (la PWA queda en el historial).
+        window.location.href = data.redirectUrl;
+      }
+      VIP.ui.closePlatformModal();
+      return;
+    }
+
+    // Falló el SSO → cerramos la pestaña vacía y caemos al modal de acceso manual.
+    if (win && !win.closed) win.close();
+    VIP.ui.showToast(data.error || 'No pudimos abrirte el casino automáticamente.', 'error');
+    VIP.ui.openPlatformModal();
+  } catch (error) {
+    if (win && !win.closed) win.close();
+    VIP.ui.showToast('Sin conexión. Revisá tu internet e intentá de nuevo.', 'error');
+    VIP.ui.openPlatformModal();
+  } finally {
+    VIP.ui._casinoOpening = false;
+  }
+};
+
+// Botón "Abrir Casino" DENTRO del modal (que ahora es el camino de respaldo, cuando
+// el SSO falló). Abre el casino a secas para que el usuario entre a mano con los
+// datos que el modal le muestra.
 VIP.ui.goToPlatform = function() {
-  window.open('https://www.jugaygana44.bet', '_blank');
+  window.open(VIP.config.PLATFORM_URL, '_blank');
   VIP.ui.closePlatformModal();
 };
 

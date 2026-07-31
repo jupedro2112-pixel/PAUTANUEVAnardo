@@ -2634,7 +2634,7 @@ async function loadPayoutBanner(userId) {
         const debitUnconfirmed = (p.debitConfirmed === false);
         if (debitUnconfirmed) el.style.background = 'linear-gradient(90deg,#a02020,#7a1010)';
         const debitWarn = debitUnconfirmed
-            ? '<div style="margin-top:5px;font-size:11px;font-weight:800;color:#ffe08a;background:rgba(0,0,0,0.32);padding:5px 8px;border-radius:6px;">⚠️ Descuento NO confirmado en JUGAYGANA — verificá el saldo real antes de pagar. Si rechazás, NO se devuelven fichas automáticamente.</div>'
+            ? '<div style="margin-top:5px;font-size:11px;font-weight:800;color:#ffe08a;background:rgba(0,0,0,0.32);padding:5px 8px;border-radius:6px;">⚠️ Descuento NO confirmado en 1girox — verificá el saldo real antes de pagar. Si rechazás, NO se devuelven fichas automáticamente.</div>'
             : '';
         const payBtn = j.payEnabled
             ? '<button onclick="payPayout(\'' + escapeHtml(p.id) + '\')" style="background:#0f8a2f;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-weight:800;font-size:12px;cursor:pointer;">💸 Pagar ' + monto + '</button>'
@@ -2688,7 +2688,7 @@ async function cancelPayout(id) {
             // chipsReturned = se había descontado y se devolvió (caso raro: cash-out falló antes).
             // skippedRefund = pago viejo con descuento no confirmado (compatibilidad).
             let msg = 'Pago rechazado', tipo = 'success';
-            if (j.skippedRefund) { msg = 'Pago rechazado SIN devolver (descuento NO confirmado) — verificá en JUGAYGANA y devolvé a mano si corresponde'; tipo = 'error'; }
+            if (j.skippedRefund) { msg = 'Pago rechazado SIN devolver (descuento NO confirmado) — verificá en 1girox y devolvé a mano si corresponde'; tipo = 'error'; }
             else if (j.chipsReturned) { msg = 'Pago rechazado · fichas devueltas ✅'; }
             else if (j.noDeduction) { msg = 'Pago rechazado (no se habían descontado fichas)'; }
             showToast(msg, tipo);
@@ -3070,7 +3070,7 @@ async function handleDeposit() {
         // que tiene que reintentar el bonus manualmente. La carga sí entró.
         if (data.bonusRequested === true && data.bonusApplied === false) {
             showToast(
-                `⚠️ Carga $${amount} OK, pero BONUS $${bonus} NO se aplicó (${data.bonusError || 'JUGAYGANA intermitente'}). Reintentá el bonus desde el botón "Bonus".`,
+                `⚠️ Carga $${amount} OK, pero BONUS $${bonus} NO se aplicó (${data.bonusError || 'la plataforma intermitente'}). Reintentá el bonus desde el botón "Bonus".`,
                 'error'
             );
         } else {
@@ -5712,7 +5712,7 @@ window.viewUser = async function(userId) {
                     <div><strong>Debe cambiar contraseña:</strong> ${u.mustChangePassword ? 'Sí' : 'No'}</div>
                     <div><strong>Último login:</strong> ${escapeHtml(lastLogin)}</div>
                     <div><strong>Fecha creación:</strong> ${escapeHtml(created)}</div>
-                    <div><strong>JUGAYGANA ID:</strong> ${escapeHtml(u.jugayganaUserId || '-')}</div>
+                    <div><strong>ID en 1girox:</strong> ${escapeHtml(u.giroxUserId || '-')}</div>
                     <div><strong>Tokens FCM:</strong> ${(u.fcmTokens && u.fcmTokens.length) || 0}</div>
                 </div>
             `;
@@ -8022,7 +8022,7 @@ function renderCampaigns() {
                 <span>📝 ${c.registrations || 0} registros</span>
                 <span>Comisión: ${c.commissionType === 'none' ? '—' : (c.commissionType === 'cpa' ? formatARS(c.commissionValue) + ' / FTD' : c.commissionValue + '% rev')}</span>
                 <span>${c.isActive ? '🟢 Activa' : '🔴 Inactiva'}</span>
-                ${c.hasJugayganaCreds ? '<span style="color:#4caf50;">🔐 Cuenta JG propia</span>' : '<span style="color:#888;">🔐 Usa master</span>'}
+                ${c.hasJugayganaCreds ? '<span style="color:#4caf50;">🔐 Cuenta 1girox propia</span>' : '<span style="color:#888;">🔐 Usa master</span>'}
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <button onclick="copyCampaignLink('${escapeHtml(c.code)}')" style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:#00ff88;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">📋 Copiar link</button>
@@ -8052,7 +8052,7 @@ function _resetCampaignCredsForm(hasCreds) {
         : 'mínimo 6 caracteres';
     document.getElementById('campaignFormJgPasswordHint').textContent = hasCreds
         ? 'Cuenta configurada — escribí una nueva contraseña sólo si la querés cambiar.'
-        : 'Se guarda cifrada en la DB.';
+        : 'Empieza con "pk_".';
     document.getElementById('campaignFormCredsStatus').textContent = hasCreds
         ? '· cuenta propia configurada'
         : '· sin configurar (usa la master)';
@@ -8206,7 +8206,7 @@ async function testCampaignJgCreds() {
         });
         const data = await r.json();
         if (r.ok && data.ok) {
-            resultEl.textContent = '✓ Login OK (parentId=' + (data.parentId || '?') + ')';
+            resultEl.textContent = '✓ La key funciona';
             resultEl.style.color = '#4caf50';
         } else {
             resultEl.textContent = '✗ ' + (data.error || 'Falló');
@@ -8220,7 +8220,7 @@ async function testCampaignJgCreds() {
 
 // Marca para limpiar las creds al guardar (sólo en edit).
 function clearCampaignJgCreds() {
-    if (!confirm('¿Quitar la cuenta JUGAYGANA del publicista? Los próximos usuarios creados por su publisher_admin van a usar la cuenta master.')) return;
+    if (!confirm('¿Quitar la cuenta 1girox del publicista? Los próximos usuarios creados por su publisher_admin van a usar la cuenta master.')) return;
     window._campaignFormClearCreds = true;
     document.getElementById('campaignFormJgUsername').value = '';
     document.getElementById('campaignFormJgPassword').value = '';
@@ -8282,17 +8282,22 @@ async function submitCampaignForm() {
         // borre las creds enteras (independientemente de lo que esté en los inputs).
         body.clearJugayganaCreds = true;
     } else {
-        // Mandar las creds solo si hay algo cargado. El backend valida la pareja
-        // (en create exige ambos; en edit, password vacío = mantener).
+        // Con 1girox la cuenta del publicista es UNA sola cosa: su API key. El nombre
+        // es sólo una etiqueta de referencia y puede ir vacío.
+        // (El campo del body se sigue llamando `jugayganaPassword` porque el backend
+        // acepta ese nombre por compatibilidad; ahí adentro se guarda como giroxApiKey.)
         if (jgUsername) body.jugayganaUsername = jgUsername;
         if (jgPassword) body.jugayganaPassword = jgPassword;
-        // Para create exigimos ambos arriba en validación cliente.
-        if (mode === 'create') {
-            if ((jgUsername && !jgPassword) || (!jgUsername && jgPassword)) {
-                errorDiv.textContent = 'Si configurás cuenta JUGAYGANA, completá usuario Y contraseña';
-                errorDiv.style.display = '';
-                return;
-            }
+        // En edición, key vacía = mantener la que ya está guardada.
+        if (jgPassword && !jgPassword.startsWith('pk_')) {
+            errorDiv.textContent = 'La API key de 1girox tiene que empezar con "pk_"';
+            errorDiv.style.display = '';
+            return;
+        }
+        if (mode === 'create' && jgUsername && !jgPassword) {
+            errorDiv.textContent = 'Cargá la API key de 1girox del publicista (o dejá el nombre vacío para usar la cuenta master)';
+            errorDiv.style.display = '';
+            return;
         }
     }
 
@@ -8809,7 +8814,7 @@ async function loadRouletteAdmin() {
 }
 
 async function retryRouletteCredit(spinId) {
-    if (!confirm('¿Reintentar la acreditación de este premio? Va a llamar a JUGAYGANA para acreditar al saldo del user.')) return;
+    if (!confirm('¿Reintentar la acreditación de este premio? Va a llamar a 1girox para acreditar al saldo del user.')) return;
     try {
         const r = await rouletteAuthFetch('/api/admin/roulette/' + encodeURIComponent(spinId) + '/retry-credit', {
             method: 'POST',

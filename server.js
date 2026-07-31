@@ -408,18 +408,32 @@ function validatePassword(password) {
   return password.length >= 6 && password.length <= 100;
 }
 
-// Integración JUGAYGANA
-const jugaygana = require('./jugaygana');
-const jugayganaMovements = require('./jugaygana-movements');
-const jugayganaService = require('./src/services/jugayganaService');
-// Pool de sesiones JUGAYGANA por publicista — se usa cuando un publisher_admin
-// crea un usuario y la campaña tiene credenciales propias configuradas.
-const jugayganaPublisherSessions = require('./src/services/jugayganaPublisherSessions');
+// ============================================
+// Integración 1girox (la plataforma de juego)
+// ============================================
+// Partner API REST/JSON, auth por X-Api-Key. Cliente único: reemplaza a los 4
+// clientes de JUGAYGANA. Montos en PESOS (sin ×100) e idempotencia por `reference`.
+const girox = require('./src/services/giroxService');
+// Reportes (netwin/GGR) — NO son de la Partner API: salen del panel de administración,
+// que es lo único que expone la pérdida real del jugador. De acá dependen los
+// reembolsos y las comisiones de referidos.
+const giroxReports = require('./src/services/giroxReportsService');
+// Resuelve y cachea el ID numérico del jugador en 1girox (necesario para los reportes).
+const { resolveGiroxUserId } = require('./src/services/giroxUserLinkService');
+// Alta de jugadores bajo la cuenta de un publicista (con su propia API key).
+const giroxPublisherKeys = require('./src/services/giroxPublisherKeys');
+// Rangos de fecha en hora argentina para los períodos de reembolso.
+const periodRanges = require('./src/utils/periodRanges');
+
+// NOTA: acá vivían los requires de los 4 clientes de JUGAYGANA (jugaygana.js,
+// jugaygana-movements.js, jugayganaService.js, jugayganaPublisherSessions.js) y de
+// referralRevenueService/jugayganaUserLinkService. server.js ya NO los usa: todo pasa
+// por los módulos girox* de arriba. Los archivos siguen en el repo hasta verificar
+// 1girox en producción; después se borran (ver WORKLOG).
+
 // Analítica de clientes por publicista (segmentación churn, ranking, recuperación).
 const publisherAnalytics = require('./src/services/publisherAnalyticsService');
 const refunds = require('./models/refunds');
-const referralRevenueService = require('./src/services/referralRevenueService');
-const { resolveJugayganaUserId } = require('./src/services/jugayganaUserLinkService');
 const metaCapi = require('./src/services/metaCapiService');
 const fbAdsWebhook = require('./src/services/fbAdsWebhookService');
 
@@ -1654,7 +1668,7 @@ async function hgcashHandleChargeFailure(movement, comprobante, errMsg, dataDesc
   if (user) {
     const prefijo = terminal ? `Se agotaron los ${HGCASH_MAX_CHARGE_ATTEMPTS} intentos automáticos. ` : '';
     await _emitAdminOnlyChatNote(user.id, user.username,
-      `🏦 MATCH hgcash — ${dataDesc}\n⚠️ La AUTO-CARGA FALLÓ en JUGAYGANA (${errMsg || 's/detalle'}). ${prefijo}Cargá MANUAL a este usuario por el mismo monto: al hacerlo se marca como usado (no se duplica).`);
+      `🏦 MATCH hgcash — ${dataDesc}\n⚠️ La AUTO-CARGA FALLÓ en la plataforma (${errMsg || 's/detalle'}). ${prefijo}Cargá MANUAL a este usuario por el mismo monto: al hacerlo se marca como usado (no se duplica).`);
   }
 }
 
@@ -2012,10 +2026,16 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     logger.warn(`[hgcash] red de seguridad falló (sigue la carga): ${guardErr.message}`);
   }
 
-  // Modo auto: cargar de verdad en JUGAYGANA.
+  // Modo auto: cargar de verdad en la plataforma.
   let charged = false; // true una vez que la acreditación se confirmó (evita reintentos que dupliquen)
   try {
-    const result = await jugaygana.depositToUser(user.username, Number(amount), 'Carga automática (hgcash)', user.jugayganaUserId || null);
+    // Idempotencia en 1girox: la reference sale del identificador del MOVIMIENTO
+    // BANCARIO (el coelsa del candado, o el id del movimiento). Es estable entre
+    // reintentos y única por transferencia → si un reintento repite la carga, la
+    // plataforma responde duplicate:true y NO acredita dos veces. Es la misma
+    // garantía que ya daba `chargeKey` en nuestra base, ahora también del otro lado.
+    const _ref = `vip-hg-${chargeKey || movement.movementId}`;
+    const result = await girox.depositToUser(user.username, Number(amount), 'Carga automática (hgcash)', _ref);
     if (!result.success) {
       if (chargeLocked) { try { await HgcashCharge.deleteOne({ chargeKey }); } catch (_) {} }
       await hgcashHandleChargeFailure(movClaim || movement, comprobante, result.error || 'fallo deposit', dataDesc, user);
@@ -2042,7 +2062,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     // Mensaje al cliente (usa /sys_deposit si está; si no, fallback).
     let newBalance = null;
     try {
-      const balRes = await jugayganaMovements.getUserBalanceWithRetry(user.username);
+      const balRes = await girox.getUserBalanceWithRetry(user.username);
       if (balRes.success) newBalance = balRes.balance;
     } catch (_) {}
     const balStr = newBalance !== null ? `$${newBalance}` : 'actualizándose 🔄';
@@ -2630,24 +2650,35 @@ app.get('/api/auth/check-username', authLimiter, async (req, res) => {
     if (!username || username.length < 3) {
       return res.json({ available: false, message: 'Usuario muy corto' });
     }
-    
+
+    // Reglas de la plataforma: 3-18 caracteres, sólo letras/números/guion bajo.
+    // Se valida ACÁ y no sólo al registrar: si no, el usuario ve "disponible",
+    // completa todo el registro y recién ahí le falla la creación en 1girox.
+    const _fmt = girox.validateUsername(username);
+    if (!_fmt.valid) {
+      return res.json({
+        available: false,
+        message: `El usuario no puede usarse: ${_fmt.reason}. Usá sólo letras, números y guion bajo (3 a 18 caracteres).`
+      });
+    }
+
     // Buscar case-insensitive (camino rápido indexado + fallback)
     const localExists = await findUserByUsernameCI(username);
-    
+
     if (localExists) {
       return res.json({ available: false, message: 'Usuario ya registrado' });
     }
-    
+
     try {
-      const jgUser = await jugaygana.getUserInfoByName(username);
+      const jgUser = await girox.getUserInfoByName(username);
       if (jgUser) {
-        return res.json({ 
-          available: false, 
+        return res.json({
+          available: false,
           message: 'Este nombre de usuario no está disponible. Intenta con otro nombre.'
         });
       }
     } catch (jgError) {
-      logger.warn(`JUGAYGANA check failed: ${jgError.message}`);
+      logger.warn(`[girox] check-username falló: ${jgError.message}`);
     }
     
     res.json({ 
@@ -2992,13 +3023,13 @@ app.post('/api/auth/register', authLimiter, registerIpLimiter, async (req, res) 
     // Crear usuario en JUGAYGANA PRIMERO
     let jgResult = null;
     try {
-      jgResult = await jugaygana.syncUserToPlatform({
+      jgResult = await girox.syncUserToPlatform({
         username: username,
         password: password
       });
       
       if (!jgResult.success && !jgResult.alreadyExists) {
-        return res.status(400).json({ error: 'No se pudo crear el usuario en JUGAYGANA: ' + (jgResult.error || 'Error desconocido') });
+        return res.status(400).json({ error: 'No se pudo crear el usuario en la plataforma: ' + (jgResult.error || 'Error desconocido') });
       }
       
       logger.info(`User created/linked in JUGAYGANA: ${username}`);
@@ -3052,13 +3083,19 @@ app.post('/api/auth/register', authLimiter, registerIpLimiter, async (req, res) 
       phoneVerificationPending: !hasPhone,
       role: 'user',
       accountNumber: generateAccountNumber(),
-      balance: jgResult.user?.balance || jgResult.user?.user_balance || 0,
+      // El jugador se acaba de crear en 1girox → arranca en 0. (Si ya existía,
+      // `jgResult.player` puede traer su saldo real; se usa si está.)
+      balance: Number(jgResult.player?.balance) || 0,
       createdAt: new Date(),
       lastLogin: null,
       isActive: true,
-      jugayganaUserId: jgResult.jugayganaUserId || jgResult.user?.user_id,
-      jugayganaUsername: jgResult.jugayganaUsername || jgResult.user?.user_name,
-      jugayganaSyncStatus: jgResult.alreadyExists ? 'linked' : 'synced',
+      // El ID numérico del jugador NO lo devuelve la Partner API: lo completa
+      // `resolveGiroxUserId` al vuelo la primera vez que haga falta (p.ej. un reembolso).
+      giroxUserId: null,
+      giroxSyncStatus: jgResult.alreadyExists ? 'linked' : 'synced',
+      // La contraseña que se acaba de usar para crearlo en la plataforma ES la del
+      // usuario, así que ya están sincronizadas: no hace falta el sync del próximo login.
+      giroxPasswordSynced: true,
       // Campos de referido
       referralCode: newReferralCode,
       referredByUserId: isValidReferral ? referrer.id : null,
@@ -3217,9 +3254,9 @@ app.post('/api/auth/register-quick', authLimiter, registerIpLimiter, async (req,
     // Crear en JUGAYGANA primero (igual que el flujo normal).
     let jgResult = null;
     try {
-      jgResult = await jugaygana.syncUserToPlatform({ username, password });
+      jgResult = await girox.syncUserToPlatform({ username, password });
       if (!jgResult.success && !jgResult.alreadyExists) {
-        return res.status(400).json({ error: 'No se pudo crear el usuario en JUGAYGANA: ' + (jgResult.error || 'Error desconocido') });
+        return res.status(400).json({ error: 'No se pudo crear el usuario en la plataforma: ' + (jgResult.error || 'Error desconocido') });
       }
     } catch (jgError) {
       logger.error(`[register-quick] Error JUGAYGANA: ${jgError.message}`);
@@ -3249,12 +3286,16 @@ app.post('/api/auth/register-quick', authLimiter, registerIpLimiter, async (req,
       phoneVerificationPending: true,
       role: 'user',
       accountNumber: generateAccountNumber(),
-      balance: jgResult.user?.balance || jgResult.user?.user_balance || 0,
+      // El jugador se acaba de crear en 1girox → arranca en 0. (Si ya existía,
+      // `jgResult.player` puede traer su saldo real; se usa si está.)
+      balance: Number(jgResult.player?.balance) || 0,
       createdAt: new Date(),
       isActive: true,
-      jugayganaUserId: jgResult.jugayganaUserId || jgResult.user?.user_id,
-      jugayganaUsername: jgResult.jugayganaUsername || jgResult.user?.user_name,
-      jugayganaSyncStatus: jgResult.alreadyExists ? 'linked' : 'synced',
+      // El ID numérico lo completa `resolveGiroxUserId` al vuelo cuando haga falta.
+      giroxUserId: null,
+      giroxSyncStatus: jgResult.alreadyExists ? 'linked' : 'synced',
+      // Se creó con la contraseña del propio usuario → ya están sincronizadas.
+      giroxPasswordSynced: true,
       referralCode: newReferralCode,
       // Atribución de campaña
       acquisitionCampaign: normalizedCode,
@@ -3395,48 +3436,50 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       });
     }
     
-    // Si no existe localmente, verificar en JUGAYGANA (solo para login por username)
+    // Si no existe localmente, verificar en la plataforma (solo para login por username).
+    // Cubre a los jugadores que existen en 1girox pero nunca pasaron por VIPCARGAS.
     if (!user && username) {
-      logger.debug(`User ${username} not found locally, checking JUGAYGANA...`);
-      
-      const jgUser = await jugaygana.getUserInfoByName(username);
-      
-      if (jgUser) {
-        logger.debug(`User found in JUGAYGANA, creating locally...`);
-        
+      logger.debug(`User ${username} not found locally, checking 1girox...`);
+
+      const gxUser = await girox.getUserInfoByName(username);
+
+      if (gxUser) {
+        logger.debug('User found in 1girox, creating locally...');
+
         const userId = uuidv4();
-        
+
         user = await User.create({
           id: userId,
-          username: jgUser.username,
+          username: gxUser.username,
           password: 'asd123',
-          email: jgUser.email || null,
-          phone: jgUser.phone || null,
+          email: gxUser.email || null,
+          phone: null, // la Partner API no devuelve el teléfono
           role: 'user',
           accountNumber: generateAccountNumber(),
-          balance: jgUser.balance || 0,
+          balance: gxUser.balance || 0,
           createdAt: new Date(),
           lastLogin: null,
           isActive: true,
-          jugayganaUserId: jgUser.id,
-          jugayganaUsername: jgUser.username,
-          jugayganaSyncStatus: 'linked',
-          source: 'jugaygana',
+          // La Partner API NO devuelve el ID numérico del jugador: se resuelve
+          // aparte contra el panel (resolveGiroxUserId lo completa al vuelo la
+          // primera vez que haga falta, p.ej. al pedir un reembolso).
+          giroxUserId: null,
+          giroxSyncStatus: 'linked',
+          source: 'jugaygana', // valor histórico del enum: "importado de la plataforma"
           tokenVersion: 0
           // Nota: ya NO forzamos cambio de contraseña por la default "asd123".
-          // Los usuarios importados de JUGAYGANA pueden usar la app con su
-          // contraseña inicial. Removido a pedido.
+          // Los usuarios importados pueden usar la app con su contraseña inicial.
         });
-        
+
         // Crear chat status
         await ChatStatus.create({
           userId: userId,
-          username: jgUser.username,
+          username: gxUser.username,
           status: 'open',
           category: 'cargas'
         });
-        
-        logger.info(`User ${username} auto-created from JUGAYGANA`);
+
+        logger.info(`User ${username} auto-created from 1girox`);
       } else {
         return res.status(401).json({ error: 'Credenciales inválidas' });
       }
@@ -3577,23 +3620,45 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       { expiresIn: '30d' }
     );
     
-    // Intentar login en JUGAYGANA para obtener token de sesión (best-effort).
-    // Admin roles have no counterpart in JUGAYGANA, so skip entirely.
-    let jugayganaToken = null;
-    if (!isAdminRole(userObj.role)) {
-      try {
-        const jgLogin = await jugayganaService.loginAsUser(userObj.username, password);
-        if (jgLogin.success) {
-          jugayganaToken = jgLogin.token;
-          logger.info(`Token JUGAYGANA obtenido para: ${loginIdentifier}`);
-        } else {
-          logger.warn(`No se pudo obtener token JUGAYGANA para ${loginIdentifier}: ${jgLogin.error}`);
-        }
-      } catch (jgErr) {
-        logger.warn(`Error obteniendo token JUGAYGANA para ${loginIdentifier}: ${jgErr.message}`);
-      }
+    // SINCRONIZACIÓN DIFERIDA DE LA CONTRASEÑA CON LA PLATAFORMA.
+    //
+    // Los usuarios migrados desde JUGAYGANA se crearon en 1girox con una contraseña
+    // RANDOM: la local está en bcrypt y es irrecuperable. Eso no deja a nadie afuera
+    // (al casino se entra por SSO, sin contraseña), pero conviene que la clave quede
+    // igual en los dos lados por si alguna vez entran directo a la plataforma.
+    //
+    // El login es el ÚNICO momento en que tenemos la contraseña en texto plano, así
+    // que se aprovecha para replicarla — una sola vez por usuario (`giroxPasswordSynced`).
+    //
+    // Fire-and-forget a propósito: si la plataforma está lenta o caída, el usuario
+    // igual entra a VIPCARGAS. Nunca bloquea ni demora el login.
+    //
+    // ⚠️ APAGADO POR DEFECTO (`GIROX_SYNC_PASSWORD_ON_LOGIN=1` para prenderlo).
+    // Motivo: `giroxPasswordSynced` arranca en false para TODA la base migrada, así
+    // que el día del deploy cada login dispararía un PUT extra. El rate limit de la
+    // Partner API (55/min por proceso) es COMPARTIDO con cargas y retiros → un pico de
+    // logins podría hacer que a un cliente le falle una carga con "plataforma
+    // saturada". Y el beneficio es marginal: al casino se entra por SSO, el jugador no
+    // necesita su contraseña de la plataforma.
+    // El camino que SÍ importa (cambio de clave del usuario) sigue sincronizando
+    // siempre, vía syncPasswordToJugaygana.
+    // Nota extra: este endpoint cierra las sesiones abiertas del jugador en el casino,
+    // así que prenderlo a lo bruto también lo patearía de una partida en curso.
+    if (process.env.GIROX_SYNC_PASSWORD_ON_LOGIN === '1' &&
+        !isAdminRole(userObj.role) && userObj.giroxPasswordSynced !== true) {
+      girox.changeUserPassword(userObj.username, password)
+        .then(async (r) => {
+          if (r && r.success) {
+            await User.updateOne({ id: userId }, { $set: { giroxPasswordSynced: true } });
+            logger.info(`[girox] contraseña sincronizada para ${userObj.username}`);
+          } else {
+            logger.warn(`[girox] no se pudo sincronizar la contraseña de ${userObj.username}: ${r && r.error}`);
+          }
+        })
+        .catch((e) => logger.warn(`[girox] sync de contraseña falló para ${userObj.username}: ${e.message}`));
     }
-    
+
+
     // Set an httpOnly admin session cookie for admin roles so that the server
     // can verify, on subsequent page requests, that the browser was genuinely
     // authenticated — not just checking localStorage (client-side only).
@@ -3627,7 +3692,10 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     res.json({
       message: 'Login exitoso',
       token,
-      jugayganaToken,
+      // `jugayganaToken` ELIMINADO: era un token de sesión de la plataforma vieja que
+      // el front guardaba en sessionStorage y no usaba en ningún lado (vestigio de un
+      // SSO que quedó a medias). El acceso al casino ahora va por
+      // POST /api/platform/session, que pide un link de un solo uso en el momento.
       user: {
         id: userId,
         username: userObj.username,
@@ -3861,10 +3929,15 @@ app.get('/api/users/me', authMiddleware, async (req, res) => {
   }
 });
 
-// Sincroniza la contraseña con JUGAYGANA reintentando hasta 3 veces.
+// Sincroniza la contraseña con la plataforma reintentando hasta 3 veces.
 // Si tras los 3 intentos no se puede sincronizar, crea un mensaje interno
 // (adminOnly) en el chat del usuario para que los admins sepan que la
 // contraseña quedó desincronizada y puedan corregirla manualmente.
+//
+// NOTA: en 1girox esto NO necesita la contraseña vieja ni la sesión del jugador
+// (PUT /players/{username}/password va con la API key). Además cierra todas las
+// sesiones abiertas de ese jugador en la plataforma, que es lo deseable al cambiar
+// una clave.
 async function syncPasswordToJugaygana(user, newPassword, context) {
   if (isAdminRole(user.role)) {
     return { success: true, skipped: true };
@@ -3875,9 +3948,12 @@ async function syncPasswordToJugaygana(user, newPassword, context) {
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const jgResult = await jugayganaService.changeUserPasswordAsAdmin(user.username, newPassword);
+      const jgResult = await girox.changeUserPassword(user.username, newPassword);
       if (jgResult.success) {
-        logger.info(`[pwd-sync] Sincronizada con JUGAYGANA (${context}) para ${user.username} en intento ${attempt}/${MAX_ATTEMPTS}`);
+        logger.info(`[pwd-sync] Sincronizada con 1girox (${context}) para ${user.username} en intento ${attempt}/${MAX_ATTEMPTS}`);
+        // La clave ya está igual en los dos lados: no hace falta el sync diferido
+        // del próximo login.
+        await User.updateOne({ id: user.id }, { $set: { giroxPasswordSynced: true } }).catch(() => {});
         return { success: true, attempts: attempt };
       }
       lastError = jgResult.error || 'Error desconocido';
@@ -3902,7 +3978,7 @@ async function syncPasswordToJugaygana(user, newPassword, context) {
       senderRole: 'system',
       receiverId: user.id,
       receiverRole: 'user',
-      content: `⚠️ SYNC FALLIDO: el usuario cambió su contraseña en VIPCARGAS pero no se pudo sincronizar con jugaygana44.bet tras ${MAX_ATTEMPTS} intentos. Último error: "${lastError}". Revisar y actualizar la contraseña manualmente en la plataforma. Contexto: ${context}.`,
+      content: `⚠️ SYNC FALLIDO: el usuario cambió su contraseña en VIPCARGAS pero no se pudo sincronizar con 1girox.com tras ${MAX_ATTEMPTS} intentos. Último error: "${lastError}". Revisar y actualizar la contraseña manualmente en la plataforma. Contexto: ${context}.`,
       type: 'system',
       adminOnly: true,
       read: true,
@@ -4180,39 +4256,82 @@ app.post('/api/auth/change-password/pending', authMiddleware, authLimiter, async
   }
 });
 
-// Platform login: obtener token de JUGAYGANA para auto-login
-app.post('/api/auth/platform-login', authMiddleware, async (req, res) => {
-  try {
-    const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ error: 'Contraseña requerida' });
-    }
+// ============================================
+// LOGIN ÚNICO (SSO) A LA PLATAFORMA — botón "CASINO"
+// ============================================
+//
+// El usuario ya está autenticado en VIPCARGAS (JWT), así que la plataforma sólo
+// necesita nuestra API key + el username para emitir un link de acceso directo.
+// NO se le pide la contraseña: con 1girox el cliente nunca más necesita conocer
+// su clave del casino (antes el modal se la mostraba para copiar y pegar).
+//
+// El `redirect_url` lleva un código de UN SOLO USO que vence a los 60 segundos →
+// el front tiene que redirigir apenas lo recibe. No se cachea ni se persiste.
+//
+// Cupo propio POR USUARIO (no por IP): con CGNAT de las telefónicas argentinas,
+// limitar por IP dejaría a barrios enteros compartiendo cupo. Además protege el
+// presupuesto de 60 req/min de la Partner API contra un cliente que spamee el botón.
+const platformSessionLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user && req.user.userId) ? ('u:' + req.user.userId) : req.ip,
+  validate: { keyGeneratorIpFallback: false },
+  message: { error: 'Demasiados intentos de entrar al casino. Esperá un momento.' }
+});
 
-    const user = await User.findOne({ id: req.user.userId });
+async function platformSessionHandler(req, res) {
+  try {
+    const user = await User.findOne({ id: req.user.userId }).select('id username isBlocked isActive giroxSyncStatus');
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    if (user.isBlocked) {
+      return res.status(403).json({ error: 'Tu cuenta está bloqueada. Contactá al soporte.' });
+    }
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Tu cuenta está inactiva. Contactá al soporte.' });
     }
 
-    const jgLogin = await jugayganaService.loginAsUser(user.username, password);
-    if (!jgLogin.success) {
-      return res.status(502).json({ error: `No se pudo iniciar sesión en la plataforma: ${jgLogin.error}` });
+    let session = await girox.createSession(user.username);
+
+    // AUTO-REPARACIÓN: si el jugador todavía no existe en la plataforma (usuario que
+    // el script de migración no alcanzó, o creado mientras la migración corría), se
+    // crea al vuelo y se reintenta UNA vez. La contraseña es random a propósito: el
+    // acceso al casino es por SSO, y la clave real se sincroniza en el próximo login
+    // o cambio de contraseña del usuario (ver syncPasswordToPlatform).
+    if (!session.success && session.code === 'player_not_found') {
+      logger.warn(`[girox-sso] ${user.username} no existe en la plataforma — creando al vuelo`);
+      const provisional = crypto.randomBytes(12).toString('base64url');
+      const sync = await girox.syncUserToPlatform({ username: user.username, password: provisional });
+      if (!sync.success) {
+        logger.error(`[girox-sso] no se pudo crear a ${user.username}: ${sync.error}`);
+        return res.status(502).json({ error: 'No pudimos abrir tu cuenta en el casino. Escribinos por chat y lo resolvemos.' });
+      }
+      await User.updateOne({ id: user.id }, { $set: { giroxSyncStatus: sync.alreadyExists ? 'linked' : 'synced' } }).catch(() => {});
+      session = await girox.createSession(user.username);
+    }
+
+    if (!session.success) {
+      logger.error(`[girox-sso] falló para ${user.username}: ${session.error} (${session.code})`);
+      return res.status(502).json({ error: 'El casino no está respondiendo. Reintentá en un momento.' });
     }
 
     res.json({
       success: true,
-      jugayganaToken: jgLogin.token,
-      platformUrl: 'https://www.jugaygana44.bet'
+      redirectUrl: session.redirectUrl,
+      platformUrl: girox.getPlayUrl()
     });
   } catch (error) {
-    logger.error(`Error en platform-login: ${error.message}`);
+    logger.error(`Error en platform session (SSO): ${error.message}`);
     res.status(500).json({ error: 'Error del servidor' });
   }
-});
+}
+
+app.post('/api/platform/session', authMiddleware, platformSessionLimiter, platformSessionHandler);
+// Alias histórico (el front viejo lo nombraba así). Mismo handler.
+app.post('/api/auth/platform-login', authMiddleware, platformSessionLimiter, platformSessionHandler);
 
 // ============================================
 // RUTAS PÚBLICAS - OTP / VERIFICACIÓN SMS
@@ -5049,7 +5168,7 @@ app.post('/api/messages/welcome', authMiddleware, async (req, res) => {
     // Texto editable desde COMANDOS (/sys_welcome). Fallback al texto original.
     const welcomeContent = await renderSystemCommand(
       '/sys_welcome',
-      `🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://www.jugaygana44.bet/\n\nCBU activo: {cbu}`,
+      `🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}`,
       { username, cbu: cbuNumber }
     );
 
@@ -5177,21 +5296,20 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
 
     // Sincronizar con JUGAYGANA solo si es usuario normal
     if (role === 'user') {
-      jugaygana.syncUserToPlatform({
+      girox.syncUserToPlatform({
         username: newUser.username,
         password: password
       }).then(async (result) => {
         if (result.success) {
+          // La Partner API no devuelve el ID numérico del jugador; `giroxUserId` lo
+          // completa después `resolveGiroxUserId` (backfill al vuelo) la primera vez
+          // que haga falta, p.ej. al calcular un reembolso.
           await User.updateOne(
             { id: userId },
-            {
-              jugayganaUserId: result.jugayganaUserId || result.user?.user_id,
-              jugayganaUsername: result.jugayganaUsername || result.user?.user_name,
-              jugayganaSyncStatus: result.alreadyExists ? 'linked' : 'synced'
-            }
+            { giroxSyncStatus: result.alreadyExists ? 'linked' : 'synced' }
           );
         }
-      });
+      }).catch((e) => logger.warn(`[users] sync a 1girox falló para ${newUser.username}: ${e.message}`));
     }
     
     res.status(201).json({
@@ -5292,24 +5410,28 @@ app.post('/api/users/:id/sync-jugaygana', authMiddleware, adminMiddleware, async
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
-    const result = await jugaygana.syncUserToPlatform({
+    const result = await girox.syncUserToPlatform({
       username: user.username,
       password: 'asd123'
     });
     
     if (result.success) {
-      user.jugayganaUserId = result.jugayganaUserId || result.user?.user_id;
-      user.jugayganaUsername = result.jugayganaUsername || result.user?.user_name;
-      user.jugayganaSyncStatus = result.alreadyExists ? 'linked' : 'synced';
+      user.giroxSyncStatus = result.alreadyExists ? 'linked' : 'synced';
       await user.save();
-      
+
+      // El ID numérico del jugador se resuelve contra el panel (la Partner API no lo
+      // expone). Se intenta acá para dejar la cuenta lista; si falla, no es bloqueante:
+      // `resolveGiroxUserId` lo vuelve a intentar cuando haga falta.
+      let giroxUserId = null;
+      try { giroxUserId = await resolveGiroxUserId(user.id, user.username); } catch (_) {}
+
       res.json({
-        message: result.alreadyExists ? 'Usuario vinculado con JUGAYGANA' : 'Usuario sincronizado con JUGAYGANA',
-        jugayganaUserId: user.jugayganaUserId,
-        jugayganaUsername: user.jugayganaUsername
+        message: result.alreadyExists ? 'Usuario vinculado con 1girox' : 'Usuario sincronizado con 1girox',
+        giroxUserId,
+        username: user.username
       });
     } else {
-      res.status(400).json({ error: result.error || 'Error sincronizando con JUGAYGANA' });
+      res.status(400).json({ error: result.error || 'Error sincronizando con 1girox' });
     }
   } catch (error) {
     console.error('Error sincronizando:', error);
@@ -5334,10 +5456,20 @@ app.post('/api/admin/sync-all-jugaygana', authMiddleware, adminMiddleware, async
 
 app.get('/api/admin/sync-status', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // Estado de la sincronización con 1girox. `jugayganaUsers` conserva el nombre
+    // por compatibilidad con el panel, pero ahora cuenta los vinculados a 1girox.
     const totalUsers = await User.countDocuments();
-    const jugayganaUsers = await User.countDocuments({ jugayganaUserId: { $ne: null } });
-    const pendingUsers = await User.countDocuments({ jugayganaUserId: null, role: 'user' });
-    
+    const jugayganaUsers = await User.countDocuments({ giroxSyncStatus: { $in: ['synced', 'linked'] } });
+    const pendingUsers = await User.countDocuments({ role: 'user', giroxSyncStatus: { $nin: ['synced', 'linked'] } });
+    // Los que no se pueden crear en 1girox porque el username no cumple sus reglas
+    // (3-18 caracteres, sólo letras/números/_). Necesitan decisión manual del owner.
+    const invalidUsernameUsers = await User.countDocuments({ giroxSyncStatus: 'invalid_username' });
+    // Vinculados pero sin el ID numérico resuelto: no se les puede calcular reembolso
+    // hasta que se complete (lo hace resolveGiroxUserId al vuelo, o el script).
+    const missingPlatformId = await User.countDocuments({
+      role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] }, giroxUserId: null
+    });
+
     res.json({
       inProgress: false,
       startedAt: null,
@@ -5346,7 +5478,9 @@ app.get('/api/admin/sync-status', authMiddleware, adminMiddleware, async (req, r
       lastResult: null,
       localUsers: totalUsers,
       jugayganaUsers,
-      pendingUsers
+      pendingUsers,
+      invalidUsernameUsers,
+      missingPlatformId
     });
   } catch (error) {
     res.status(500).json({ error: 'Error del servidor' });
@@ -5968,18 +6102,38 @@ async function getRefundPercents() {
   }
 }
 
+/**
+ * Llave de idempotencia del reembolso para 1girox.
+ *
+ * ⚠️ TIENE QUE DERIVARSE DEL PERÍODO, NO DEL id del RefundClaim. Motivo: si la
+ * acreditación falla, el handler BORRA el RefundClaim para que el usuario pueda
+ * reintentar — y en el reintento se genera un id nuevo. Si la reference saliera de
+ * ese id, un fallo FALSO (la carga se acreditó pero la respuesta se perdió por
+ * timeout) daría una reference distinta en el reintento y 1girox acreditaría DOS
+ * VECES. Derivándola del período, el reintento manda la MISMA reference y la
+ * plataforma responde `duplicate:true` sin volver a pagar.
+ *
+ * `periodKey` ya es único por usuario+tipo+período ('daily:2026-07-30',
+ * 'weekly:2026-07-21', 'monthly:2026-07'), así que periodo+userId identifica la
+ * operación de forma estable para siempre.
+ */
+function _refundReference(periodKey, userId) {
+  const safe = String(periodKey).replace(/[^\w.-]/g, '-');
+  return `vip-rf-${safe}-${userId}`.slice(0, 100); // la API limita la reference a 100 chars
+}
+
 app.get('/api/refunds/status', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
     const username = req.user.username;
     
-    const userInfo = await jugaygana.getUserInfoByName(username);
+    const userInfo = await girox.getUserInfoByName(username);
     const currentBalance = userInfo ? userInfo.balance : 0;
     
     // Rangos de fechas (zona horaria Argentina)
-    const yesterdayRange = jugaygana.getYesterdayRangeArgentinaEpoch();
-    const lastWeekRange = jugaygana.getLastWeekRangeArgentinaEpoch();
-    const lastMonthRange = jugaygana.getLastMonthRangeArgentinaEpoch();
+    const yesterdayRange = periodRanges.getYesterdayRangeArgentinaEpoch();
+    const lastWeekRange = periodRanges.getLastWeekRangeArgentinaEpoch();
+    const lastMonthRange = periodRanges.getLastMonthRangeArgentinaEpoch();
     
     const [dailyStatus, weeklyStatus, monthlyStatus] = await Promise.all([
       refunds.canClaimDailyRefund(userId),
@@ -5998,11 +6152,13 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
     // NETWIN/GGR REAL por período (apostado − ganado), MISMA fuente que referidos.
     // El reembolso es sobre la PÉRDIDA REAL de juego, NO sobre cargas − retiros. Si la
     // plataforma no responde para un período, ese netLoss queda en 0 (no se preview de más).
-    const jgId = await resolveJugayganaUserId(userId, username);
+    // NOTA 1girox: el netwin del reporte es SÓLO de casino (decisión del owner);
+    // ver GIROX_NETWIN_SCOPE en giroxReportsService.
+    const giroxId = await resolveGiroxUserId(userId, username);
     const [dN, wN, mN] = await Promise.all([
-      referralRevenueService.getUserNetwinForDateRange(username, jgId, dailyFrom, dailyTo, 'refund-daily'),
-      referralRevenueService.getUserNetwinForDateRange(username, jgId, weeklyFrom, weeklyTo, 'refund-weekly'),
-      referralRevenueService.getUserNetwinForDateRange(username, jgId, monthlyFrom, monthlyTo, 'refund-monthly')
+      giroxReports.getPlayerNetwinForDateRange(giroxId, dailyFrom, dailyTo, 'refund-daily'),
+      giroxReports.getPlayerNetwinForDateRange(giroxId, weeklyFrom, weeklyTo, 'refund-weekly'),
+      giroxReports.getPlayerNetwinForDateRange(giroxId, monthlyFrom, monthlyTo, 'refund-monthly')
     ]);
     const dailyNetLoss = dN.success ? Math.max(0, Number(dN.totalGgr) || 0) : 0;
     const weeklyNetLoss = wN.success ? Math.max(0, Number(wN.totalGgr) || 0) : 0;
@@ -6076,25 +6232,25 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener jugayganaUserId para consultar NETWIN (misma fuente que referidos).
-      // Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const jugayganaUserId = await resolveJugayganaUserId(userId, username);
-      
-      if (!jugayganaUserId) {
+      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
+      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
+      const giroxUserId = await resolveGiroxUserId(userId, username);
+
+      if (!giroxUserId) {
         return res.json({
           success: false,
           message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
           canClaim: true
         });
       }
-      
-      const { fromEpoch, toEpoch, dateStr } = jugaygana.getYesterdayRangeArgentinaEpoch();
+
+      const { fromEpoch, toEpoch, dateStr } = periodRanges.getYesterdayRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
       const toDate = new Date(toEpoch * 1000);
 
-      // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
+      // NETWIN REAL del período (apostado − ganado), misma fuente que referidos.
       // El reembolso es sobre la PÉRDIDA REAL de juego, NO sobre cargas − retiros.
-      const netRes = await referralRevenueService.getUserNetwinForDateRange(username, jugayganaUserId, fromDate, toDate, 'refund-daily');
+      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-daily');
       if (!netRes.success) {
         logger.warn(`[REFUND] daily — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
@@ -6140,7 +6296,7 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
         throw e;
       }
 
-      const depositResult = await jugaygana.creditUserBalance(username, refundAmount);
+      const depositResult = await girox.creditUserBalance(username, refundAmount, _refundReference(_refundPeriodKey, userId));
 
       if (!depositResult.success) {
         // No se pudo acreditar → liberar la reserva para permitir reintentar.
@@ -6222,11 +6378,11 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener jugayganaUserId para consultar NETWIN (misma fuente que referidos).
-      // Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const jugayganaUserId = await resolveJugayganaUserId(userId, username);
-      
-      if (!jugayganaUserId) {
+      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
+      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
+      const giroxUserId = await resolveGiroxUserId(userId, username);
+
+      if (!giroxUserId) {
         return res.json({
           success: false,
           message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
@@ -6234,12 +6390,12 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
         });
       }
       
-      const { fromEpoch, toEpoch, fromDateStr, toDateStr } = jugaygana.getLastWeekRangeArgentinaEpoch();
+      const { fromEpoch, toEpoch, fromDateStr, toDateStr } = periodRanges.getLastWeekRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await referralRevenueService.getUserNetwinForDateRange(username, jugayganaUserId, fromDate, toDate, 'refund-weekly');
+      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-weekly');
       if (!netRes.success) {
         logger.warn(`[REFUND] weekly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
@@ -6281,7 +6437,7 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
         throw e;
       }
 
-      const depositResult = await jugaygana.creditUserBalance(username, refundAmount);
+      const depositResult = await girox.creditUserBalance(username, refundAmount, _refundReference(_refundPeriodKey, userId));
 
       if (!depositResult.success) {
         // No se pudo acreditar → liberar la reserva para permitir reintentar.
@@ -6363,11 +6519,11 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener jugayganaUserId para consultar NETWIN (misma fuente que referidos).
-      // Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const jugayganaUserId = await resolveJugayganaUserId(userId, username);
-      
-      if (!jugayganaUserId) {
+      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
+      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
+      const giroxUserId = await resolveGiroxUserId(userId, username);
+
+      if (!giroxUserId) {
         return res.json({
           success: false,
           message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
@@ -6375,12 +6531,12 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
         });
       }
       
-      const { fromEpoch, toEpoch, fromDateStr, toDateStr } = jugaygana.getLastMonthRangeArgentinaEpoch();
+      const { fromEpoch, toEpoch, fromDateStr, toDateStr } = periodRanges.getLastMonthRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await referralRevenueService.getUserNetwinForDateRange(username, jugayganaUserId, fromDate, toDate, 'refund-monthly');
+      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-monthly');
       if (!netRes.success) {
         logger.warn(`[REFUND] monthly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
@@ -6422,7 +6578,7 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
         throw e;
       }
 
-      const depositResult = await jugaygana.creditUserBalance(username, refundAmount);
+      const depositResult = await girox.creditUserBalance(username, refundAmount, _refundReference(_refundPeriodKey, userId));
 
       if (!depositResult.success) {
         // No se pudo acreditar → liberar la reserva para permitir reintentar.
@@ -6574,11 +6730,19 @@ app.post('/api/admin/refund-percents', authMiddleware, adminMiddleware, async (r
 app.get('/api/balance', authMiddleware, async (req, res) => {
   try {
     const username = req.user.username;
-    const result = await jugayganaMovements.getUserBalance(username);
+    const result = await girox.getUserBalance(username);
     
     if (result.success) {
       res.json({
         balance: result.balance,
+        // Con el rollover activo, `balance` NO es lo que el cliente puede retirar.
+        // Se exponen los dos para que el front pueda mostrar el saldo total pero
+        // avisar cuánto está bloqueado (y no ofrecer un retiro que va a fallar).
+        // `claimableTotal` > 0 significa que tiene un bono ganado esperando que lo
+        // reclame en el casino: plata suya que todavía no ve en el saldo.
+        available: result.available,
+        locked: result.locked,
+        claimableTotal: result.claimableTotal,
         username: result.username
       });
     } else {
@@ -6593,7 +6757,7 @@ app.get('/api/balance', authMiddleware, async (req, res) => {
 app.get('/api/balance/live', authMiddleware, async (req, res) => {
   try {
     const username = req.user.username;
-    const result = await jugayganaMovements.getUserBalance(username);
+    const result = await girox.getUserBalance(username);
     
     if (result.success) {
       await User.updateOne(
@@ -6603,6 +6767,9 @@ app.get('/api/balance/live', authMiddleware, async (req, res) => {
       
       res.json({
         balance: result.balance,
+        available: result.available,
+        locked: result.locked,
+        claimableTotal: result.claimableTotal,
         username: result.username,
         updatedAt: new Date().toISOString()
       });
@@ -6620,7 +6787,7 @@ app.get('/api/movements', authMiddleware, async (req, res) => {
     const username = req.user.username;
     const { startDate, endDate, page = 1 } = req.query;
     
-    const result = await jugayganaMovements.getUserMovements(username, {
+    const result = await girox.getUserMovements(username, {
       startDate,
       endDate,
       page: parseInt(page),
@@ -6658,35 +6825,41 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       return res.status(400).json({ error: 'Monto inválido' });
     }
 
-    const result = await jugaygana.depositToUser(user.username, parseFloat(amount), description, user.jugayganaUserId || null);
+    // Se genera el id de la Transaction ANTES de llamar a la plataforma para poder
+    // usarlo como `reference` (llave de idempotencia de 1girox). Así, si el cliente
+    // reintenta por timeout, la plataforma reconoce la operación y NO acredita dos
+    // veces. La MISMA constante se guarda después como Transaction.id, de modo que la
+    // fila local y la operación remota quedan atadas por el mismo identificador.
+    const _depTxId = uuidv4();
+    const result = await girox.depositToUser(user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`);
 
     if (result.success) {
       // SLA: atender al cliente con una carga cuenta como respuesta (resuelve el reloj).
       await delayClockResolve(user.id, { responded: true, agentId: req.user.userId, agentUsername: req.user.username, via: 'operation', queueHint: 'cargas' });
-      // Si hay bonus, acreditarlo en JUGAYGANA como individual_bonus en operación separada.
-      // Pausa de 700ms entre la carga principal y el bonus para evitar el rate-limit
-      // interno de JUGAYGANA sobre operaciones consecutivas sobre el mismo user
-      // (causa documentada del bug "carga sí, bonus no": dos DepositMoney en <100ms
-      // disparaban HTML/Cloudflare en la segunda llamada).
+      // Si hay bonus, se acredita en una operación contable SEPARADA (así el panel de
+      // la plataforma distingue carga de bonificación).
+      // La pausa de 700ms viene de JUGAYGANA, donde dos operaciones sobre el mismo
+      // usuario en <100ms disparaban el bloqueo de Cloudflare ("carga sí, bonus no").
+      // Con 1girox ese problema no existe (hay un rate limit propio y ordenado), pero
+      // se conserva: no cuesta nada y evita apurar el cupo de 60 req/min.
       const bonusRequested = parseFloat(bonus) > 0;
       let bonusJgResult = null;
       let bonusActuallyApplied = false;
 
       if (bonusRequested) {
         await new Promise(r => setTimeout(r, 700));
-        // Pasamos jugayganaUserId si lo tenemos guardado: bypasea el lookup en
-        // ShowUsers (causa documentada de fallas por paginación / scoping de
-        // sub-agentes). Si el usuario no tiene jugayganaUserId persistido
-        // (legacy), creditUserBalance cae al lookup tradicional.
-        bonusJgResult = await jugaygana.creditUserBalance(
+        // Reference propia y distinta de la carga: son dos operaciones diferentes.
+        // Derivarla del mismo _depTxId las mantiene ligadas y hace que un reintento
+        // del bonus tampoco pueda duplicarlo.
+        bonusJgResult = await girox.creditUserBalance(
           user.username,
           parseFloat(bonus),
-          user.jugayganaUserId || null
+          `vip-depbonus-${_depTxId}`
         );
         bonusActuallyApplied = !!(bonusJgResult && bonusJgResult.success);
         if (!bonusActuallyApplied) {
           logger.error(
-            `[deposit] BONUS FALLÓ user=${user.username} jgId=${user.jugayganaUserId || 'null'} ` +
+            `[deposit] BONUS FALLÓ user=${user.username} ` +
             `amount=$${amount} bonus=$${bonus} agent=${req.user?.username || '?'} ` +
             `error=${bonusJgResult?.error || 'sin detalle'}`
           );
@@ -6738,7 +6911,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       // histórico donde un fallo transitorio post-depósito hacía que el server
       // mandara "Tu nuevo saldo es $0" engañoso (el depósito SÍ se aplicó pero
       // getUserBalance falló y defaulteábamos a 0).
-      const balanceResult = await jugayganaMovements.getUserBalanceWithRetry(user.username);
+      const balanceResult = await girox.getUserBalanceWithRetry(user.username);
       let newBalance = null;
       if (balanceResult.success) {
         newBalance = balanceResult.balance;
@@ -6773,9 +6946,9 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
           .replace(/\{bonus\}/g, includeBonusInMessage ? bonus : 0)
           .replace(/\{balance\}/g, newBalance !== null ? newBalance : 'actualizándose');
       } else if (includeBonusInMessage) {
-        messageContent = `🔒💰 Depósito de $${amount} (incluye $${bonus} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://jugaygana.bet\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
+        messageContent = `🔒💰 Depósito de $${amount} (incluye $${bonus} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
       } else {
-        messageContent = `🔒💰 Depósito de $${amount} acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://jugaygana.bet\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
+        messageContent = `🔒💰 Depósito de $${amount} acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
       }
       
       const systemMessage = await Message.create({
@@ -6823,7 +6996,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       // que reintentar el bonus manualmente. El cliente NO ve este mensaje.
       if (bonusRequested && !bonusActuallyApplied) {
         try {
-          const alertContent = `⚠️ BONUS NO APLICADO en JUGAYGANA\n\n• Carga: $${amount} ✅ acreditada\n• Bonus pedido: $${bonus} ❌ NO acreditado\n• Motivo: ${bonusJgResult?.error || 'desconocido'}\n\nReintentá el bonus desde el botón "Bonus". El cliente NO fue informado del bonus.`;
+          const alertContent = `⚠️ BONUS NO APLICADO en la plataforma\n\n• Carga: $${amount} ✅ acreditada\n• Bonus pedido: $${bonus} ❌ NO acreditado\n• Motivo: ${bonusJgResult?.error || 'desconocido'}\n\nReintentá el bonus desde el botón "Bonus". El cliente NO fue informado del bonus.`;
           const alertMsg = await Message.create({
             id: uuidv4(),
             senderId: 'admin',
@@ -6967,7 +7140,9 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       // Esto mantiene la consistencia con la Transaction tipo 'bonus' separada
       // (más abajo) que sólo se crea si el bonus efectivamente entró.
       await Transaction.create({
-        id: uuidv4(),
+        // Mismo id que se usó como `reference` en la plataforma (vip-dep-<id>): así
+        // una operación de 1girox se puede rastrear hasta su fila local y viceversa.
+        id: _depTxId,
         type: 'deposit',
         amount: parseFloat(amount),
         bonus: bonusActuallyApplied ? parseFloat(bonus) : 0,
@@ -7035,7 +7210,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       res.json({
         success: true,
         message: bonusRequested && !bonusActuallyApplied
-          ? 'Depósito acreditado, pero el bonus FALLÓ en JUGAYGANA. Reintentá el bonus manualmente.'
+          ? 'Depósito acreditado, pero el bonus FALLÓ en la plataforma. Reintentá el bonus manualmente.'
           : 'Depósito realizado correctamente',
         newBalance: newBalance,
         transactionId: result.data?.transfer_id || result.data?.transferId,
@@ -7057,7 +7232,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
 app.get('/api/admin/balance/:username', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { username } = req.params;
-    const result = await jugayganaMovements.getUserBalance(username);
+    const result = await girox.getUserBalance(username);
     
     if (result.success) {
       res.json({ balance: result.balance });
@@ -7100,8 +7275,11 @@ app.post('/api/admin/withdrawal', authMiddleware, withdrawerMiddleware, async (r
       });
     }
 
-    const result = await jugaygana.withdrawFromUser(user.username, amount, description);
-    
+    // Id generado antes de llamar, para usarlo como `reference` (idempotencia de
+    // 1girox) y después como Transaction.id — igual que en la carga manual.
+    const _wdTxId = uuidv4();
+    const result = await girox.withdrawFromUser(user.username, amount, description, `vip-wd-${_wdTxId}`);
+
     if (result.success) {
       await recordUserActivity(user.id, 'withdrawal', amount);
       // SLA: atender al cliente con un retiro cuenta como respuesta (resuelve el reloj).
@@ -7109,7 +7287,7 @@ app.post('/api/admin/withdrawal', authMiddleware, withdrawerMiddleware, async (r
 
       // Obtener saldo actualizado del usuario. Reintenta para evitar "saldo $0"
       // engañoso cuando getUserBalance falla transitoriamente post-retiro.
-      const balanceResult = await jugayganaMovements.getUserBalanceWithRetry(user.username);
+      const balanceResult = await girox.getUserBalanceWithRetry(user.username);
       let newBalance = null;
       if (balanceResult.success) {
         newBalance = balanceResult.balance;
@@ -7187,7 +7365,8 @@ app.post('/api/admin/withdrawal', authMiddleware, withdrawerMiddleware, async (r
       });
       
       await Transaction.create({
-        id: uuidv4(),
+        // Mismo id que la `reference` enviada a la plataforma (vip-wd-<id>).
+        id: _wdTxId,
         type: 'withdrawal',
         amount: parseFloat(amount),
         username: user.username,
@@ -7255,12 +7434,13 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
       return res.status(400).json({ error: 'Monto de bonificación inválido' });
     }
 
-    // Pasamos jugayganaUserId guardado para saltearse el lookup en ShowUsers.
-    // Bypasea el bug "user not found" por paginación / scoping de sub-agentes.
-    const depositResult = await jugaygana.creditUserBalance(
+    // Id generado antes de llamar: sirve como `reference` (idempotencia de 1girox)
+    // y después como Transaction.id.
+    const _bonusTxId = uuidv4();
+    const depositResult = await girox.creditUserBalance(
       resolvedUsername,
       bonusAmount,
-      bonusUser.jugayganaUserId || null
+      `vip-bonus-${_bonusTxId}`
     );
 
     if (depositResult.success) {
@@ -7269,10 +7449,10 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
       // bonusUser ya lo resolvimos arriba con findOne — no hace falta repetir
       // el query (mismo efecto, una llamada menos a la DB).
 
-      logger.info(`[bonus] OK admin=${req.user?.username} user=${resolvedUsername} jgId=${bonusUser.jugayganaUserId || 'null'} amount=$${bonusAmount} transferId=${depositResult.data?.transfer_id || depositResult.data?.transferId || 'n/a'}`);
+      logger.info(`[bonus] OK admin=${req.user?.username} user=${resolvedUsername} amount=$${bonusAmount} ref=vip-bonus-${_bonusTxId} ledger=${depositResult.data?.transfer_id || 'n/a'}`);
 
       await Transaction.create({
-        id: uuidv4(),
+        id: _bonusTxId,
         type: 'bonus',
         amount: bonusAmount,
         username: resolvedUsername,
@@ -7285,7 +7465,7 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
       });
 
       // Obtener saldo actualizado para incluirlo en el mensaje (con retry)
-      const balanceResult = await jugayganaMovements.getUserBalanceWithRetry(resolvedUsername);
+      const balanceResult = await girox.getUserBalanceWithRetry(resolvedUsername);
       const newBalance = balanceResult.success ? balanceResult.balance : null;
       if (!balanceResult.success) {
         logger.warn(`[bonus] getUserBalanceWithRetry falló para ${resolvedUsername} tras bonus $${bonusAmount}. error=${balanceResult.error}`);
@@ -7302,7 +7482,7 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
               .replace(/\$\{amount\}/g, bonusAmount)
               .replace(/\$\{balance\}/g, newBalance !== null ? newBalance : '—');
           } else {
-            bonusMsg = `🎁 ¡Bonificación de $${bonusAmount} acreditada en tu cuenta! ✅\n💸 Tu saldo actual es $${newBalance !== null ? newBalance : '—'} 💸\n\nPuedes verificarlo en: https://www.jugaygana44.bet`;
+            bonusMsg = `🎁 ¡Bonificación de $${bonusAmount} acreditada en tu cuenta! ✅\n💸 Tu saldo actual es $${newBalance !== null ? newBalance : '—'} 💸\n\nPuedes verificarlo en: https://1girox.com`;
           }
           if (!bonusDisabled) await Message.create({ // null = comando vaciado a propósito → no enviar
             id: uuidv4(),
@@ -8280,19 +8460,22 @@ async function initializeData() {
     logger.error(`[startup-migration] backfill phoneKey v2 wrapper: ${e.message}`);
   }
 
-  if (process.env.PROXY_URL) {
-    console.log('🔍 Verificando IP pública...');
-    await jugaygana.logProxyIP();
-  }
-  
-  console.log('🔑 Probando conexión con JUGAYGANA...');
-  const sessionOk = await jugaygana.ensureSession();
-  if (sessionOk) {
-    console.log('✅ Conexión con JUGAYGANA establecida');
+  // 1girox no tiene sesión que abrir: la Partner API autentica con una API key fija
+  // en cada request. Lo único que se puede verificar al arrancar es que la config
+  // esté presente — si falta, TODO lo que toca plata va a fallar, así que conviene
+  // que se vea fuerte en los logs del arranque y no recién con el primer cliente.
+  if (girox.isEnabled()) {
+    console.log(`✅ 1girox configurado (${girox.getBaseUrl()})`);
   } else {
-    console.log('⚠️ No se pudo conectar con JUGAYGANA');
+    console.error('❌ 1girox SIN CONFIGURAR: faltan GIROX_API_URL y/o GIROX_API_KEY. ' +
+      'Cargas, retiros, bonos y el acceso al casino NO van a funcionar.');
   }
-  
+  if (!giroxReports.isEnabled()) {
+    console.error('❌ Reportes de 1girox SIN CONFIGURAR: faltan GIROX_ADMIN_USER/GIROX_ADMIN_PASS. ' +
+      'Los reembolsos y las comisiones de referidos NO se van a poder calcular.');
+  }
+
+
   // Verificar/crear admin principal
   // Usar variables de entorno para credenciales del admin.
   // ADMIN_USERNAME y ADMIN_PASSWORD deben configurarse en producción.
@@ -8360,19 +8543,19 @@ async function initializeData() {
       name: '/sys_deposit',
       description: 'Mensaje automático al realizar un depósito sin bonus. Variables disponibles: ${amount}, ${balance}',
       type: 'message',
-      response: '🔒💰 Depósito de ${amount} acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balance} 💸\n\nPuedes verificarlo en: https://jugaygana.bet\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥'
+      response: '🔒💰 Depósito de ${amount} acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balance} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥'
     },
     {
       name: '/sys_deposit_bonus',
       description: 'Mensaje automático al realizar un depósito con bonus. Variables disponibles: ${amount}, ${bonus}, ${balance}',
       type: 'message',
-      response: '🔒💰 Depósito de ${amount} (incluye ${bonus} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balance} 💸\n\nPuedes verificarlo en: https://jugaygana.bet\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥'
+      response: '🔒💰 Depósito de ${amount} (incluye ${bonus} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balance} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥'
     },
     {
       name: '/sys_bonus',
       description: 'Mensaje automático al aplicar una bonificación. Variables disponibles: ${amount}, ${balance}',
       type: 'message',
-      response: '🎁 ¡Bonificación de ${amount} acreditada en tu cuenta! ✅\n💸 Tu saldo actual es ${balance} 💸\n\nPuedes verificarlo en: https://www.jugaygana44.bet'
+      response: '🎁 ¡Bonificación de ${amount} acreditada en tu cuenta! ✅\n💸 Tu saldo actual es ${balance} 💸\n\nPuedes verificarlo en: https://1girox.com'
     },
     {
       name: '/sys_withdrawal',
@@ -8396,7 +8579,7 @@ async function initializeData() {
       name: '/sys_welcome',
       description: 'Mensaje de bienvenida que se envía cuando el usuario ingresa por primera vez (cada 24h). Variables: {username}, {cbu}',
       type: 'message',
-      response: '🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://www.jugaygana44.bet/\n\nCBU activo: {cbu}'
+      response: '🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}'
     },
     {
       name: '/sys_cbu',
@@ -8476,10 +8659,12 @@ app.post('/api/movements/deposit', authMiddleware, depositorMiddleware, async (r
       return res.status(400).json({ error: 'Monto mínimo $100' });
     }
     
-    const result = await jugaygana.depositToUser(
+    const _selfDepTxId = uuidv4();
+    const result = await girox.depositToUser(
       username,
       amount,
-      `Depósito desde Sala de Juegos - ${new Date().toLocaleString('es-AR')}`
+      `Depósito desde Sala de Juegos - ${new Date().toLocaleString('es-AR')}`,
+      `vip-sdep-${_selfDepTxId}`
     );
 
     if (result.success) {
@@ -8551,10 +8736,11 @@ app.post('/api/movements/withdraw', authMiddleware, async (req, res) => {
     }
     withdrawLockAcquired = true;
 
-    const result = await jugaygana.withdrawFromUser(
+    const result = await girox.withdrawFromUser(
       username,
       amountNum,
-      `Retiro desde Sala de Juegos - ${new Date().toLocaleString('es-AR')}`
+      `Retiro desde Sala de Juegos - ${new Date().toLocaleString('es-AR')}`,
+      `vip-swd-${uuidv4()}`
     );
 
     if (result.success) {
@@ -8591,7 +8777,7 @@ app.post('/api/movements/withdraw', authMiddleware, async (req, res) => {
 app.get('/api/movements/balance', authMiddleware, async (req, res) => {
   try {
     const username = req.user.username;
-    const result = await jugayganaMovements.getUserBalance(username);
+    const result = await girox.getUserBalance(username);
 
     if (result.success) {
       res.json({ balance: result.balance });
@@ -8679,14 +8865,19 @@ app.post('/api/withdrawal/request', authMiddleware, async (req, res) => {
     // descuento falla y no se paga — y al rechazar no hay que devolver nada.
     // CON retry (2 intentos): JUGAYGANA es flaky y a veces el lookup de saldo tarda/falla;
     // el reintento entra la mayoría de las veces. Cada intento ya falla rápido (timeout 12s).
-    const balanceResult = await jugayganaMovements.getUserBalanceWithRetry(username, { maxAttempts: 2, baseDelayMs: 400 });
+    const balanceResult = await girox.getUserBalanceWithRetry(username, { maxAttempts: 2, baseDelayMs: 400 });
     if (!balanceResult.success) {
       return res.status(503).json({
         error: 'La plataforma está demorada en este momento. Esperá unos segundos y volvé a intentar el retiro.',
         code: 'PLATFORM_SLOW'
       });
     }
-    const available = Number(balanceResult.balance) || 0;
+    // ⚠️ Se valida contra `available`, NO contra `balance`. Con el rollover activo en
+    // 1girox el jugador puede tener saldo que todavía no puede retirar. Si validáramos
+    // contra el total, la solicitud se aceptaría, el agente la trabajaría, y recién al
+    // confirmar la plataforma la rechazaría con `rollover_locked` — un retiro colgado
+    // en el panel y un cliente esperando plata que nunca iba a poder sacar.
+    const available = Number(balanceResult.available != null ? balanceResult.available : balanceResult.balance) || 0;
     if (available < amountNum) {
       return res.status(400).json({
         error: available <= 0
@@ -8931,9 +9122,16 @@ app.post('/api/install-bonus/claim', authMiddleware, async (req, res) => {
       });
     }
 
-    // Acreditar el bono en JUGAYGANA. Si falla, revertimos la reserva para
+    // Acreditar el bono en la plataforma. Si falla, revertimos la reserva para
     // que el usuario pueda reintentar más tarde.
-    const creditResult = await jugaygana.creditUserBalance(user.username, INSTALL_BONUS_AMOUNT);
+    // La `reference` sale del userId: el bono de instalación es UNO POR USUARIO
+    // para siempre, así que es la llave natural. Aunque la reserva se revierta y el
+    // usuario reintente, 1girox reconoce la operación y nunca lo paga dos veces.
+    const creditResult = await girox.creditUserBalance(
+      user.username,
+      INSTALL_BONUS_AMOUNT,
+      `vip-install-${req.user.userId}`
+    );
     if (!creditResult || !creditResult.success) {
       logger.error(`install-bonus: fallo al acreditar a ${user.username}: ${creditResult && creditResult.error}`);
       await User.updateOne(
@@ -8984,7 +9182,7 @@ app.post('/api/install-bonus/claim', authMiddleware, async (req, res) => {
       read: false
     });
 
-    const balanceResult = await jugayganaMovements.getUserBalance(user.username);
+    const balanceResult = await girox.getUserBalance(user.username);
     const newBalance = balanceResult.success ? balanceResult.balance : null;
 
     res.json({
@@ -9352,7 +9550,16 @@ app.post('/api/fire/claim-reward', authMiddleware, async (req, res) => {
       try { return JSON.stringify(value); } catch { return String(value); }
     };
 
-    const bonusResult = await jugayganaMovements.makeBonus(username, rewardAmount, rewardDesc + ' - Sala de Juegos');
+    // `reference` del premio de fueguito: usuario + día del hito + fecha del reclamo.
+    // No alcanza con usuario+día porque un mismo hito (ej. "día 7") se puede volver a
+    // alcanzar en una racha futura y sería un premio legítimo distinto; agregando la
+    // fecha, dos reclamos del mismo hito el mismo día son la misma operación (y por lo
+    // tanto no se pagan dos veces), pero un hito repetido meses después sí se paga.
+    // ⚠️ La fecha va en hora ARGENTINA, no UTC: entre las 21:00 y las 24:00 ART el día
+    // UTC ya cambió, así que un reclamo que falla falsamente a las 20:59 y se reintenta
+    // a las 21:01 tendría otra reference → se pagaría dos veces.
+    const _fireRef = `vip-fire-${userId}-d${reserved.pendingCashRewardDay}-${periodRanges.getTodayRangeArgentinaEpoch().dateStr}`;
+    const bonusResult = await girox.creditUserBalance(username, rewardAmount, _fireRef, { description: rewardDesc });
 
     if (!bonusResult.success) {
       // La acreditación falló → DEVOLVER el premio a pendiente para que el cliente
@@ -9533,9 +9740,10 @@ app.post('/api/admin/fire-milestones', authMiddleware, adminMiddleware, async (r
 });
 
 // Listar todas las campañas con stats resumidas (clicks + registrations).
-// Importante: jugayganaPassword está marcado select:false en el schema, por lo
-// que NUNCA viaja en esta respuesta. Sólo exponemos hasJugayganaCreds:bool para
-// que el panel sepa si la campaña ya tiene creds configuradas.
+// Importante: giroxApiKey está marcado select:false en el schema, por lo que NUNCA
+// viaja en esta respuesta. Sólo exponemos hasJugayganaCreds:bool para que el panel
+// sepa si la campaña ya tiene su propia key configurada.
+// (El nombre del flag se conserva por compatibilidad con el panel, que ya lo lee.)
 app.get('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const campaigns = await Campaign.find().sort({ createdAt: -1 }).lean();
@@ -9557,9 +9765,11 @@ app.get('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, res
       ...c,
       clicks: clicksByCode[c.code] || 0,
       registrations: regsByCode[c.code] || 0,
-      // Bandera derivada: el front la usa para mostrar el badge "Cuenta propia configurada".
-      // No exponemos el password ni siquiera derivado — sólo si hay username.
-      hasJugayganaCreds: !!c.jugayganaUsername
+      // Bandera derivada: el front la usa para mostrar el badge "Cuenta propia
+      // configurada". Nunca se expone la key, ni siquiera parcialmente.
+      // `giroxApiKey` es select:false → acá viene undefined; por eso se consulta
+      // aparte con el flag booleano que guarda el propio documento.
+      hasJugayganaCreds: !!c.hasGiroxKey
     }));
     res.json({ campaigns: enriched });
   } catch (err) {
@@ -9592,12 +9802,15 @@ function normalizeInfluencers(raw) {
   return out;
 }
 
-// Crear nueva campaña. Soporta opcionalmente creds JUGAYGANA del publicista
-// (jugayganaUsername + jugayganaPassword en plano → se cifra antes de guardar).
+// Crear nueva campaña. Soporta opcionalmente la API key de 1girox del publicista:
+// los jugadores creados con esa key quedan bajo SU cuenta (y las cargas salen de su
+// saldo), en vez de la cuenta master.
+// El campo del body sigue llamándose `jugayganaPassword` por compatibilidad con el
+// panel, que todavía manda ese nombre; internamente se guarda en `giroxApiKey`.
 app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { code, publisher, name, commissionType, commissionValue, notes,
-            jugayganaUsername, jugayganaPassword } = req.body || {};
+            jugayganaUsername, jugayganaPassword, giroxApiKey } = req.body || {};
     if (!code || !publisher || !name) {
       return res.status(400).json({ error: 'code, publisher y name son requeridos' });
     }
@@ -9609,18 +9822,25 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
     const ct = validTypes.includes(commissionType) ? commissionType : 'none';
     const cv = Number.isFinite(parseFloat(commissionValue)) ? parseFloat(commissionValue) : 0;
 
-    // Validación de pareja JUGAYGANA: ambos campos van juntos o ninguno.
-    let jgUsername = null;
-    let jgPassword = null;
-    const wantsCreds = (typeof jugayganaUsername === 'string' && jugayganaUsername.trim()) ||
-                       (typeof jugayganaPassword === 'string' && jugayganaPassword);
-    if (wantsCreds) {
-      if (!jugayganaUsername || !jugayganaPassword) {
-        return res.status(400).json({ error: 'Para configurar la cuenta del publicista necesitás username Y password' });
+    // La cuenta del publicista ahora es UNA SOLA cosa: su API key de 1girox.
+    // Ya no hace falta usuario+contraseña (no hay login: la key autentica sola).
+    // Se acepta tanto `giroxApiKey` como el viejo `jugayganaPassword` para no romper
+    // el panel mientras se actualiza.
+    const rawKey = (typeof giroxApiKey === 'string' && giroxApiKey.trim())
+      || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
+      || null;
+    let pubApiKey = null;
+    if (rawKey) {
+      if (!rawKey.startsWith('pk_')) {
+        return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
       }
-      jgUsername = String(jugayganaUsername).trim();
-      jgPassword = String(jugayganaPassword);
+      pubApiKey = rawKey;
     }
+    // El username del publicista ya no se usa para operar, pero se conserva como
+    // etiqueta informativa (el admin lo usa para saber de quién es la key).
+    const jgUsername = (typeof jugayganaUsername === 'string' && jugayganaUsername.trim())
+      ? jugayganaUsername.trim()
+      : null;
 
     let influencers = [];
     try { influencers = normalizeInfluencers(req.body.influencers) || []; }
@@ -9642,16 +9862,17 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
       createdBy: req.user.username,
       isActive: true,
       jugayganaUsername: jgUsername,
-      jugayganaPassword: jgPassword,
+      giroxApiKey: pubApiKey,
+      hasGiroxKey: !!pubApiKey,
       influencers
     });
 
-    // Nunca devolver el password en la respuesta. select:false en el schema lo
-    // protege en queries normales, pero toObject() del doc en memoria sí lo
-    // trae — limpiamos explícito.
+    // Nunca devolver la key en la respuesta. select:false la protege en queries
+    // normales, pero toObject() del doc en memoria sí la trae — se limpia explícito.
     const out = created.toObject();
+    delete out.giroxApiKey;
     delete out.jugayganaPassword;
-    out.hasJugayganaCreds = !!jgUsername;
+    out.hasJugayganaCreds = !!pubApiKey;
     res.status(201).json({ campaign: out });
   } catch (err) {
     logger.error(`[admin/campaigns POST] ${err.message}`);
@@ -9660,15 +9881,14 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
 });
 
 // Editar campaña existente. `code` es inmutable, los demás campos sí se pueden modificar.
-// Para las creds JUGAYGANA: jugayganaUsername se actualiza siempre que venga en el body
-// (string vacío o null = limpiar); jugayganaPassword sólo se actualiza si viene un valor
-// no vacío (vacío/ausente = mantener la actual). Para borrar las creds enteras, mandar
-// jugayganaUsername:null y jugayganaPassword:null explícitamente.
+// Para la cuenta del publicista: la API key sólo se actualiza si viene un valor no
+// vacío (vacío/ausente = mantener la actual, así el panel puede guardar sin re-tipear
+// la key). Para borrarla, mandar `clearJugayganaCreds: true`.
 app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const normalizedCode = String(req.params.code).toUpperCase().trim();
     const { publisher, name, commissionType, commissionValue, isActive, notes,
-            jugayganaUsername, jugayganaPassword, clearJugayganaCreds } = req.body || {};
+            jugayganaUsername, jugayganaPassword, giroxApiKey, clearJugayganaCreds } = req.body || {};
     const update = {};
     if (typeof publisher === 'string') update.publisher = publisher.trim().slice(0, 100);
     if (typeof name === 'string') update.name = name.trim().slice(0, 200);
@@ -9688,19 +9908,29 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
       }
     }
 
-    // === Creds JUGAYGANA ===
+    // === Cuenta del publicista (API key de 1girox) ===
+    // `hasGiroxKey` se mantiene en sincronía con la key en TODOS los caminos: es el
+    // espejo booleano que lee el listado del panel (la key es select:false).
     if (clearJugayganaCreds === true) {
       update.jugayganaUsername = null;
-      update.jugayganaPassword = null;
+      update.giroxApiKey = null;
+      update.hasGiroxKey = false;
     } else {
       if (typeof jugayganaUsername === 'string') {
         update.jugayganaUsername = jugayganaUsername.trim() || null;
-        // Si vacían el username explícitamente y NO mandan password, limpiamos también el password
-        // para mantener el invariante "ambos llenos o ambos vacíos".
-        if (!update.jugayganaUsername) update.jugayganaPassword = null;
       }
-      if (typeof jugayganaPassword === 'string' && jugayganaPassword.length > 0) {
-        update.jugayganaPassword = jugayganaPassword;
+      // Se acepta `giroxApiKey` o el viejo `jugayganaPassword` (el panel todavía
+      // manda ese nombre). Sólo se pisa si viene un valor: guardar el formulario sin
+      // tocar el campo NO borra la key existente.
+      const rawKey = (typeof giroxApiKey === 'string' && giroxApiKey.trim())
+        || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
+        || null;
+      if (rawKey) {
+        if (!rawKey.startsWith('pk_')) {
+          return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
+        }
+        update.giroxApiKey = rawKey;
+        update.hasGiroxKey = true;
       }
     }
 
@@ -9729,14 +9959,15 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
 
     if (!updated) return res.status(404).json({ error: 'Campaña no encontrada' });
 
-    // Invalidar sesión en el pool por si cambiaron las creds — el próximo
-    // create-user va a re-loguear con lo nuevo.
-    if ('jugayganaUsername' in update || 'jugayganaPassword' in update) {
-      jugayganaPublisherSessions.invalidateSession(normalizedCode);
+    // Con 1girox no hay sesión que invalidar (la key se lee de la DB en cada alta),
+    // pero se conserva el aviso porque el servicio lo deja registrado en el log.
+    if ('giroxApiKey' in update) {
+      giroxPublisherKeys.invalidateSession(normalizedCode);
     }
 
+    delete updated.giroxApiKey;
     delete updated.jugayganaPassword;
-    updated.hasJugayganaCreds = !!updated.jugayganaUsername;
+    updated.hasJugayganaCreds = !!updated.hasGiroxKey;
     res.json({ campaign: updated, renamedUsers });
   } catch (err) {
     logger.error(`[admin/campaigns PUT] ${err.message}`);
@@ -9745,23 +9976,25 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
 });
 
 // POST /api/admin/campaigns/:code/test-jugaygana-creds
-// Intenta loguearse en JUGAYGANA con las creds actualmente guardadas para esta
-// campaña. Útil para que el admin verifique desde el panel que las creds están
-// bien antes de que un publisher_admin intente crear un usuario.
+// Verifica que la API key guardada para esta campaña funcione contra 1girox. Sirve
+// para que el admin confirme desde el panel que la key está bien ANTES de que un
+// publisher_admin intente crear un usuario con ella (si estuviera mal, el alta
+// fallaría en background y el jugador quedaría sin cuenta en la plataforma).
+// La ruta conserva el nombre viejo porque el panel ya la llama así.
 app.post('/api/admin/campaigns/:code/test-jugaygana-creds', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const normalizedCode = String(req.params.code).toUpperCase().trim();
     const c = await Campaign.findOne({ code: normalizedCode })
-      .select('+jugayganaPassword jugayganaUsername').lean();
+      .select('+giroxApiKey jugayganaUsername').lean();
     if (!c) return res.status(404).json({ error: 'Campaña no encontrada' });
-    if (!c.jugayganaUsername || !c.jugayganaPassword) {
-      return res.status(400).json({ error: 'Esta campaña no tiene creds JUGAYGANA configuradas' });
+    if (!c.giroxApiKey) {
+      return res.status(400).json({ error: 'Esta campaña no tiene API key de 1girox configurada' });
     }
-    const result = await jugayganaPublisherSessions.testCreds(c.jugayganaUsername, c.jugayganaPassword);
+    const result = await giroxPublisherKeys.testKey(c.giroxApiKey);
     if (result.ok) {
-      return res.json({ ok: true, parentId: result.parentId });
+      return res.json({ ok: true });
     }
-    return res.status(400).json({ ok: false, error: result.error || 'Login falló' });
+    return res.status(400).json({ ok: false, error: result.error || 'La key fue rechazada' });
   } catch (err) {
     logger.error(`[admin/campaigns test-creds] ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });
@@ -9810,7 +10043,7 @@ app.delete('/api/admin/campaigns/:code/permanent', authMiddleware, adminMiddlewa
     } catch (_) { /* colección puede no existir, ignorar */ }
 
     // Invalidar cualquier sesión cacheada del pool para esta campaña.
-    try { jugayganaPublisherSessions.invalidateSession(normalizedCode); } catch (_) {}
+    try { giroxPublisherKeys.invalidateSession(normalizedCode); } catch (_) {}
 
     logger.info(`[admin/campaigns PERMANENT DELETE] ${normalizedCode} por ${req.user.username} (usuarios atribuidos: ${attributedUsers}, historias: ${storiesDeleted})`);
     res.json({ ok: true, deleted: normalizedCode, attributedUsers, storiesDeleted });
@@ -9951,73 +10184,62 @@ app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdmi
     // crea recién cuando el usuario ingresa (endpoint /api/messages/welcome) o
     // cuando envía su primer mensaje (upsert en /api/messages/send).
 
-    // Sincronizar con JUGAYGANA en background. Si la campaña tiene credenciales
-    // propias (sub-agente del publicista), el CREATEUSER se rutea por la sesión
-    // de ese sub-agente para que el usuario quede colgado del publicista correcto
-    // en la jerarquía de JUGAYGANA (y la comisión la cobre quien debe).
-    // Si la campaña no tiene creds configuradas, fallback al cliente master
+    // Sincronizar con la plataforma en background. Si la campaña tiene API key propia
+    // (la del publicista), el alta se hace con ESA key para que el jugador quede
+    // colgado del publicista correcto en la jerarquía de 1girox — y la comisión la
+    // cobre quien debe. Si la campaña no tiene key configurada, fallback a la master
     // (comportamiento legacy / idéntico al de POST /api/users).
     (async () => {
       try {
-        const hasPubCreds = !!(campaign.jugayganaUsername);
-        if (hasPubCreds) {
-          const result = await jugayganaPublisherSessions.createUserAsPublisher(campaign.code, {
+        const hasPubKey = await Campaign.hasGiroxApiKey(campaign.code);
+        if (hasPubKey) {
+          const result = await giroxPublisherKeys.createUserAsPublisher(campaign.code, {
             username: newUser.username,
             password: password
           });
           if (result.success) {
-            await User.updateOne(
-              { id: newUserId },
-              {
-                jugayganaUserId: result.jugayganaUserId || result.user?.user_id,
-                jugayganaUsername: result.jugayganaUsername || result.user?.user_name,
-                jugayganaSyncStatus: 'synced'
-              }
-            );
-            logger.info(`[publisher_admin create-user] ${username} creado bajo sub-agente de ${campaign.code}`);
+            // Sin giroxUserId: la Partner API no lo devuelve; lo completa después
+            // resolveGiroxUserId cuando se necesite.
+            await User.updateOne({ id: newUserId }, { giroxSyncStatus: 'synced' });
+            logger.info(`[publisher_admin create-user] ${username} creado con la key de ${campaign.code}`);
           } else if (result.code === 'NO_CREDS') {
-            // El check inicial dijo que había creds pero al loadCreds dentro del pool
-            // no las encontró — race condition con un PUT de campaña justo en ese
-            // momento. Fallback al master.
-            logger.warn(`[publisher_admin create-user] ${campaign.code} sin creds tras race — fallback master`);
-            const fallback = await jugaygana.syncUserToPlatform({
+            // El check inicial dijo que había key pero al leerla no estaba — race
+            // condition con un PUT de campaña justo en ese momento. Fallback al master.
+            logger.warn(`[publisher_admin create-user] ${campaign.code} sin key tras race — fallback master`);
+            const fallback = await girox.syncUserToPlatform({
               username: newUser.username, password
             });
             if (fallback.success) {
               await User.updateOne({ id: newUserId }, {
-                jugayganaUserId: fallback.jugayganaUserId || fallback.user?.user_id,
-                jugayganaUsername: fallback.jugayganaUsername || fallback.user?.user_name,
-                jugayganaSyncStatus: fallback.alreadyExists ? 'linked' : 'synced'
+                giroxSyncStatus: fallback.alreadyExists ? 'linked' : 'synced'
               });
             }
           } else {
-            // Falló el CREATEUSER con la sesión del publicista. NO hacemos fallback
-            // a la master automáticamente: si la creación falla con las creds del
-            // publicista, queremos que el admin se entere y arregle las creds —
-            // sino el user terminaría bajo la master con atribución mal asignada.
+            // Falló el alta con la key del publicista. NO hacemos fallback a la master
+            // automáticamente: si falla con la key del publicista queremos que el admin
+            // se entere y la arregle — si no, el jugador terminaría bajo la cuenta
+            // master con la atribución mal asignada (y la comisión al que no es).
             await User.updateOne({ id: newUserId }, {
-              jugayganaSyncStatus: 'error',
-              jugayganaSyncError: `[${result.code}] ${result.error}`.slice(0, 500)
+              giroxSyncStatus: 'error',
+              giroxSyncError: `[${result.code}] ${result.error}`.slice(0, 500)
             });
-            logger.warn(`[publisher_admin create-user] CREATEUSER por publicista falló ${campaign.code}/${username}: ${result.error}`);
+            logger.warn(`[publisher_admin create-user] alta por publicista falló ${campaign.code}/${username}: ${result.error}`);
           }
         } else {
-          // Campaña sin creds propias — comportamiento legacy: usar cuenta master.
-          const fallback = await jugaygana.syncUserToPlatform({
+          // Campaña sin key propia — comportamiento legacy: usar la cuenta master.
+          const fallback = await girox.syncUserToPlatform({
             username: newUser.username, password
           });
           if (fallback.success) {
             await User.updateOne({ id: newUserId }, {
-              jugayganaUserId: fallback.jugayganaUserId || fallback.user?.user_id,
-              jugayganaUsername: fallback.jugayganaUsername || fallback.user?.user_name,
-              jugayganaSyncStatus: fallback.alreadyExists ? 'linked' : 'synced'
+              giroxSyncStatus: fallback.alreadyExists ? 'linked' : 'synced'
             });
           } else {
-            logger.warn(`[publisher_admin create-user] JUGAYGANA sync (master) falló para ${username}: ${fallback.error}`);
+            logger.warn(`[publisher_admin create-user] sync 1girox (master) falló para ${username}: ${fallback.error}`);
           }
         }
       } catch (err) {
-        logger.warn(`[publisher_admin create-user] JUGAYGANA sync excepción para ${username}: ${err.message}`);
+        logger.warn(`[publisher_admin create-user] sync 1girox excepción para ${username}: ${err.message}`);
       }
     })();
 
@@ -12724,11 +12946,16 @@ async function _notifyInsufficientAndCloseChat(payout, available, agentUser) {
 async function _deductChipsAtConfirm(payout, agentUser) {
   const amt = Number(payout.amount);
   const user = await User.findOne({ id: payout.userId });
-  const jgId = (user && user.jugayganaUserId) || null;
 
-  // 1) Saldo actual del cliente.
-  const balRes = await jugayganaMovements.getUserBalance(payout.username);
-  const avail = (balRes && balRes.success) ? (Number(balRes.balance) || 0) : null;
+  // 1) Saldo RETIRABLE del cliente.
+  // ⚠️ Se usa `available`, no `balance`: con el feat de rollover activo en 1girox el
+  // jugador puede tener saldo que todavía NO puede retirar (objetivo de apuestas
+  // pendiente). Si validáramos contra el total, la plataforma rechazaría el retiro con
+  // `rollover_locked` y el pago quedaría colgado. Sin rollover, `available` == `balance`.
+  const balRes = await girox.getUserBalance(payout.username);
+  const avail = (balRes && balRes.success)
+    ? (Number(balRes.available != null ? balRes.available : balRes.balance) || 0)
+    : null;
   if (avail === null) {
     await PendingPayout.updateOne({ id: payout.id }, { $set: { status: 'failed', error: 'No se pudo leer el saldo para descontar' } });
     await _emitAdminOnlyChatNote(payout.userId, payout.username, `⚠️ No se pudo leer el saldo del cliente para descontar $${amt.toLocaleString('es-AR')}. Reintentá en unos minutos.`);
@@ -12742,22 +12969,35 @@ async function _deductChipsAtConfirm(payout, agentUser) {
     return { ok: false, insufficient: true, balance: avail };
   }
   // 3) Descontar en JUGAYGANA.
-  const w = await jugaygana.withdrawFromUser(payout.username, amt, `Retiro confirmado - ${payout.username}`);
+  // `reference` = el id del payout: único por solicitud de retiro y estable entre
+  // reintentos. Si el descuento se hizo pero la respuesta se perdió, reintentar con
+  // la misma reference NO vuelve a debitarle las fichas al cliente.
+  const w = await girox.withdrawFromUser(payout.username, amt, `Retiro confirmado - ${payout.username}`, `vip-payout-${payout.id}`);
   if (!w || !w.success) {
     await PendingPayout.updateOne({ id: payout.id }, { $set: { status: 'failed', error: 'No se pudo descontar: ' + ((w && w.error) || '') } });
     await _emitAdminOnlyChatNote(payout.userId, payout.username, `⚠️ No se pudo descontar las fichas ($${amt.toLocaleString('es-AR')}) en JUGAYGANA: ${(w && w.error) || 's/detalle'}. Reintentá.`);
     return { ok: false, error: 'No se pudo descontar las fichas: ' + ((w && w.error) || '') };
   }
   // 4) Verificar el descuento (anti-fantasma): el saldo tiene que haber bajado.
+  // ⚠️ Se compara `available` contra `available`. Antes se leía `available` para el
+  // "antes" y `balance` para el "después": con rollover activo esa mezcla da
+  // `avail - after = amt - locked`, o sea que la verificación FALLA siempre que haya
+  // algo bloqueado. Y fallar acá es lo peor que puede pasar: el retiro YA se ejecutó
+  // (las fichas se descontaron), el payout se marca `failed` con debitConfirmed:false
+  // y, si el agente lo rechaza, la devolución se saltea por "no se descontó nada"
+  // → el cliente se queda sin fichas Y sin plata.
   let after = null, deducted = false;
   try {
-    const a = await jugayganaMovements.getUserBalanceWithRetry(payout.username);
-    if (a && a.success) { after = Number(a.balance) || 0; deducted = (avail - after) >= (amt - 1); }
+    const a = await girox.getUserBalanceWithRetry(payout.username);
+    if (a && a.success) {
+      after = Number(a.available != null ? a.available : a.balance) || 0;
+      deducted = (avail - after) >= (amt - 1);
+    }
   } catch (_) {}
   if (!deducted) {
     await PendingPayout.updateOne({ id: payout.id }, { $set: { status: 'failed', balanceBefore: avail, balanceAfter: after, debitConfirmed: false, error: 'Descuento no confirmado' } });
     await _emitAdminOnlyChatNote(payout.userId, payout.username, `⚠️ El descuento de $${amt.toLocaleString('es-AR')} NO se pudo confirmar (saldo antes $${avail.toLocaleString('es-AR')} → después ${after == null ? '¿?' : '$' + Number(after).toLocaleString('es-AR')}). Verificá en JUGAYGANA antes de pagar manual. NO devuelvas a ciegas.`);
-    return { ok: false, error: 'No se pudo confirmar el descuento. Revisá el saldo en JUGAYGANA.' };
+    return { ok: false, error: 'No se pudo confirmar el descuento. Revisá el saldo en 1girox.' };
   }
   // 5) Descuento confirmado → registrar Transaction + marcar el payout.
   await PendingPayout.updateOne({ id: payout.id }, { $set: { balanceBefore: avail, balanceAfter: after, debitConfirmed: true, withdrawalTxId: w.data?.transfer_id || w.data?.transferId || null } });
@@ -12921,16 +13161,16 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
     if (payout.deductAtPay === true) {
       const W = Number(payout.amount);
       if (payout.debitConfirmed === true) {
-        const user = await User.findOne({ id: payout.userId });
-        const jgId = (user && user.jugayganaUserId) || null;
         let ok = false, data = null;
-        try { const r = await jugaygana.depositToUser(payout.username, W, 'Devolución de retiro rechazado', jgId); if (r && r.success) { ok = true; data = r.data; } } catch (e) { logger.error(`[payout-cancel] devolución (deductAtPay) falló payout=${id}: ${e.message}`); }
+        // `reference` derivada del payout: la devolución de un retiro rechazado ocurre
+        // UNA sola vez por payout, así que un reintento nunca puede devolver dos veces.
+        try { const r = await girox.depositToUser(payout.username, W, 'Devolución de retiro rechazado', `vip-payoutref-${payout.id}`); if (r && r.success) { ok = true; data = r.data; } } catch (e) { logger.error(`[payout-cancel] devolución (deductAtPay) falló payout=${id}: ${e.message}`); }
         if (ok) {
           await PendingPayout.updateOne({ id }, { $set: { chipsReturned: true } });
           try {
             await Transaction.create({ id: uuidv4(), type: 'deposit', amount: W, username: payout.username, userId: payout.userId, description: 'Devolución de retiro rechazado', adminId: req.user.userId, adminUsername: req.user.username, adminRole: req.user.role, transactionId: data?.transfer_id || data?.transferId, metadata: { source: 'payout_refund', refundKind: 'chips', payoutId: payout.id }, timestamp: new Date() });
           } catch (_) {}
-          try { const balRes = await jugayganaMovements.getUserBalanceWithRetry(payout.username); const uSock = connectedUsers.get(payout.userId); if (uSock && balRes.success) uSock.emit('balance_updated', { balance: balRes.balance }); } catch (_) {}
+          try { const balRes = await girox.getUserBalanceWithRetry(payout.username); const uSock = connectedUsers.get(payout.userId); if (uSock && balRes.success) uSock.emit('balance_updated', { balance: balRes.balance }); } catch (_) {}
           await _emitAdminOnlyChatNote(payout.userId, payout.username, `↩️ Retiro RECHAZADO: se devolvió $${W.toLocaleString('es-AR')} en fichas (el pago había fallado tras descontar).`);
           return res.json({ success: true, chipsReturned: true });
         }
@@ -12953,7 +13193,7 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
       await PendingPayout.updateOne({ id }, { $set: { chipsReturned: false } });
       await _emitAdminOnlyChatNote(payout.userId, payout.username,
         `⚠️ Retiro de $${Wf.toLocaleString('es-AR')} RECHAZADO SIN devolución automática: el descuento original NO está confirmado ` +
-        `(posible retiro sin saldo real). Revisá el historial en JUGAYGANA; si al cliente SÍ se le había descontado, devolvé a mano.`);
+        `(posible retiro sin saldo real). Revisá el historial en 1girox; si al cliente SÍ se le había descontado, devolvé a mano.`);
       logger.warn(`[payout-cancel] descuento no confirmado payout=${id} user=${payout.username} $${Wf} → NO se devolvieron fichas (revisión manual)`);
       return res.json({ success: true, chipsReturned: false, skippedRefund: true });
     }
@@ -12962,8 +13202,6 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
     // se devuelve esa porción como BONUS (capeada al monto del retiro) y el resto como
     // fichas comunes. Cada parte es una llamada independiente con sus propios reintentos;
     // si una falla queda nota interna al agente (no se reintenta a ciegas → no duplica).
-    const user = await User.findOne({ id: payout.userId });
-    const jgId = (user && user.jugayganaUserId) || null;
     const W = Number(payout.amount);
 
     // Cuánto del retiro era BONUS: miramos el último crédito del cliente, que puede ser
@@ -13007,11 +13245,11 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
     let bonusOk = bonusPart <= 0; // sin parte de bonus  → ya "ok"
     try {
       if (chipsPart > 0) {
-        const r = await jugaygana.depositToUser(payout.username, chipsPart, 'Devolución de retiro rechazado (fichas)', jgId);
+        const r = await girox.depositToUser(payout.username, chipsPart, 'Devolución de retiro rechazado (fichas)', `vip-payoutref-chips-${payout.id}`);
         if (r && r.success) { chipsOk = true; await mkRefundTx(chipsPart, 'chips', r.data); }
       }
       if (bonusPart > 0) {
-        const r = await jugaygana.creditUserBalance(payout.username, bonusPart, jgId);
+        const r = await girox.creditUserBalance(payout.username, bonusPart, `vip-payoutref-bonus-${payout.id}`);
         if (r && r.success) { bonusOk = true; await mkRefundTx(bonusPart, 'bonus', r.data); }
       }
     } catch (e) {
@@ -13022,7 +13260,7 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
     if (refunded) {
       await PendingPayout.updateOne({ id }, { $set: { chipsReturned: true } });
       try {
-        const balRes = await jugayganaMovements.getUserBalanceWithRetry(payout.username);
+        const balRes = await girox.getUserBalanceWithRetry(payout.username);
         const uSock = connectedUsers.get(payout.userId);
         if (uSock && balRes.success) uSock.emit('balance_updated', { balance: balRes.balance });
       } catch (_) {}
@@ -13968,10 +14206,14 @@ app.post('/api/roulette/spin', authMiddleware, async (req, res) => {
       });
     }
 
-    // Hay premio → auto-credit jugaygana.
+    // Hay premio → acreditarlo en la plataforma.
+    // `reference` = id del giro: único por tirada. Es la MISMA que usa el reintento
+    // manual desde el panel (`/api/admin/roulette/:id/retry-credit`), así que si el
+    // premio ya se había acreditado y sólo se perdió la respuesta, el reintento NO
+    // vuelve a pagarlo.
     let credit;
     try {
-      credit = await jugaygana.creditUserBalance(username, prizeARS);
+      credit = await girox.creditUserBalance(username, prizeARS, `vip-roulette-${spinDoc.id}`);
     } catch (e) {
       credit = { success: false, error: e.message };
     }
@@ -13995,7 +14237,10 @@ app.post('/api/roulette/spin', authMiddleware, async (req, res) => {
       });
     }
 
-    const txId = credit.transactionId || credit.transferId || null;
+    // FIX: antes leía `credit.transactionId || credit.transferId`, campos que el
+    // cliente NUNCA devolvió en la raíz (siempre vienen dentro de `data`) → el
+    // creditTxId de todos los giros se guardaba en null. Ahora se lee bien.
+    const txId = credit.data?.transfer_id || credit.data?.transferId || null;
     await DailyRouletteSpin.updateOne(
       { id: spinDoc.id },
       {
@@ -14102,7 +14347,9 @@ app.post('/api/admin/roulette/:id/retry-credit', authMiddleware, adminMiddleware
 
     let credit;
     try {
-      credit = await jugaygana.creditUserBalance(spin.username, spin.prizeARS);
+      // MISMA reference que el giro original: si el premio ya se había acreditado y
+      // sólo falló el registro local, este reintento no lo paga de nuevo.
+      credit = await girox.creditUserBalance(spin.username, spin.prizeARS, `vip-roulette-${spin.id}`);
     } catch (e) {
       credit = { success: false, error: e.message };
     }
@@ -14113,7 +14360,10 @@ app.post('/api/admin/roulette/:id/retry-credit', authMiddleware, adminMiddleware
       );
       return res.status(503).json({ error: (credit && credit.error) || 'Error acreditando' });
     }
-    const txId = credit.transactionId || credit.transferId || null;
+    // FIX: antes leía `credit.transactionId || credit.transferId`, campos que el
+    // cliente NUNCA devolvió en la raíz (siempre vienen dentro de `data`) → el
+    // creditTxId de todos los giros se guardaba en null. Ahora se lee bien.
+    const txId = credit.data?.transfer_id || credit.data?.transferId || null;
     await DailyRouletteSpin.updateOne(
       { id: spin.id },
       { $set: { status: 'credited', creditTxId: txId, creditedAt: new Date() }, $inc: { creditAttempts: 1 } }

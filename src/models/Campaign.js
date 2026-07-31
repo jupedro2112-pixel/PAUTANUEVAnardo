@@ -97,6 +97,36 @@ const campaignSchema = new mongoose.Schema({
     default: null,
     select: false
   },
+  // === API key de 1girox del publicista (opcional) — reemplazo de las creds de arriba ===
+  // En 1girox no hay usuario+contraseña por sub-agente: la jerarquía la define la
+  // API KEY. El manual es explícito: "los jugadores creados con esa key quedan bajo
+  // la cuenta del agente que la creó" y "los depósitos salen del saldo de ese agente".
+  //
+  // O sea que esta key sola cumple el rol que antes cumplían jugayganaUsername +
+  // jugayganaPassword, y sin sesiones que renovar (auth por header X-Api-Key fijo).
+  //
+  // Si queda null, el publisher_admin crea los usuarios con la key MASTER del env
+  // (GIROX_API_KEY) — comportamiento legacy. Las cargas y retiros siguen yendo
+  // siempre por la master.
+  //
+  // ⚠️ La key se guarda en texto plano (igual que jugayganaPassword). select:false
+  // impide que viaje en queries normales: sólo se trae cuando se necesita para
+  // firmar un request. NUNCA devolverla en respuestas del panel — exponer sólo
+  // hasGiroxApiKey:bool.
+  giroxApiKey: {
+    type: String,
+    default: null,
+    select: false
+  },
+  // Espejo booleano de "¿tiene giroxApiKey?", SIN select:false.
+  // Existe para que el listado de campañas del panel pueda mostrar el badge
+  // "cuenta propia configurada" sin tener que traer la key (que es un secreto) ni
+  // hacer una segunda consulta por campaña. Se mantiene en sincronía en los mismos
+  // lugares donde se escribe o se limpia `giroxApiKey`.
+  hasGiroxKey: {
+    type: Boolean,
+    default: false
+  },
   // === Influencers del publicista (sub-atribución para analítica) ===
   // Lista fija, gestionada por el admin general. Cuando un publisher_admin crea
   // un usuario, elige uno de estos influencers y el nombre queda en
@@ -115,14 +145,18 @@ const campaignSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Helper estático: ¿esta campaña tiene creds JUGAYGANA configuradas?
-// Usa countDocuments para no traer datos sensibles si sólo necesitamos saber sí/no.
-campaignSchema.statics.hasJugayganaCreds = async function(code) {
-  const c = await this.findOne(
-    { code: String(code).toUpperCase().trim() },
-    { jugayganaUsername: 1 }
-  ).lean();
-  return !!(c && c.jugayganaUsername);
+// (Acá vivía `hasJugayganaCreds`, que preguntaba por las credenciales de JUGAYGANA.
+// Eliminado en la migración a 1girox: quedó sin llamadores. El campo del MODELO
+// `jugayganaUsername` se conserva como etiqueta informativa del publicista.)
+
+// Helper estático: ¿esta campaña tiene API key de 1girox configurada?
+// Devuelve SÓLO un booleano: la key es un secreto y no debe salir de acá (por eso el
+// select explícito y el !! sobre el valor).
+campaignSchema.statics.hasGiroxApiKey = async function(code) {
+  const c = await this.findOne({ code: String(code).toUpperCase().trim() })
+    .select('+giroxApiKey')
+    .lean();
+  return !!(c && c.giroxApiKey);
 };
 
 campaignSchema.index({ isActive: 1, publisher: 1 });

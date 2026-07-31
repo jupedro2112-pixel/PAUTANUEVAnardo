@@ -26,9 +26,17 @@
 ## Qué es
 
 Backend de una **sala de juegos** (mercado argentino) que opera como wrapper sobre la
-plataforma externa **JUGAYGANA** (`admin.agentesadmin.bet`). Capta usuarios, los crea
-en JUGAYGANA por API, gestiona cargas/retiros vía CBU, reembolsos, ruleta, fueguito,
-referidos y campañas/publicistas. UX en PWA con notificaciones push (FCM).
+plataforma externa **1girox** (Partner API REST/JSON; panel en `admin.1girox.com`).
+Capta usuarios, los crea en la plataforma por API, gestiona cargas/retiros vía CBU,
+reembolsos, ruleta, fueguito, referidos y campañas/publicistas. UX en PWA con
+notificaciones push (FCM).
+
+> **Migración 2026-07-31:** antes el wrapper era sobre **JUGAYGANA**
+> (`admin.agentesadmin.bet`). Los 4 clientes viejos (`jugaygana.js`,
+> `jugaygana-movements.js`, `src/services/jugayganaService.js`,
+> `jugayganaPublisherSessions.js`) + `referralRevenueService.js` y
+> `jugayganaUserLinkService.js` **siguen en el repo pero YA NADIE los importa**: se
+> conservan sólo para poder revertir. No agregarles features ni tomarlos de referencia.
 
 **Stack:** Node 20 · Express · MongoDB (Atlas) · Mongoose · Socket.IO (+ Redis adapter
 para multi-instancia en AWS EB) · Firebase Admin (FCM) · AWS SNS (SMS OTP).
@@ -44,10 +52,16 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
   proxy a /src/models). **OJO: hay DOS connectDB** (este y `src/models/index.js`); el
   segundo NO se usa desde server.js. No tocar schemas en config/database.js (sólo
   define ExternalUser y UserActivity; el resto es proxy a /src/models).
-- `jugaygana.js` — cliente principal a JUGAYGANA (sesión auto-renovable, proxy opcional).
-- `jugaygana-movements.js` — endpoint alterno (deposit/withdraw/balance).
-- `src/services/jugayganaService.js` — cliente refactorizado (lo usa referidos).
-- `src/services/jugayganaPublisherSessions.js` — pool de sesiones por publicista.
+- `src/services/giroxService.js` — **cliente ÚNICO de la Partner API** (altas, saldo,
+  cargas, retiros, bonos, cambio de clave y login único/SSO).
+- `src/services/giroxReportsService.js` — netwin/GGR por jugador. ⚠️ NO es la Partner
+  API: pega contra el **panel** `admin.1girox.com` con un Bearer de sesión
+  auto-renovable. De acá dependen los reembolsos y las comisiones de referidos.
+- `src/services/giroxUserLinkService.js` — resuelve y cachea `User.giroxUserId`.
+- `src/services/giroxPublisherKeys.js` — alta de jugadores con la API key del publicista.
+- `src/utils/periodRanges.js` — rangos de fecha (ayer / semana / mes) en hora argentina.
+- `jugaygana*.js` + `referralRevenueService.js` + `jugayganaUserLinkService.js` —
+  **muertos**, sin consumidores. Ver la nota de migración arriba.
 - `src/models/` — schemas Mongoose canónicos (fuente de verdad).
 - `src/services/` — lógica (referidos, notificaciones, otp, metaCapi, fbAds, hgcash,
   comprobantes IA, analítica publicistas…).
@@ -59,8 +73,28 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
 
 - **JWT_SECRET y otros secrets** se cargan desde AWS SSM en el bootstrap async, NO al
   `require()`. Por eso hay lazy getters en `src/middlewares/auth.js` y rutas.
-- **JUGAYGANA es flaky** (Cloudflare → responde HTML). Hay auto-retry + manejo de HTML
-  en los clientes. No asumir respuestas inmediatas; reusar los clientes existentes.
+- **IDEMPOTENCIA POR `reference` (lo más importante de la plataforma nueva).** Cargas,
+  retiros y bonos llevan una `reference` única por operación. Reintentar con la MISMA
+  no duplica (la API devuelve `duplicate:true`). Se rompe plata en las dos direcciones:
+  si dos operaciones DISTINTAS comparten reference, la segunda **no se acredita** (el
+  cliente transfiere y no recibe fichas); si la reference **cambia** entre reintentos
+  del mismo pago, se paga **dos veces**. Por eso cada flujo la deriva de una llave que
+  ya es única y estable (id de Transaction, periodKey del reembolso, movimiento
+  bancario, id del giro/payout). Ver la tabla de prefijos `vip-*` en ARCHITECTURE §.
+- **Rate limit: 60 req/min** en la Partner API. Hay un limitador local (`GIROX_MAX_RPM`,
+  default 55) pero es **por proceso** → con N instancias en EB el techo real es N×55 y
+  el 429 sigue siendo posible (se reintenta respetando `Retry-After`).
+- **Rollover ACTIVO en la plataforma:** el jugador puede tener saldo que NO puede
+  retirar. Validar retiros contra `wagering.available`, **nunca** contra `balance`.
+- **Bonos "a reclamar" (API v1.7):** un bono dado con `POST /players/{u}/bonus` queda
+  bloqueado hasta que el jugador lo reclama en el casino. Por eso reembolsos, ruleta,
+  fueguito y bono de instalación se acreditan con **depósito libre**, no con `/bonus`.
+- **El netwin sale del PANEL, no de la Partner API.** Es el punto más frágil de toda la
+  integración: si 1girox cambia su panel, se caen reembolsos y comisiones de referidos.
+  Está pedido que lo agreguen a la Partner API; cuando lo hagan, se reemplaza.
+- **`giroxUserId`:** la Partner API trabaja sólo por username y NO devuelve el ID
+  numérico, pero el reporte de netwin lo EXIGE. Se resuelve contra el panel y se
+  cachea. Sin ese ID, a ese usuario no se le puede calcular el reembolso.
 - **Roles:** `user`, `admin` (todo), `depositor` (solo cargas), `withdrawer` (solo
   retiros), `publisher_admin` (solo crea usuarios de su publicista — lockdown via
   `PUBLISHER_ADMIN_ALLOWED_PATHS`).
@@ -71,11 +105,13 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
   cualquier mensaje automático nuevo.
 - **Transaction** (cargas/retiros) es permanente (sin TTL). **Message** tiene TTL de 3
   días. La analítica de clientes se basa en Transaction.
-- **Hay 4 clientes JUGAYGANA** con sesión propia cada uno: `jugaygana.js` (cargas/
-  retiros/reembolsos, montos ×100 centavos), `jugaygana-movements.js` (balance +
-  makeBonus; ⚠️ sus makeDeposit/makeWithdrawal NO multiplican ×100 — no usarlos para
-  plata), `src/services/jugayganaService.js` (referidos/bonus/passwords) y
-  `jugayganaPublisherSessions.js` (pool por publicista). Reusar el que use el flujo.
+- **Montos en PESOS.** ⚠️ Ojo si mirás código o docs viejos: JUGAYGANA trabajaba en
+  centavos y todo se multiplicaba ×100. **1girox NO** — se manda el monto tal cual, con
+  decimales si hace falta. Multiplicar por 100 sería cargar 100 veces de más.
+- **No hay sesión que renovar** en la Partner API (auth por `X-Api-Key` fija) ni
+  respuestas HTML de Cloudflare. Todo eso —`ensureSession`, mutex de login,
+  `isHtmlBlocked`— murió con JUGAYGANA. El único token de sesión que queda es el del
+  PANEL, dentro de `giroxReportsService` (y se renueva solo).
 - **Bonos automáticos APAGADOS por flags** (owner 2026-06-24): `INACTIVIDAD_DISABLED`
   y `BONUS_STRATEGY_DISABLED` (server.js) + `CHARGE_BONUSES_DISABLED`
   (notificationRulesService) + bonos de encuesta con `bDays=[]`. Tope 30% en TODO lo
