@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v52'; // v52: casino embebido en recuadro dentro de la PWA
+const CACHE_VERSION = 'v53'; // v53: escape del casino embebido (abrir aparte) + vigilante
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

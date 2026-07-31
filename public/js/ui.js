@@ -777,6 +777,18 @@ VIP.ui.enterCasino = async function() {
     if (response.ok && data.success && data.redirectUrl) {
       const frame = document.getElementById('casinoFrame');
       if (frame) frame.src = data.redirectUrl;
+
+      // VIGILANTE: el `load` del iframe dispara aunque la app de adentro se quede
+      // colgada. El caso típico es el BLOQUEO DE COOKIES DE TERCEROS: el casino
+      // carga, intenta leer su sesión, el navegador se la niega por estar embebido
+      // en otro dominio, y queda girando para siempre. Desde afuera no se puede
+      // detectar (es otro origen, no podemos mirar adentro), así que se usa un
+      // tiempo límite y se le ofrece al jugador la salida.
+      clearTimeout(VIP.ui._casinoWatchdog);
+      VIP.ui._casinoWatchdog = setTimeout(function() {
+        if (!VIP.ui._casinoOpen) return;
+        VIP.ui._casinoFrameStuck();
+      }, 15000);
       return;
     }
 
@@ -786,6 +798,89 @@ VIP.ui.enterCasino = async function() {
   } finally {
     VIP.ui._casinoOpening = false;
   }
+};
+
+/**
+ * Abre el casino en una PESTAÑA APARTE (no embebido).
+ *
+ * Es la salida cuando el navegador no deja que el casino funcione dentro del
+ * recuadro. Al abrirse como sitio principal, sus cookies dejan de ser "de terceros"
+ * y la sesión funciona normal.
+ *
+ * ⚠️ La pestaña se abre ANTES del fetch, dentro del gesto del usuario: si se abriera
+ * después, el bloqueador de pop-ups (sobre todo en mobile) la mataría.
+ * Y se pide un link NUEVO a propósito: el anterior ya lo consumió el iframe y los
+ * códigos son de un solo uso.
+ */
+VIP.ui.openCasinoInTab = async function() {
+  let win = null;
+  try {
+    win = window.open('', '_blank');
+    if (win && win.document) {
+      win.document.write(
+        '<!doctype html><meta charset="utf-8"><title>Entrando al casino…</title>' +
+        '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
+        'height:100vh;background:#12101a;color:#d4af37;font-family:system-ui,sans-serif;' +
+        'font-size:18px;font-weight:700">🎰 Entrando al casino…</body>'
+      );
+    }
+  } catch (e) { win = null; }
+
+  try {
+    const response = await fetch(`${VIP.config.API_URL}/api/platform/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${VIP.state.currentToken}`
+      }
+    });
+    const data = await response.json();
+
+    if (response.ok && data.success && data.redirectUrl) {
+      if (win && !win.closed) {
+        win.location.href = data.redirectUrl;
+      } else {
+        // Pop-up bloqueado → se navega en la pestaña actual.
+        window.location.href = data.redirectUrl;
+        return;
+      }
+      VIP.ui.closeCasinoFrame();
+      return;
+    }
+    if (win && !win.closed) win.close();
+    VIP.ui.showToast(data.error || 'No pudimos abrirte el casino.', 'error');
+  } catch (e) {
+    if (win && !win.closed) win.close();
+    VIP.ui.showToast('Sin conexión. Intentá de nuevo.', 'error');
+  }
+};
+
+/** El casino no terminó de cargar dentro del recuadro: se ofrece abrirlo aparte. */
+VIP.ui._casinoFrameStuck = function() {
+  const status = document.getElementById('casinoFrameStatus');
+  const frame = document.getElementById('casinoFrame');
+  if (!status) return;
+  // El iframe se deja visible por si en realidad terminó de cargar y sólo tardó:
+  // el aviso se muestra encima, sin tapar el juego.
+  status.style.display = 'flex';
+  status.style.position = 'absolute';
+  status.style.inset = 'auto 0 0 0';
+  status.style.background = 'rgba(13,13,26,0.96)';
+  status.style.padding = '18px';
+  status.innerHTML =
+    '<div style="color:#ffd479;font-size:15px;font-weight:700;line-height:1.45;max-width:460px;">' +
+      '¿El casino no termina de cargar?</div>' +
+    '<div style="color:#aaa;font-size:13px;font-weight:400;line-height:1.45;max-width:460px;">' +
+      'Tu navegador puede estar bloqueando el casino por estar abierto acá adentro. ' +
+      'Abrilo aparte y va a funcionar normal.</div>' +
+    '<button type="button" onclick="VIP.ui.openCasinoInTab()" ' +
+      'style="background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;border:none;' +
+      'padding:12px 26px;border-radius:24px;font-weight:800;font-size:15px;cursor:pointer;">' +
+      '↗ Abrir el casino aparte</button>' +
+    '<button type="button" onclick="document.getElementById(\'casinoFrameStatus\').style.display=\'none\'" ' +
+      'style="background:none;color:#888;border:none;font-size:13px;cursor:pointer;">' +
+      'Seguir esperando</button>';
+  if (frame) frame.style.display = 'block';
 };
 
 /** Crea (una sola vez) y muestra el recuadro del casino. */
@@ -798,18 +893,26 @@ VIP.ui._showCasinoFrame = function() {
     overlay.style.cssText =
       'position:fixed;inset:0;z-index:99999;background:#0d0d1a;display:flex;flex-direction:column;';
     overlay.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;' +
       'padding:8px 12px;background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);' +
       'flex:0 0 auto;">' +
         '<span style="color:#d4af37;font-weight:800;font-size:15px;">🎰 CASINO</span>' +
-        '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
-          'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
-          'border-radius:20px;padding:6px 16px;font-size:14px;font-weight:700;cursor:pointer;">' +
-          '✕ Cerrar</button>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+          // Escape SIEMPRE visible: si el casino no carga embebido (cookies de
+          // terceros bloqueadas), el jugador no queda atrapado mirando un spinner.
+          '<button type="button" onclick="VIP.ui.openCasinoInTab()" ' +
+            'style="background:rgba(212,175,55,0.15);color:#d4af37;border:1px solid rgba(212,175,55,0.4);' +
+            'border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;">' +
+            '↗ Abrir aparte</button>' +
+          '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
+            'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
+            'border-radius:20px;padding:6px 16px;font-size:14px;font-weight:700;cursor:pointer;">' +
+            '✕ Cerrar</button>' +
+        '</div>' +
       '</div>' +
-      '<div id="casinoFrameStatus" style="flex:1;display:flex;align-items:center;' +
-        'justify-content:center;color:#d4af37;font-size:16px;font-weight:700;text-align:center;padding:20px;">' +
-        '🎰 Entrando al casino…</div>' +
+      '<div id="casinoFrameStatus" style="flex:1;display:flex;flex-direction:column;gap:14px;' +
+        'align-items:center;justify-content:center;color:#d4af37;font-size:16px;font-weight:700;' +
+        'text-align:center;padding:20px;">🎰 Entrando al casino…</div>' +
       // `allow` habilita pantalla completa y sonido dentro de los juegos.
       '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
         'allow="autoplay; fullscreen; payment"></iframe>';
@@ -822,6 +925,9 @@ VIP.ui._showCasinoFrame = function() {
       const status = document.getElementById('casinoFrameStatus');
       if (status) status.style.display = 'none';
       frame.style.display = 'block';
+      // Ojo: este `load` sólo dice que el HTML llegó, NO que la app de adentro
+      // haya podido iniciar sesión. Por eso el vigilante NO se cancela acá — si
+      // la app se cuelga por cookies bloqueadas, igual va a avisar a los 15s.
     });
   }
 
@@ -839,6 +945,7 @@ VIP.ui._showCasinoFrame = function() {
 
 /** Cierra el recuadro y vuelve a VIPCARGAS. */
 VIP.ui.closeCasinoFrame = function() {
+  clearTimeout(VIP.ui._casinoWatchdog);
   const overlay = document.getElementById('casinoOverlay');
   if (!overlay) return;
   // Se vacía el src para que el casino deje de correr en segundo plano (si no, sigue
