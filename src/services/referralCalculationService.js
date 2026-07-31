@@ -7,41 +7,40 @@
  * Dos diferencias importantes respecto de la versión vieja:
  *   1) se consulta por `User.giroxUserId` (ID numérico del jugador), no por username;
  *   2) la comisión del owner ya NO la define el proveedor — es NUESTRA tasa fija
- *      (ver `getOwnerCommissionRate`, 8% por defecto).
+ *      (ver `utils/referralRate.js`, 8% por defecto).
  * Los montos vienen en PESOS: no se divide por 100 en ningún lado.
  */
 const { v4: uuidv4 } = require('uuid');
 const { User, ReferralCommission, ReferralPayout } = require('../models');
 const giroxReportsService = require('./giroxReportsService');
 const { resolveGiroxUserId } = require('./giroxUserLinkService');
-const { getReferralRateForUser } = require('../utils/referralRate');
+const { getReferralRateForUser, getConfiguredRate } = require('../utils/referralRate');
 const { getPeriodRange } = require('../utils/periodKey');
 const logger = require('../utils/logger');
 
 /**
- * Tasa de comisión del OWNER sobre el netwin del referido (decimal, ej. 0.08).
+ * ⚠️ CÓMO SE CALCULA LA COMISIÓN DE REFERIDOS (decisión del owner, 2026-07-31)
  *
- * ⚠️ CAMBIO DE ORIGEN AL MIGRAR A 1GIROX (owner, 2026-07-31):
- * En JUGAYGANA la tasa la ponía el PROVEEDOR (`providers[].owner_commission`) y el
- * revenue del owner salía de ahí (ownerRevenue = ggr × tasaDelProveedor). En 1girox
- * TODOS los campos `commission` del reporte vuelven en 0 (nuestra cuenta no tiene
- * comisión configurada por proveedor), así que la tasa ahora es NUESTRA: 8% del
- * netwin del referido. Sobre ese ownerRevenue se aplica después la tasa del
- * referidor (`getReferralRateForUser`, 7% por defecto) — el encadenamiento de dos
- * tasas es idéntico al de antes, sólo cambió de dónde sale la primera.
+ *     comisión del referidor = netwin del referido × 8%
  *
- * Getter LAZY a propósito: los env/secrets se cargan desde SSM en el bootstrap
- * async, DESPUÉS de los `require()` (mismo patrón que `hgcashService.getToken()`).
- * Leerlo en el top-level congelaría el default.
+ * Y NADA MÁS. Una sola tasa, aplicada una sola vez.
  *
- * @returns {number} tasa decimal (0.08 por defecto)
+ * Historia, porque el código venía de otro lado: en JUGAYGANA había DOS tasas
+ * encadenadas — el proveedor nos daba una comisión sobre el GGR
+ * (`providers[].owner_commission`) y sobre ESE resultado se aplicaba la tasa del
+ * referidor (7%). En 1girox todos los campos `commission` del reporte vuelven en 0,
+ * así que al migrar se puso el 8% en el primer eslabón… y quedó multiplicándose por
+ * el 7% del segundo: el referidor terminaba cobrando 0,56% del netwin en vez de 8%.
+ *
+ * Se eliminó el encadenamiento. Ahora:
+ *   - `totalOwnerRevenue` = el netwin CRUDO que generó el referido (sin tocar).
+ *   - `referralRate`      = lo que se lleva el referidor (8%, ver utils/referralRate).
+ *   - `commissionAmount`  = totalOwnerRevenue × referralRate.
+ *
+ * Se mantiene así porque toda la maquinaria de liquidación (deltas contra
+ * `alreadySettledRevenue`, pagos parciales) trabaja sobre `totalOwnerRevenue`.
+ * La tasa vive en UN solo lugar: `src/utils/referralRate.js`.
  */
-function getOwnerCommissionRate() {
-  const pct = Number(process.env.GIROX_REFERRAL_COMMISSION_PCT);
-  // Sanea valores basura (NaN, negativos, >100): se cae al 8% acordado.
-  const safePct = Number.isFinite(pct) && pct > 0 && pct <= 100 ? pct : 8;
-  return safePct / 100;
-}
 
 /**
  * Consulta el netwin de UN referido en 1girox y lo traduce al shape que este
@@ -84,23 +83,28 @@ async function fetchReferredRevenue(referredUser, periodKey, fromDate, toDate) {
     return { success: false, error: r.error, code: r.code || null, giroxUserId };
   }
 
-  const rate = getOwnerCommissionRate();
   const netwin = Number(r.totalNetwin) || 0;
-  // Netwin negativo = el jugador ganó en el período: no hay revenue para el owner
-  // (ni comisión para el referidor). Se corta en 0 para no arrastrar deuda.
-  const ownerRevenue = netwin > 0 ? netwin * rate : 0;
+  // Netwin negativo = el jugador GANÓ en el período: no hay nada que repartir. Se
+  // corta en 0 para no arrastrar deuda al mes siguiente (el referidor no "debe" nada
+  // porque su referido tuvo un buen mes).
+  //
+  // ⚠️ Acá NO se aplica ninguna tasa. `totalOwnerRevenue` es el netwin CRUDO; el 8%
+  // del referidor se aplica UNA sola vez, más abajo (commissionAmount). Antes se
+  // multiplicaba en los dos lugares y el referidor cobraba 0,56% en vez de 8%.
+  const ownerRevenue = netwin > 0 ? netwin : 0;
 
   // providersBreakdown conserva el shape histórico del modelo
   // ({providerName, ggr, ownerCommissionRate, ownerRevenue}) — NO se toca el schema.
-  // `ggr` = netwin del proveedor; `ownerCommissionRate` = NUESTRA tasa (el campo
-  // `commission` que devuelve 1girox viene siempre en 0 y se descarta a propósito).
+  // `ggr` y `ownerRevenue` son ambos el netwin del proveedor (sin tasa aplicada);
+  // `ownerCommissionRate` queda en 1 porque el campo `commission` de 1girox siempre
+  // vuelve en 0 y la tasa del referidor no corresponde a este nivel.
   const providers = (r.providers || []).map((p) => {
     const pNetwin = Number(p.netwin) || 0;
     return {
       providerName: p.providerName || 'desconocido',
       ggr: pNetwin,
-      ownerCommissionRate: rate,
-      ownerRevenue: pNetwin > 0 ? pNetwin * rate : 0
+      ownerCommissionRate: 1,
+      ownerRevenue: pNetwin > 0 ? pNetwin : 0
     };
   });
 
@@ -110,8 +114,8 @@ async function fetchReferredRevenue(referredUser, periodKey, fromDate, toDate) {
     totalGgr: netwin,                    // netwin del referido (montos en PESOS, no centavos)
     totalBets: Number(r.totalBets) || 0,
     totalWins: Number(r.totalPayout) || 0,  // "wins" = lo pagado al jugador
-    totalOwnerRevenue: ownerRevenue,
-    ownerCommissionRate: rate,
+    totalOwnerRevenue: ownerRevenue,     // = netwin crudo; la tasa se aplica una sola vez
+    ownerCommissionRate: 1,
     netwinScope: r.netwinScope || null,
     providers,
     revenueScope: 'perUser',
@@ -218,7 +222,7 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
   }
   logger.info(
     `[ReferralCalc] Pre-fetch revenues completado | period=${periodKey} usuarios=${usersNeedingRevenue.length} ` +
-    `concurrency=${REVENUE_CONCURRENCY} ownerCommissionRate=${getOwnerCommissionRate()}`
+    `concurrency=${REVENUE_CONCURRENCY} tasaReferidor=${getConfiguredRate()}`
   );
 
   for (const [referrerId, usersReferredByThisReferrer] of referrers) {
