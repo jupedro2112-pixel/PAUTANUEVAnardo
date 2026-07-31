@@ -383,6 +383,49 @@ async function checkUserExists(username) {
 }
 
 /**
+ * Chequeo de salud REAL contra la Partner API, para diagnóstico.
+ *
+ * ⚠️ NO usar `getUserInfoByName` para esto: devuelve `null` ante CUALQUIER fallo
+ * (404, 401, timeout…), así que un `null` no distingue "el jugador no existe" de
+ * "la key fue rechazada". Ese fue exactamente el falso positivo que hizo que el
+ * endpoint de health dijera "la key es válida" mientras el alta de usuarios fallaba
+ * con 401. Acá se mira el código de error crudo.
+ *
+ * Consulta un jugador inexistente: la respuesta ESPERADA es 404 player_not_found.
+ * @returns { ok, estado, detalle, httpStatus, code }
+ */
+async function ping() {
+  if (!isEnabled()) {
+    return { ok: false, estado: 'sin_configurar', detalle: 'Faltan GIROX_API_URL y/o GIROX_API_KEY' };
+  }
+  const probe = 'zz_probe_' + Date.now().toString(36).slice(-8);
+  const r = await _request({
+    method: 'get',
+    path: `/players/${probe}`,
+    label: `ping(${probe})`,
+    retryable: false // diagnóstico: queremos la respuesta cruda, sin esperar reintentos
+  });
+
+  if (r.ok) {
+    return { ok: false, estado: 'inesperado', detalle: 'Devolvió datos para un jugador que no existe' };
+  }
+  if (r.code === 'player_not_found' || r.httpStatus === 404) {
+    return { ok: true, estado: 'ok', detalle: 'La plataforma responde y la API key es válida', httpStatus: r.httpStatus };
+  }
+  if (r.code === 'unauthorized' || r.httpStatus === 401) {
+    return {
+      ok: false,
+      estado: 'key_rechazada',
+      detalle: 'La plataforma respondió, pero RECHAZÓ la API key (401 unauthorized). ' +
+        'O la Base URL es de otra instalación, o la key está inactiva/regenerada.',
+      httpStatus: r.httpStatus,
+      code: r.code
+    };
+  }
+  return { ok: false, estado: 'error', detalle: r.error, httpStatus: r.httpStatus, code: r.code };
+}
+
+/**
  * Crea el jugador si no existe; si ya existe, lo reporta como vinculado.
  * Equivalente a jugaygana.syncUserToPlatform, pero SIN jugayganaUserId (1girox va por username).
  * @returns { success, alreadyExists, platformUsername, player } | { success:false, error, code }
@@ -724,6 +767,7 @@ module.exports = {
   createPlatformUser,
   getUserInfoByName,
   checkUserExists,
+  ping,
   syncUserToPlatform,
   validateCredentials,
   changeUserPassword,

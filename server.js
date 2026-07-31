@@ -5414,14 +5414,16 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
     return res.json(out);
   }
 
-  // Prueba real contra la Partner API: se consulta un jugador que no existe.
-  // Respuesta esperada: null (404 player_not_found) → la URL y la key son correctas.
+  // Prueba real contra la Partner API.
+  // ⚠️ Usa girox.ping(), NO getUserInfoByName: esta última devuelve null ante
+  // CUALQUIER fallo (404, 401, timeout), así que no distingue "el jugador no existe"
+  // de "la key fue rechazada" — y este chequeo llegó a informar "key válida" mientras
+  // el alta de usuarios fallaba con 401.
+  let pong = null;
   try {
-    const probeUser = 'zz_probe_' + Date.now().toString(36).slice(-8);
-    const info = await girox.getUserInfoByName(probeUser);
-    out.pruebas.consultaJugador = (info === null)
-      ? 'OK — la plataforma responde y la key es válida'
-      : 'RARO — devolvió datos para un usuario inexistente';
+    pong = await girox.ping();
+    out.pruebas.consultaJugador = `${pong.estado.toUpperCase()} — ${pong.detalle}` +
+      (pong.httpStatus ? ` (HTTP ${pong.httpStatus})` : '');
   } catch (e) {
     out.pruebas.consultaJugador = 'FALLÓ: ' + e.message;
   }
@@ -5468,9 +5470,18 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
     }
   } catch (_) {}
 
-  out.diagnostico = out.pruebas.consultaJugador && out.pruebas.consultaJugador.startsWith('OK')
-    ? 'La Partner API responde correctamente.'
-    : 'La Partner API NO está respondiendo como se espera — revisá GIROX_API_URL y GIROX_API_KEY.';
+  if (pong && pong.ok) {
+    out.diagnostico = 'La Partner API responde correctamente y la API key es válida.';
+  } else if (pong && pong.estado === 'key_rechazada') {
+    out.diagnostico =
+      '🔴 LA PLATAFORMA RECHAZA LA API KEY (401). La URL responde, pero esa key no es de ' +
+      'esa instalación. Dos causas posibles: (a) GIROX_API_URL apunta a la Partner API de ' +
+      'OTRA marca, o (b) la key se regeneró/desactivó desde el panel (Clientes de API). ' +
+      'Pedile a 1girox la Base URL de TU instalación, o generá una key nueva y cargala.';
+  } else {
+    out.diagnostico = 'La Partner API NO responde como se espera — revisá GIROX_API_URL y GIROX_API_KEY. ' +
+      'Detalle: ' + ((pong && pong.detalle) || 'sin detalle');
+  }
 
   res.json(out);
 });
