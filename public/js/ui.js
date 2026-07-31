@@ -741,24 +741,28 @@ VIP.ui.copyPlatformUsername = function() {
 // Además el código de acceso vence a los 60 segundos, así que no se cachea nada.
 VIP.ui._casinoOpening = false;
 
+/**
+ * Abre el casino EMBEBIDO en un recuadro a pantalla completa, dentro de la PWA.
+ * El jugador nunca sale de VIPCARGAS: cierra el recuadro con la ✕ y vuelve al chat.
+ *
+ * Orden de las cosas (importa):
+ *   1. Se muestra el recuadro con un "cargando" — INMEDIATO, en el mismo click.
+ *   2. Recién ahí se pide el link de acceso al backend.
+ *   3. Apenas llega, se carga en el iframe.
+ *
+ * ⚠️ Por qué se pide el link DESPUÉS de abrir el recuadro y no antes: el código de
+ * acceso vence a los 60 SEGUNDOS y es de un solo uso. Cuanto menos tiempo pase entre
+ * que la plataforma lo emite y el navegador lo usa, mejor. En conexiones lentas (o por
+ * Tor) pedirlo antes y usarlo después llegaba vencido: "El enlace expiró".
+ */
+VIP.ui._casinoOpen = false;
+
 VIP.ui.enterCasino = async function() {
   if (VIP.ui._casinoOpening) return; // anti doble-click
   VIP.ui._casinoOpening = true;
 
-  // 1) Abrir la pestaña YA, dentro del gesto del usuario (si no, la bloquean).
-  let win = null;
-  try {
-    win = window.open('', '_blank');
-    if (win && win.document) {
-      win.document.write(
-        '<!doctype html><meta charset="utf-8">' +
-        '<title>Entrando al casino…</title>' +
-        '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
-        'height:100vh;background:#12101a;color:#d4af37;font-family:system-ui,sans-serif;' +
-        'font-size:18px;font-weight:700">🎰 Entrando al casino…</body>'
-      );
-    }
-  } catch (e) { win = null; }
+  VIP.ui.closePlatformModal();
+  VIP.ui._showCasinoFrame();   // recuadro visible YA, con "cargando"
 
   try {
     const response = await fetch(`${VIP.config.API_URL}/api/platform/session`, {
@@ -771,29 +775,109 @@ VIP.ui.enterCasino = async function() {
     const data = await response.json();
 
     if (response.ok && data.success && data.redirectUrl) {
-      // 2) Redirigir apenas llega: el código es de un solo uso y vence en 60s.
-      if (win && !win.closed) {
-        win.location.href = data.redirectUrl;
-      } else {
-        // La pestaña fue bloqueada → navegamos en la actual (la PWA queda en el historial).
-        window.location.href = data.redirectUrl;
-      }
-      VIP.ui.closePlatformModal();
+      const frame = document.getElementById('casinoFrame');
+      if (frame) frame.src = data.redirectUrl;
       return;
     }
 
-    // Falló el SSO → cerramos la pestaña vacía y caemos al modal de acceso manual.
-    if (win && !win.closed) win.close();
-    VIP.ui.showToast(data.error || 'No pudimos abrirte el casino automáticamente.', 'error');
-    VIP.ui.openPlatformModal();
+    VIP.ui._casinoFrameError(data.error || 'No pudimos abrirte el casino en este momento.');
   } catch (error) {
-    if (win && !win.closed) win.close();
-    VIP.ui.showToast('Sin conexión. Revisá tu internet e intentá de nuevo.', 'error');
-    VIP.ui.openPlatformModal();
+    VIP.ui._casinoFrameError('Sin conexión. Revisá tu internet e intentá de nuevo.');
   } finally {
     VIP.ui._casinoOpening = false;
   }
 };
+
+/** Crea (una sola vez) y muestra el recuadro del casino. */
+VIP.ui._showCasinoFrame = function() {
+  let overlay = document.getElementById('casinoOverlay');
+
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'casinoOverlay';
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:99999;background:#0d0d1a;display:flex;flex-direction:column;';
+    overlay.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;' +
+      'padding:8px 12px;background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);' +
+      'flex:0 0 auto;">' +
+        '<span style="color:#d4af37;font-weight:800;font-size:15px;">🎰 CASINO</span>' +
+        '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
+          'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
+          'border-radius:20px;padding:6px 16px;font-size:14px;font-weight:700;cursor:pointer;">' +
+          '✕ Cerrar</button>' +
+      '</div>' +
+      '<div id="casinoFrameStatus" style="flex:1;display:flex;align-items:center;' +
+        'justify-content:center;color:#d4af37;font-size:16px;font-weight:700;text-align:center;padding:20px;">' +
+        '🎰 Entrando al casino…</div>' +
+      // `allow` habilita pantalla completa y sonido dentro de los juegos.
+      '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
+        'allow="autoplay; fullscreen; payment"></iframe>';
+    document.body.appendChild(overlay);
+
+    // Cuando el casino termina de cargar, se esconde el "cargando" y se muestra el juego.
+    const frame = overlay.querySelector('#casinoFrame');
+    frame.addEventListener('load', function() {
+      if (!frame.src) return; // el load inicial del iframe vacío no cuenta
+      const status = document.getElementById('casinoFrameStatus');
+      if (status) status.style.display = 'none';
+      frame.style.display = 'block';
+    });
+  }
+
+  // Reset al abrir (por si venía de un intento anterior que falló).
+  const frame = overlay.querySelector('#casinoFrame');
+  const status = overlay.querySelector('#casinoFrameStatus');
+  if (frame) { frame.src = ''; frame.style.display = 'none'; }
+  if (status) { status.style.display = 'flex'; status.textContent = '🎰 Entrando al casino…'; }
+
+  overlay.style.display = 'flex';
+  // Bloquea el scroll del fondo mientras el casino está abierto.
+  document.body.style.overflow = 'hidden';
+  VIP.ui._casinoOpen = true;
+};
+
+/** Cierra el recuadro y vuelve a VIPCARGAS. */
+VIP.ui.closeCasinoFrame = function() {
+  const overlay = document.getElementById('casinoOverlay');
+  if (!overlay) return;
+  // Se vacía el src para que el casino deje de correr en segundo plano (si no, sigue
+  // sonando y consumiendo datos aunque el recuadro esté oculto).
+  const frame = overlay.querySelector('#casinoFrame');
+  if (frame) frame.src = '';
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+  VIP.ui._casinoOpen = false;
+
+  // Al volver, refrescar el saldo: es muy probable que haya cambiado jugando.
+  if (VIP.ui.syncBalance) { try { VIP.ui.syncBalance(); } catch (e) {} }
+};
+
+/** Muestra un error dentro del recuadro, con la opción de reintentar o salir. */
+VIP.ui._casinoFrameError = function(msg) {
+  const status = document.getElementById('casinoFrameStatus');
+  if (!status) {
+    VIP.ui.showToast(msg, 'error');
+    return;
+  }
+  status.style.display = 'flex';
+  status.style.flexDirection = 'column';
+  status.style.gap = '14px';
+  status.innerHTML =
+    '<div style="color:#ff8080;font-weight:700;max-width:420px;line-height:1.45;">' + msg + '</div>' +
+    '<button type="button" onclick="VIP.ui.enterCasino()" ' +
+      'style="background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;border:none;' +
+      'padding:12px 26px;border-radius:24px;font-weight:800;font-size:15px;cursor:pointer;">' +
+      '🔄 Reintentar</button>' +
+    '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
+      'style="background:none;color:#aaa;border:none;font-size:14px;cursor:pointer;">' +
+      'Volver a VIPCARGAS</button>';
+};
+
+// El botón "atrás" del celular cierra el recuadro en vez de salir de la app.
+window.addEventListener('popstate', function() {
+  if (VIP.ui._casinoOpen) VIP.ui.closeCasinoFrame();
+});
 
 // Botón "Abrir Casino" DENTRO del modal (que ahora es el camino de respaldo, cuando
 // el SSO falló). Abre el casino a secas para que el usuario entre a mano con los

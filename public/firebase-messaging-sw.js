@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v51'; // v51: migración a 1girox (botón CASINO con login único/SSO)
+const CACHE_VERSION = 'v52'; // v52: casino embebido en recuadro dentro de la PWA
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

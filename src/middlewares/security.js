@@ -117,7 +117,11 @@ const helmetConfig = helmet({
       connectSrc: ["'self'", 'https://*.googleapis.com', 'https://*.firebaseio.com', 'https://*.google.com', 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://fcm.googleapis.com', 'https://firebaseinstallations.googleapis.com'],
       mediaSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", 'https://*.firebaseapp.com', 'https://*.google.com'],
+      // El casino se abre EMBEBIDO en un recuadro dentro de la PWA (botón CASINO),
+      // por eso su dominio tiene que estar permitido acá también. Ojo: esta CSP está
+      // DUPLICADA con la de server.js (CSP_HEADER_VALUE) — si se agrega un dominio
+      // hay que tocarla en los dos lados o el iframe queda en blanco.
+      frameSrc: ["'self'", 'https://*.firebaseapp.com', 'https://*.google.com', 'https://1girox.com', 'https://*.1girox.com'],
       workerSrc: ["'self'", 'blob:'],
       manifestSrc: ["'self'"],
       upgradeInsecureRequests: []

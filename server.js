@@ -303,7 +303,12 @@ const CSP_HEADER_VALUE = [
   "img-src 'self' data: blob: https:",
   "font-src 'self'",
   "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.google.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://fcm.googleapis.com https://firebaseinstallations.googleapis.com https://www.facebook.com https://connect.facebook.net",
-  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://www.facebook.com",
+  // `frame-src` incluye el casino: el botón CASINO lo abre EMBEBIDO en un recuadro
+  // dentro de la PWA (el jugador no sale del sitio). Sin esto, el navegador bloquea
+  // el iframe y el recuadro queda en blanco.
+  // Se listan las dos formas del dominio porque el link de SSO puede volver con o sin
+  // `www` según cómo esté configurado el casino.
+  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://www.facebook.com https://1girox.com https://*.1girox.com",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "object-src 'none'",
