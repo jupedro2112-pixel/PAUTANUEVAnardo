@@ -5442,14 +5442,30 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
 
   // Estado de la base de usuarios respecto de la plataforma.
   try {
+    // ⚠️ `pendientes` tiene que incluir a los usuarios que NI SIQUIERA TIENEN el campo:
+    // los que ya existían antes de la migración nunca pasaron por un `create`, así que
+    // el default del schema no se les aplicó y `giroxSyncStatus` no existe en el
+    // documento. Contando sólo `'pending'` los números no cerraban (77 usuarios pero
+    // 2 pendientes) y parecía que faltaba menos trabajo del que falta.
+    const yaEnPlataforma = { role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] } };
     out.usuarios = {
       total: await User.countDocuments({ role: 'user' }),
-      enLaPlataforma: await User.countDocuments({ role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] } }),
-      pendientes: await User.countDocuments({ role: 'user', giroxSyncStatus: 'pending' }),
+      enLaPlataforma: await User.countDocuments(yaEnPlataforma),
+      pendientes: await User.countDocuments({
+        role: 'user',
+        giroxSyncStatus: { $nin: ['synced', 'linked', 'error', 'invalid_username', 'not_applicable'] }
+      }),
       conError: await User.countDocuments({ role: 'user', giroxSyncStatus: 'error' }),
       usernameInvalido: await User.countDocuments({ role: 'user', giroxSyncStatus: 'invalid_username' }),
-      sinIdDePlataforma: await User.countDocuments({ role: 'user', giroxSyncStatus: { $in: ['synced', 'linked'] }, giroxUserId: null })
+      sinIdDePlataforma: await User.countDocuments({ ...yaEnPlataforma, giroxUserId: { $in: [null, 0] } })
     };
+    // Guía de qué hacer, en vez de sólo tirar números.
+    if (out.usuarios.pendientes > 0) {
+      out.usuarios.siguientePaso =
+        `Hay ${out.usuarios.pendientes} usuarios que todavía no existen en la plataforma. ` +
+        'Migralos con: node scripts/migrate-users-to-girox.js --execute ' +
+        '(probá primero sin --execute, y después con --limit=5).';
+    }
   } catch (_) {}
 
   out.diagnostico = out.pruebas.consultaJugador && out.pruebas.consultaJugador.startsWith('OK')
