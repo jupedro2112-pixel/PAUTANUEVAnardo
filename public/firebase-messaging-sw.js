@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v58'; // v58: cabecera del chat, boton enviar y modo oscuro
+const CACHE_VERSION = 'v59'; // v59: fondos con patron de garabatos (claro y oscuro)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
@@ -65,7 +65,12 @@ function isStaleWhileRevalidate(url) {
   try {
     var u = new URL(url);
     if (u.origin !== self.location.origin) return false;
-    return u.pathname.indexOf('/js/') === 0 || u.pathname.indexOf('/css/') === 0;
+    // Se incluye /img/ (fondos del chat): son archivos que no cambian nunca y
+    // pesan decenas de KB — servirlos del caché evita que el chat aparezca sin
+    // fondo mientras cargan en una conexión lenta.
+    return u.pathname.indexOf('/js/') === 0
+        || u.pathname.indexOf('/css/') === 0
+        || u.pathname.indexOf('/img/') === 0;
   } catch (e) {
     return false;
   }
