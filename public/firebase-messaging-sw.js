@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v59'; // v59: fondos con patron de garabatos (claro y oscuro)
+const CACHE_VERSION = 'v60'; // v60: chat sin margenes (bloque continuo)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

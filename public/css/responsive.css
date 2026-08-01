@@ -1,8 +1,10 @@
 /* Responsive - Pantallas grandes (desktops) */
 @media (min-width: 1441px) {
     .chat-container {
-        max-width: 1200px;
-        margin: 8px auto;
+        /* Sin max-width ni margen: el chat tiene que ocupar el mismo ancho que la
+           barra de escribir y quedar pegado a ella. Con margen se veía el fondo
+           de la página metiéndose entre medio. */
+        margin: 0;
     }
 
     .message {
