@@ -358,10 +358,9 @@ async function getUserInfoByName(username) {
   if (!player) return null;
   const bal = _playerBalances(player);
   return {
-    // La Partner API NO devuelve el ID numérico del jugador: el username ES la clave.
-    // (El ID existe y hace falta para los reportes de netwin, pero se resuelve contra
-    // el panel — ver giroxReportsService.findPlayerIdByUsername.)
-    id: null,
+    // Desde la Partner API v1.8 el ID numérico del jugador VIENE en la respuesta.
+    // Antes había que sacarlo del panel de administración (scraping); ya no.
+    id: player.id != null ? Number(player.id) : null,
     username: player.username || String(username),
     email: player.email || null,
     active: player.active !== false,
@@ -745,8 +744,8 @@ async function getUserBalanceWithRetry(username, { maxAttempts = 3, baseDelayMs 
 
 /**
  * Historial de movimientos por rango de fechas.
- * ❌ La Partner API v1.4 de 1girox NO expone este endpoint (lo usaba GET /api/movements
- * contra `ShowUserMovements` de JUGAYGANA). Queda explícito y falla claro en vez de
+ * ❌ La Partner API NO expone este endpoint (lo usaba GET /api/movements contra
+ * `ShowUserMovements` de JUGAYGANA). Queda explícito y falla claro en vez de
  * romper con un TypeError.
  */
 async function getUserMovements() {
@@ -754,6 +753,223 @@ async function getUserMovements() {
     success: false,
     error: 'El historial de movimientos no está disponible en la plataforma nueva.',
     code: 'not_supported'
+  };
+}
+
+// ============================================================
+// NETWIN (GGR) — la pérdida real del jugador
+// ============================================================
+//
+// Partner API v1.8. Es la base de los REEMBOLSOS y de las COMISIONES DE REFERIDOS.
+//
+// ⚠️ SIGNO: `netwin` POSITIVO significa que ganó la casa, o sea que el jugador PERDIÓ
+// — que es justo lo que se reembolsa. Negativo = el jugador ganó en el período y no
+// hay nada que devolver.
+//
+// El rango se evalúa en HORARIO DE ARGENTINA del lado de la plataforma, así que
+// cortar a la medianoche argentina sale natural y no hay que compensar husos.
+//
+// Antes esto se sacaba del panel de administración (giroxReportsService, con un
+// Bearer de sesión y el ID numérico del jugador). Con este endpoint eso ya no hace
+// falta: va por username y con la misma API key que el resto.
+
+/** Máximo que acepta la API por consulta (invalid_range si se pasa). */
+const STATS_MAX_DAYS = 92;
+
+/**
+ * Formatea una Date al formato que espera la API ("YYYY-MM-DD HH:mm:ss") en hora de
+ * ARGENTINA, que es el huso en el que la plataforma evalúa el rango.
+ */
+function formatStatsDate(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const opts = { timeZone: 'America/Argentina/Buenos_Aires' };
+  return `${d.toLocaleDateString('en-CA', opts)} ${d.toLocaleTimeString('en-GB', { ...opts, hour12: false })}`;
+}
+
+/** Normaliza el bloque de totales que devuelve la API. */
+function _statsTotals(t) {
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    betsCount: n(t && t.bets_count),
+    wagered: n(t && t.wagered),
+    payout: n(t && t.payout),
+    netwin: n(t && t.netwin)
+  };
+}
+
+/**
+ * Netwin de UN jugador en un rango. GET /players/{username}/stats
+ *
+ * @param {string} username
+ * @param {Date} fromDate
+ * @param {Date} toDate
+ * @param {string} [label] etiqueta para logs
+ * @returns {{success, netwin, casinoNetwin, sportsNetwin, wagered, payout, betsCount,
+ *            playerId, from, to}} | {success:false, error, code}
+ */
+async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
+  const from = formatStatsDate(fromDate);
+  const to = formatStatsDate(toDate);
+  if (!from || !to) {
+    return { success: false, error: 'Rango de fechas inválido', code: 'invalid_range' };
+  }
+  // Se corta antes de llamar: la API rechaza rangos de más de 92 días y el error
+  // llegaría igual, pero así no se gasta una request del cupo de 60/min.
+  const days = Math.abs(new Date(toDate) - new Date(fromDate)) / 86400000;
+  if (days > STATS_MAX_DAYS) {
+    return { success: false, error: `El rango no puede superar los ${STATS_MAX_DAYS} días.`, code: 'invalid_range' };
+  }
+
+  const r = await _request({
+    method: 'get',
+    path: `/players/${encodeURIComponent(String(username))}/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    label: `${label}(${username}, ${from} → ${to})`
+  });
+
+  if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
+
+  const d = r.data || {};
+  const totals = _statsTotals(d.totals);
+  const cats = d.categories || {};
+  const casino = _statsTotals(cats.casino);
+  const sports = _statsTotals(cats.sports);
+
+  return {
+    success: true,
+    playerId: d.player && d.player.id != null ? Number(d.player.id) : null,
+    username: (d.player && d.player.username) || String(username),
+    from: d.from || from,
+    to: d.to || to,
+    netwin: totals.netwin,
+    casinoNetwin: casino.netwin,
+    sportsNetwin: sports.netwin,
+    wagered: totals.wagered,
+    payout: totals.payout,
+    betsCount: totals.betsCount,
+    categories: { casino, sports }
+  };
+}
+
+/**
+ * Netwin de VARIOS jugadores de una. POST /players/stats/batch (hasta 100).
+ *
+ * Es lo que hace viable el cálculo de comisiones de referidos: con el límite de 60
+ * requests/minuto, consultar de a uno no alcanza cuando hay decenas de referidos.
+ *
+ * @param {string[]} usernames  1 a 100
+ * @returns {{success, players:{[username]: stats}, notFound:string[]}} | {success:false,...}
+ */
+async function getPlayersStatsBatch(usernames, fromDate, toDate, label = 'stats-batch') {
+  const list = (Array.isArray(usernames) ? usernames : []).map((u) => String(u).trim()).filter(Boolean);
+  if (list.length === 0) return { success: true, players: {}, notFound: [] };
+  if (list.length > 100) {
+    return { success: false, error: 'El batch acepta hasta 100 usuarios por request.', code: 'too_many' };
+  }
+
+  const from = formatStatsDate(fromDate);
+  const to = formatStatsDate(toDate);
+  if (!from || !to) return { success: false, error: 'Rango de fechas inválido', code: 'invalid_range' };
+
+  const r = await _request({
+    method: 'post',
+    path: '/players/stats/batch',
+    body: { usernames: list, from, to },
+    label: `${label}(${list.length} jugadores, ${from} → ${to})`
+  });
+
+  if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
+
+  const d = r.data || {};
+  const players = {};
+  for (const p of (Array.isArray(d.players) ? d.players : [])) {
+    const totals = _statsTotals(p.totals);
+    const cats = p.categories || {};
+    const casino = _statsTotals(cats.casino);
+    const sports = _statsTotals(cats.sports);
+    players[String(p.username)] = {
+      success: true,
+      playerId: p.id != null ? Number(p.id) : null,
+      username: p.username,
+      netwin: totals.netwin,
+      casinoNetwin: casino.netwin,
+      sportsNetwin: sports.netwin,
+      wagered: totals.wagered,
+      payout: totals.payout,
+      betsCount: totals.betsCount,
+      categories: { casino, sports }
+    };
+  }
+
+  return {
+    success: true,
+    players,
+    // ⚠️ `not_found` mezcla "no existe" con "no es tuyo" a propósito (lo aclara el
+    // manual): no se puede distinguir, así que se trata igual — sin netwin.
+    notFound: Array.isArray(d.not_found) ? d.not_found : [],
+    from: d.from || from,
+    to: d.to || to
+  };
+}
+
+/**
+ * Configuración del sitio. GET /config (Partner API v1.9)
+ *
+ * Dice qué feats están habilitados, qué multiplicadores son válidos y los límites
+ * min/max del bono de monto fijo. Sirve para validar ANTES de mandar una operación
+ * en vez de comerse un 422.
+ *
+ * Se cachea en memoria: cambia sólo cuando el operador toca la configuración, y
+ * consultarlo en cada carga desperdiciaría el cupo de 60 req/min.
+ */
+let _configCache = null;
+let _configCachedAt = 0;
+const CONFIG_TTL_MS = 10 * 60 * 1000;
+
+async function getPlatformConfig({ force = false } = {}) {
+  if (!force && _configCache && (Date.now() - _configCachedAt) < CONFIG_TTL_MS) {
+    return { success: true, config: _configCache, cached: true };
+  }
+  const r = await _request({ method: 'get', path: '/config', label: 'config' });
+  if (!r.ok) return { success: false, error: r.error, code: r.code };
+  _configCache = r.data || {};
+  _configCachedAt = Date.now();
+  return { success: true, config: _configCache, cached: false };
+}
+
+/**
+ * Reclama los bonos que el jugador tiene pendientes. POST /players/{username}/bonus/claim
+ *
+ * Desde la v1.7 un bono que cumple su objetivo (o que se otorgó sin rollover) NO se
+ * libera solo: queda bloqueado hasta que alguien lo reclama. En el casino lo reclama
+ * el jugador tocando el regalito del header — pero nuestros jugadores operan desde
+ * VIPCARGAS y muchos no entran nunca a la plataforma, así que lo reclamamos nosotros.
+ *
+ * Es idempotente: si no quedaba nada devuelve `amount: 0`, no es un error.
+ * No mueve plata nueva — destraba lo que el jugador ya tenía (pasa a retirable).
+ *
+ * @param {string} username
+ * @param {number} [requirementId] reclamar UNO puntual; sin esto se reclaman TODOS
+ */
+async function claimPendingBonus(username, requirementId = null) {
+  const body = {};
+  if (requirementId != null) body.requirement_id = Number(requirementId);
+
+  const r = await _request({
+    method: 'post',
+    path: `/players/${encodeURIComponent(String(username))}/bonus/claim`,
+    body,
+    label: `bonusClaim(${username}${requirementId != null ? ', req=' + requirementId : ''})`
+  });
+
+  if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
+
+  const d = r.data || {};
+  return {
+    success: true,
+    amount: Number(d.amount) || 0,
+    claimed: Array.isArray(d.claimed) ? d.claimed : [],
+    wagering: d.wagering || null
   };
 }
 
@@ -780,6 +996,14 @@ module.exports = {
   // saldo
   getUserBalance,
   getUserBalanceWithRetry,
+  // netwin / estadísticas
+  getPlayerStats,
+  getPlayersStatsBatch,
+  formatStatsDate,
+  // configuración del sitio
+  getPlatformConfig,
+  // bonos pendientes de reclamar
+  claimPendingBonus,
   // no soportado
   getUserMovements
 };

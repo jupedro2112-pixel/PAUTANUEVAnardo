@@ -38,14 +38,32 @@ function formatPeriodKey(year, month) {
 }
 
 /**
- * Obtener rango de fechas (epoch ms) para un periodKey
+ * Obtener rango de fechas para un periodKey — EN HORA DE ARGENTINA.
+ *
+ * ⚠️ FIX 2026-07-31: antes usaba `new Date(year, month-1, 1, 0,0,0,0)`, que
+ * construye la fecha en la hora LOCAL DEL PROCESO. En producción el server corre en
+ * UTC, así que "1 de julio 00:00" era en realidad "30 de junio 21:00" hora argentina:
+ * el período de comisiones arrancaba 3 horas antes y terminaba 3 horas antes, y esas
+ * 3 horas se contaban en DOS meses distintos (una vez de más y otra de menos).
+ *
+ * Ahora las fechas se anclan explícitamente al huso argentino (-03:00), que es el que
+ * usa el negocio y también el que usa 1girox para evaluar los rangos de sus reportes
+ * de netwin. Así el mes que liquidamos es exactamente el mes que ve el owner.
+ *
  * @param {string} periodKey e.g. "2026-04"
  * @returns {{ fromEpoch: number, toEpoch: number, fromDate: Date, toDate: Date }}
  */
 function getPeriodRange(periodKey) {
   const [year, month] = periodKey.split('-').map(Number);
-  const fromDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const toDate = new Date(year, month, 0, 23, 59, 59, 999); // last day of month
+  const mm = String(month).padStart(2, '0');
+  // Día 0 del mes siguiente = último día de este mes. Se calcula en UTC para que no
+  // dependa del huso del server (sólo se usa el número del día).
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+  // Argentina no aplica horario de verano desde 2009, así que el offset es fijo -03:00.
+  const fromDate = new Date(`${year}-${mm}-01T00:00:00-03:00`);
+  const toDate = new Date(`${year}-${mm}-${String(lastDay).padStart(2, '0')}T23:59:59-03:00`);
+
   return {
     fromEpoch: Math.floor(fromDate.getTime() / 1000),
     toEpoch: Math.floor(toDate.getTime() / 1000),

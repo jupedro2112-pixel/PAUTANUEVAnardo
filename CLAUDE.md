@@ -54,9 +54,6 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
   define ExternalUser y UserActivity; el resto es proxy a /src/models).
 - `src/services/giroxService.js` — **cliente ÚNICO de la Partner API** (altas, saldo,
   cargas, retiros, bonos, cambio de clave y login único/SSO).
-- `src/services/giroxReportsService.js` — netwin/GGR por jugador. ⚠️ NO es la Partner
-  API: pega contra el **panel** `admin.1girox.com` con un Bearer de sesión
-  auto-renovable. De acá dependen los reembolsos y las comisiones de referidos.
 - `src/services/giroxUserLinkService.js` — resuelve y cachea `User.giroxUserId`.
 - `src/services/giroxPublisherKeys.js` — alta de jugadores con la API key del publicista.
 - `src/utils/periodRanges.js` — rangos de fecha (ayer / semana / mes) en hora argentina.
@@ -86,15 +83,17 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
   el 429 sigue siendo posible (se reintenta respetando `Retry-After`).
 - **Rollover ACTIVO en la plataforma:** el jugador puede tener saldo que NO puede
   retirar. Validar retiros contra `wagering.available`, **nunca** contra `balance`.
-- **Bonos "a reclamar" (API v1.7):** un bono dado con `POST /players/{u}/bonus` queda
-  bloqueado hasta que el jugador lo reclama en el casino. Por eso reembolsos, ruleta,
-  fueguito y bono de instalación se acreditan con **depósito libre**, no con `/bonus`.
-- **El netwin sale del PANEL, no de la Partner API.** Es el punto más frágil de toda la
-  integración: si 1girox cambia su panel, se caen reembolsos y comisiones de referidos.
-  Está pedido que lo agreguen a la Partner API; cuando lo hagan, se reemplaza.
-- **`giroxUserId`:** la Partner API trabaja sólo por username y NO devuelve el ID
-  numérico, pero el reporte de netwin lo EXIGE. Se resuelve contra el panel y se
-  cachea. Sin ese ID, a ese usuario no se le puede calcular el reembolso.
+- **El netwin sale de la Partner API** (`GET /players/{username}/stats`, v1.8), por
+  username y con la misma API key. ⚠️ `netwin` POSITIVO = el jugador PERDIÓ (es la base
+  del reembolso); negativo = ganó. Máximo 92 días por consulta, y el rango se evalúa
+  en hora argentina del lado de la plataforma. Para varios jugadores está el batch
+  (`POST /players/stats/batch`, hasta 100) — es lo que hace viable el cálculo de
+  comisiones de referidos sin comerse el límite de 60 req/min.
+- **Reembolsos por RANGO** (Bronce 3% / Plata 6% / Oro 10%), según lo perdido EN EL
+  PERÍODO que se reclama — no un acumulado. Ver `src/utils/refundTiers.js`.
+- **Bonos "a reclamar":** desde la v1.7 un bono no se libera solo. Por eso reembolsos,
+  ruleta, fueguito y bono de instalación se acreditan con **depósito libre**, no con
+  `/bonus`. Si alguna vez hiciera falta, está `girox.claimPendingBonus()`.
 - **Roles:** `user`, `admin` (todo), `depositor` (solo cargas), `withdrawer` (solo
   retiros), `publisher_admin` (solo crea usuarios de su publicista — lockdown via
   `PUBLISHER_ADMIN_ALLOWED_PATHS`).
@@ -108,10 +107,9 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
 - **Montos en PESOS.** ⚠️ Ojo si mirás código o docs viejos: JUGAYGANA trabajaba en
   centavos y todo se multiplicaba ×100. **1girox NO** — se manda el monto tal cual, con
   decimales si hace falta. Multiplicar por 100 sería cargar 100 veces de más.
-- **No hay sesión que renovar** en la Partner API (auth por `X-Api-Key` fija) ni
-  respuestas HTML de Cloudflare. Todo eso —`ensureSession`, mutex de login,
-  `isHtmlBlocked`— murió con JUGAYGANA. El único token de sesión que queda es el del
-  PANEL, dentro de `giroxReportsService` (y se renueva solo).
+- **No hay NINGUNA sesión que renovar.** Auth por `X-Api-Key` fija en todo, incluido
+  el netwin. Se fueron `ensureSession`, el mutex de login, `isHtmlBlocked` y el Bearer
+  del panel (con `giroxReportsService`, eliminado el 2026-07-31).
 - **Bonos automáticos APAGADOS por flags** (owner 2026-06-24): `INACTIVIDAD_DISABLED`
   y `BONUS_STRATEGY_DISABLED` (server.js) + `CHARGE_BONUSES_DISABLED`
   (notificationRulesService) + bonos de encuesta con `bDays=[]`. Tope 30% en TODO lo

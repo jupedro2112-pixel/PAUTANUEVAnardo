@@ -2,21 +2,42 @@
  * Servicio de Cálculo Mensual de Referidos
  * Fase A: calcula comisiones por período sin pagar
  *
- * Fuente del revenue: 1girox (`giroxReportsService.getPlayerNetwinForDateRange`),
- * que reemplazó a `referralRevenueService` (JUGAYGANA) en la migración de 2026-07.
- * Dos diferencias importantes respecto de la versión vieja:
- *   1) se consulta por `User.giroxUserId` (ID numérico del jugador), no por username;
- *   2) la comisión del owner ya NO la define el proveedor — es NUESTRA tasa fija
- *      (ver `utils/referralRate.js`, 8% por defecto).
+ * Fuente del revenue: la Partner API de 1girox (`giroxService.getPlayersStatsBatch`,
+ * v1.9). Antes el netwin se sacaba del PANEL de administración
+ * (`giroxReportsService`), que necesitaba un Bearer de sesión propio y el ID NUMÉRICO
+ * del jugador (`User.giroxUserId`). Desde la v1.9 el netwin está en la Partner API
+ * misma, por USERNAME y con la misma API key que el resto, así que:
+ *   1) ya no hace falta resolver ni cachear el ID numérico para cobrar comisiones
+ *      (el que no tenía `giroxUserId` antes quedaba SIN comisión: ese agujero se cerró);
+ *   2) entran 100 jugadores en UNA request, no uno por request;
+ *   3) desaparece la dependencia del panel, que era el punto más frágil de la
+ *      integración (si 1girox le cambiaba el HTML/Bearer, se caían las comisiones).
+ *
+ * La comisión del owner NO la define el proveedor — es NUESTRA tasa fija
+ * (ver `utils/referralRate.js`, 8% por defecto).
  * Los montos vienen en PESOS: no se divide por 100 en ningún lado.
  */
 const { v4: uuidv4 } = require('uuid');
 const { User, ReferralCommission, ReferralPayout } = require('../models');
-const giroxReportsService = require('./giroxReportsService');
-const { resolveGiroxUserId } = require('./giroxUserLinkService');
+const giroxService = require('./giroxService');
 const { getReferralRateForUser, getConfiguredRate } = require('../utils/referralRate');
 const { getPeriodRange } = require('../utils/periodKey');
 const logger = require('../utils/logger');
+
+/** Tope duro de la API: 100 usernames por request de `/players/stats/batch`. */
+const STATS_BATCH_SIZE = 100;
+
+/**
+ * Alcance del netwin: 'casino' (default, decisión del owner 2026-07-31) o 'total'
+ * (casino + sports). Mismo criterio y misma env que usan los reembolsos
+ * (`GIROX_NETWIN_SCOPE`), para que un jugador no genere comisión sobre una base y
+ * reembolso sobre otra.
+ *
+ * Getter LAZY a propósito: las envs se cargan desde SSM DESPUÉS de los `require()`.
+ */
+function getNetwinScope() {
+  return (process.env.GIROX_NETWIN_SCOPE || 'casino').toLowerCase() === 'total' ? 'total' : 'casino';
+}
 
 /**
  * ⚠️ CÓMO SE CALCULA LA COMISIÓN DE REFERIDOS (decisión del owner, 2026-07-31)
@@ -43,47 +64,33 @@ const logger = require('../utils/logger');
  */
 
 /**
- * Consulta el netwin de UN referido en 1girox y lo traduce al shape que este
- * servicio (y el modelo ReferralCommission) esperan desde la época de JUGAYGANA.
+ * Traduce las stats de UN jugador (shape de la Partner API v1.9) al shape que este
+ * servicio y el modelo ReferralCommission esperan desde la época de JUGAYGANA.
  *
- * @param {Object} referredUser - documento del usuario referido (lean)
- * @param {string} periodKey    - "2026-07" (sólo para logs)
- * @param {Date} fromDate       - inicio del período (de getPeriodRange)
- * @param {Date} toDate         - fin del período (de getPeriodRange)
+ * @param {Object} stats - entrada de `players[username]` de getPlayersStatsBatch
+ *                         (o el resultado de getPlayerStats: mismo shape)
  * @returns {Object} { success, totalGgr, totalBets, totalWins, totalOwnerRevenue, providers, ... }
  */
-async function fetchReferredRevenue(referredUser, periodKey, fromDate, toDate) {
-  // 1girox pide el ID NUMÉRICO del jugador (`player_id`). Sin él, el reporte
-  // devuelve el agregado del AGENTE (toda la sala) — pagaríamos comisión sobre el
-  // netwin de TODOS los jugadores. Por eso, si falta, se intenta backfillear al
-  // vuelo y si no se consigue se aborta con error explícito (revenue 0).
-  let giroxUserId = referredUser.giroxUserId || null;
-  if (!giroxUserId) {
-    try {
-      giroxUserId = await resolveGiroxUserId(referredUser.id, referredUser.username);
-    } catch (err) {
-      logger.error(`[ReferralCalc] Error resolviendo giroxUserId | user=${referredUser.username}: ${err.message}`);
-      giroxUserId = null;
-    }
-  }
-  if (!giroxUserId) {
-    return {
-      success: false,
-      code: 'no_player_id',
-      error: 'El usuario no tiene giroxUserId: sin el ID numérico del jugador el reporte de 1girox ' +
-        'devolvería el agregado del agente, no el del referido.',
-      giroxUserId: null
-    };
-  }
+function mapStatsToRevenue(stats) {
+  const scope = getNetwinScope();
+  const cats = (stats && stats.categories) || {};
+  const casino = cats.casino || { wagered: 0, payout: 0, netwin: 0 };
+  const sports = cats.sports || { wagered: 0, payout: 0, netwin: 0 };
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-  const r = await giroxReportsService.getPlayerNetwinForDateRange(
-    giroxUserId, fromDate, toDate, `refcom ${periodKey} ${referredUser.username}`
-  );
-  if (!r.success) {
-    return { success: false, error: r.error, code: r.code || null, giroxUserId };
-  }
+  // ⚠️ ALCANCE (decisión del owner 2026-07-31): sólo CASINO. La API trae casino y
+  // sports separados; sports queda afuera hasta que se decida incorporarlo
+  // (GIROX_NETWIN_SCOPE=total). Apostado y pagado se toman del MISMO alcance que el
+  // netwin: si el netwin es sólo de casino, mostrar el apostado total confundiría al
+  // admin al revisar de dónde salió la comisión.
+  const inScope = scope === 'total'
+    ? [{ key: 'casino', ...casino }, { key: 'sports', ...sports }]
+    : [{ key: 'casino', ...casino }];
 
-  const netwin = Number(r.totalNetwin) || 0;
+  const netwin = scope === 'total' ? num(stats.netwin) : num(stats.casinoNetwin);
+  const totalBets = inScope.reduce((a, c) => a + num(c.wagered), 0);
+  const totalWins = inScope.reduce((a, c) => a + num(c.payout), 0);
+
   // Netwin negativo = el jugador GANÓ en el período: no hay nada que repartir. Se
   // corta en 0 para no arrastrar deuda al mes siguiente (el referidor no "debe" nada
   // porque su referido tuvo un buen mes).
@@ -95,32 +102,177 @@ async function fetchReferredRevenue(referredUser, periodKey, fromDate, toDate) {
 
   // providersBreakdown conserva el shape histórico del modelo
   // ({providerName, ggr, ownerCommissionRate, ownerRevenue}) — NO se toca el schema.
-  // `ggr` y `ownerRevenue` son ambos el netwin del proveedor (sin tasa aplicada);
-  // `ownerCommissionRate` queda en 1 porque el campo `commission` de 1girox siempre
-  // vuelve en 0 y la tasa del referidor no corresponde a este nivel.
-  const providers = (r.providers || []).map((p) => {
-    const pNetwin = Number(p.netwin) || 0;
+  // El endpoint nuevo NO desglosa por proveedor (Pragmatic, Evolution…), sólo por
+  // CATEGORÍA, así que se usan las categorías como "proveedores": es lo único que hay
+  // y mantiene la columna del panel con información real en vez de vacía.
+  // `ownerCommissionRate` queda en 1 porque la tasa del referidor no corresponde a
+  // este nivel (se aplica una sola vez, sobre el total).
+  const providers = inScope.map((c) => {
+    const cNetwin = num(c.netwin);
     return {
-      providerName: p.providerName || 'desconocido',
-      ggr: pNetwin,
+      providerName: c.key,
+      ggr: cNetwin,
       ownerCommissionRate: 1,
-      ownerRevenue: pNetwin > 0 ? pNetwin : 0
+      ownerRevenue: cNetwin > 0 ? cNetwin : 0
     };
   });
 
   return {
     success: true,
-    giroxUserId,
+    giroxUserId: stats && stats.playerId != null ? Number(stats.playerId) : null,
     totalGgr: netwin,                    // netwin del referido (montos en PESOS, no centavos)
-    totalBets: Number(r.totalBets) || 0,
-    totalWins: Number(r.totalPayout) || 0,  // "wins" = lo pagado al jugador
+    totalBets,
+    totalWins,                           // "wins" = lo pagado al jugador
     totalOwnerRevenue: ownerRevenue,     // = netwin crudo; la tasa se aplica una sola vez
     ownerCommissionRate: 1,
-    netwinScope: r.netwinScope || null,
+    netwinScope: scope,
     providers,
     revenueScope: 'perUser',
-    revenueSourceField: 'player_id'
+    revenueSourceField: 'username'
   };
+}
+
+/** Revenue "vacío" (sin actividad computable). Se usa para los `not_found` de la API. */
+function emptyRevenue(extra = {}) {
+  return {
+    success: true,
+    giroxUserId: null,
+    totalGgr: 0,
+    totalBets: 0,
+    totalWins: 0,
+    totalOwnerRevenue: 0,
+    ownerCommissionRate: 1,
+    netwinScope: getNetwinScope(),
+    providers: [],
+    revenueScope: 'perUser',
+    revenueSourceField: 'username',
+    ...extra
+  };
+}
+
+/**
+ * Trae el netwin del período de TODOS los referidos, en tandas de 100.
+ *
+ * ⚠️ Antes acá había un batching artesanal con `REVENUE_CONCURRENCY = 5`: cada
+ * jugador era UNA request contra el panel, así que con 59 referidos eran 59 requests
+ * (en serie tardaba minutos y el ALB cortaba con un 504 HTML → el panel reventaba con
+ * "JSON.parse: unexpected character"). Con `/players/stats/batch` entran 100 jugadores
+ * por request: 59 referidos = 1 sola request. Ya no hay nada que paralelizar ni límite
+ * de concurrencia que cuidar — las tandas se hacen en SERIE justamente para no
+ * comernos el rate limit de 60 req/min de la Partner API (que igual es inalcanzable:
+ * harían falta más de 6.000 referidos para llegar).
+ *
+ * @param {Array} users     usuarios referidos (lean) a consultar
+ * @param {string} periodKey "2026-07" (para logs)
+ * @param {Date} fromDate
+ * @param {Date} toDate
+ * @returns {{ revenueByUserId: Map<string,Object>, requests: number }}
+ */
+async function fetchRevenuesForUsers(users, periodKey, fromDate, toDate) {
+  const revenueByUserId = new Map();
+  let requests = 0;
+
+  for (let i = 0; i < users.length; i += STATS_BATCH_SIZE) {
+    const chunk = users.slice(i, i + STATS_BATCH_SIZE);
+    const usernames = chunk.map((u) => u.username).filter(Boolean);
+    const tanda = `${Math.floor(i / STATS_BATCH_SIZE) + 1}`;
+
+    // Tanda sin un solo username usable (dato corrupto): no se gasta una request.
+    if (usernames.length === 0) {
+      for (const u of chunk) {
+        revenueByUserId.set(u.id, {
+          success: false,
+          code: 'no_username',
+          error: 'El usuario no tiene username: no se puede consultar su netwin en 1girox.',
+          giroxUserId: u.giroxUserId || null
+        });
+      }
+      continue;
+    }
+
+    let res;
+    requests++;
+    try {
+      res = await giroxService.getPlayersStatsBatch(
+        usernames, fromDate, toDate, `refcom ${periodKey} tanda ${tanda}`
+      );
+    } catch (err) {
+      res = { success: false, error: err.message, code: 'exception' };
+    }
+
+    if (!res.success) {
+      // La tanda entera falló. NO se asume revenue 0: eso escondería el problema y
+      // dejaría al referidor sin cobrar sin que nadie se entere. Se marca error por
+      // usuario para que aparezca en `results.errors` y el admin pueda recalcular.
+      logger.error(
+        `[ReferralCalc] Batch de stats FALLÓ | period=${periodKey} tanda=${tanda} ` +
+        `usuarios=${usernames.length} error=${res.error} code=${res.code || '-'}`
+      );
+      for (const u of chunk) {
+        revenueByUserId.set(u.id, { success: false, error: res.error, code: res.code || null, giroxUserId: u.giroxUserId || null });
+      }
+      continue;
+    }
+
+    // `not_found` mezcla "no existe en la plataforma" con "no es de nuestro agente"
+    // (la API no los distingue). En los dos casos no hay netwin que repartir: se
+    // tratan como revenue 0, pero se loguean fuerte porque un referido que debería
+    // existir y no aparece suele ser un alta fallida (giroxSyncStatus=error o
+    // invalid_username) que hay que arreglar.
+    const notFoundSet = new Set((res.notFound || []).map((n) => String(n).toLowerCase()));
+    if (notFoundSet.size > 0) {
+      logger.warn(
+        `[ReferralCalc] Referidos sin stats en 1girox (not_found) | period=${periodKey} ` +
+        `tanda=${tanda} cantidad=${notFoundSet.size} usuarios=${(res.notFound || []).join(', ')} ` +
+        `→ se calculan con netwin=0 (revisar si el alta en la plataforma falló)`
+      );
+    }
+
+    const statsByUsername = new Map();
+    for (const [uname, st] of Object.entries(res.players || {})) {
+      statsByUsername.set(String(uname).toLowerCase(), st);
+    }
+
+    for (const u of chunk) {
+      const key = String(u.username || '').toLowerCase();
+      const stats = statsByUsername.get(key);
+      if (stats) {
+        revenueByUserId.set(u.id, mapStatsToRevenue(stats));
+      } else if (notFoundSet.has(key)) {
+        revenueByUserId.set(u.id, emptyRevenue({ notFoundInPlatform: true, code: 'not_found' }));
+      } else {
+        // Ni en `players` ni en `not_found`: la API no dijo nada de este usuario.
+        // No se inventa un 0 — se marca error para que quede visible.
+        revenueByUserId.set(u.id, {
+          success: false,
+          code: 'missing_in_batch',
+          error: 'La plataforma no devolvió stats para este usuario en el batch.',
+          giroxUserId: u.giroxUserId || null
+        });
+      }
+    }
+
+    logger.info(
+      `[ReferralCalc] Batch de stats OK | period=${periodKey} tanda=${tanda} ` +
+      `pedidos=${usernames.length} conStats=${statsByUsername.size} notFound=${notFoundSet.size}`
+    );
+  }
+
+  return { revenueByUserId, requests };
+}
+
+/**
+ * Fallback defensivo: stats de UN solo jugador. Sólo se usa si un usuario quedó
+ * fuera del pre-fetch (no debería pasar); no es el camino normal.
+ */
+async function fetchReferredRevenue(referredUser, periodKey, fromDate, toDate) {
+  const r = await giroxService.getPlayerStats(
+    referredUser.username, fromDate, toDate, `refcom ${periodKey} ${referredUser.username}`
+  );
+  if (!r.success) {
+    return { success: false, error: r.error, code: r.code || null, giroxUserId: referredUser.giroxUserId || null };
+  }
+  return mapStatsToRevenue(r);
 }
 
 /**
@@ -150,7 +302,10 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
     details: []
   };
 
+  // providerCallsCount = requests REALES contra la plataforma (antes era 1 por
+  // referido; ahora 1 cada 100). revenueLookups = referidos cuyo revenue se leyó.
   let providerCallsCount = 0;
+  let revenueLookups = 0;
 
   // Armar mapa de referidores -> referidos
   // Buscar usuarios que tienen referredByUserId establecido (son los referidos)
@@ -191,38 +346,25 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
     referrerMap.set(u.id, u);
   }
 
-  // ── Pre-fetch de revenues en PARALELO (batches) ──────────────────────────
-  // Antes el cálculo consultaba el proveedor secuencialmente (1 llamada por
-  // referido dentro del loop). Con muchos referidos (ej. 59) eso eran 59
-  // llamadas en serie → minutos de espera → el proxy/ALB cortaba con un 504
-  // HTML y el frontend reventaba con "JSON.parse: unexpected character".
+  // ── Pre-fetch de revenues en TANDAS DE 100 (1 request por tanda) ─────────
+  // El loop principal lee de un Map (O(1)); acá se traen todos de una.
+  // El rango del período se resuelve UNA vez: la API recibe fechas, no un periodKey.
   //
-  // Ahora pre-cargamos todos los revenues con concurrencia limitada (5 a la vez)
-  // y el loop principal los lee de un Map (O(1)). Reduce el tiempo total ~5x y
-  // mantiene la carga sobre el proveedor acotada. Con 1girox el límite es de
-  // 60 req/min, así que este tope importa MÁS que antes: no subirlo.
-  //
-  // El rango del período se resuelve UNA vez acá: el servicio nuevo
-  // (giroxReportsService) recibe fechas, no un periodKey.
+  // ⚠️ HUSO (pendiente, igual que con el panel — no es un cambio de esta migración):
+  // `getPeriodRange` arma las Date en la hora LOCAL DEL PROCESO y giroxService las
+  // formatea en hora ARGENTINA. Si la instancia corre en UTC, el mes queda corrido 3
+  // horas (entran las últimas 3 h del mes anterior y se pierden las últimas 3 h del
+  // mes). Se mantiene el mismo comportamiento que antes para no mover la base de
+  // cálculo sin verificarlo; si se corrige, corregir también los reembolsos.
   const { fromDate, toDate } = getPeriodRange(periodKey);
-  const REVENUE_CONCURRENCY = 5;
-  const revenueByReferredId = new Map();
   const usersNeedingRevenue = referredUsers.filter(u => !u.excludedFromReferral);
-  for (let i = 0; i < usersNeedingRevenue.length; i += REVENUE_CONCURRENCY) {
-    const batch = usersNeedingRevenue.slice(i, i + REVENUE_CONCURRENCY);
-    const settled = await Promise.all(batch.map(async (u) => {
-      try {
-        const r = await fetchReferredRevenue(u, periodKey, fromDate, toDate);
-        return [u.id, r];
-      } catch (err) {
-        return [u.id, { success: false, error: err.message }];
-      }
-    }));
-    for (const [id, r] of settled) revenueByReferredId.set(id, r);
-  }
+  const prefetch = await fetchRevenuesForUsers(usersNeedingRevenue, periodKey, fromDate, toDate);
+  const revenueByReferredId = prefetch.revenueByUserId;
+  const batchRequests = prefetch.requests;
+  providerCallsCount += batchRequests;
   logger.info(
     `[ReferralCalc] Pre-fetch revenues completado | period=${periodKey} usuarios=${usersNeedingRevenue.length} ` +
-    `concurrency=${REVENUE_CONCURRENCY} tasaReferidor=${getConfiguredRate()}`
+    `requests=${batchRequests} (tandas de ${STATS_BATCH_SIZE}) tasaReferidor=${getConfiguredRate()}`
   );
 
   for (const [referrerId, usersReferredByThisReferrer] of referrers) {
@@ -391,31 +533,33 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
         `calculationSource=fresh`
       );
 
-      // Revenue real en 1girox: se pide por `player_id` (ID numérico del jugador,
-      // User.giroxUserId). Sin ese ID el reporte /reports/global devuelve el agregado
-      // del AGENTE (toda la sala) — pagaríamos comisión sobre el netwin de todos los
-      // jugadores. Por eso fetchReferredRevenue corta con error explícito (revenue=0)
-      // cuando no se puede resolver el ID.
-      providerCallsCount++;
+      // Revenue real en 1girox: se pide por USERNAME (Partner API v1.9). El netwin
+      // que vuelve es el de ESE jugador, no el agregado del agente. El pre-fetch de
+      // arriba ya lo trajo en tandas de 100; acá sólo se lee del Map.
+      revenueLookups++;
 
-      // El revenue ya se consultó en paralelo en el pre-fetch de arriba; lo
-      // leemos del Map. Fallback defensivo por si el usuario no estaba en el
-      // batch (no debería pasar para no-excluidos).
-      const revenueResult = revenueByReferredId.get(referredUser.id)
-        || await fetchReferredRevenue(referredUser, periodKey, fromDate, toDate);
+      // Fallback defensivo por si el usuario no entró en ninguna tanda (no debería
+      // pasar para no-excluidos): una consulta individual, contada como request.
+      let revenueResult = revenueByReferredId.get(referredUser.id);
+      if (!revenueResult) {
+        providerCallsCount++;
+        revenueResult = await fetchReferredRevenue(referredUser, periodKey, fromDate, toDate);
+      }
 
+      // El ID numérico ya no se necesita para calcular, pero la API lo devuelve y el
+      // panel lo muestra en el detalle: se conserva para trazabilidad.
       const giroxUserId = revenueResult.giroxUserId || referredUser.giroxUserId || null;
 
       logger.info(
         `[ReferralCalc] Revenue (pre-fetch) | mode=${mode} referido=${referredUser.username} ` +
-        `giroxUserId=${giroxUserId} período=${periodKey} providerCallsCount=${providerCallsCount} ` +
+        `giroxUserId=${giroxUserId} período=${periodKey} revenueLookups=${revenueLookups} ` +
+        `providerCallsCount=${providerCallsCount} ` +
         `revenueScope=perUser commissionCalculationMode=individual_revenue`
       );
 
       if (!revenueResult.success) {
-        // En 1girox el error siempre es string y viene con un `code` corto
-        // (no_player_id, scope_mismatch, http_401, rate_limited…). No hay ya el
-        // diagnóstico de auth que traía JUGAYGANA.
+        // El error viene con un `code` corto de la Partner API (http_401, rate_limited,
+        // missing_in_batch…). No hay ya el diagnóstico de auth que traía JUGAYGANA.
         const providerCode = revenueResult.code || null;
         logger.error(
           `[ReferralCalc] Error revenue | referido=${referredUser.username} ` +
@@ -425,11 +569,11 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
 
         // Razón descriptiva para el detalle del admin
         let reason = `Error consultando revenue: ${revenueResult.error}`;
-        if (providerCode === 'no_player_id') {
-          reason = 'El usuario no está vinculado a 1girox (falta giroxUserId). ' +
-            'Sincronizarlo para poder calcular su comisión.';
-        } else if (providerCode === 'scope_mismatch') {
-          reason = 'El reporte de 1girox volvió con el scope de otro agente — resultado descartado por seguridad.';
+        if (providerCode === 'missing_in_batch') {
+          reason = '1girox no devolvió stats de este usuario (ni datos ni "no encontrado"). ' +
+            'Reintentar el cálculo; si persiste, revisar el alta del jugador en la plataforma.';
+        } else if (providerCode === 'rate_limited') {
+          reason = 'La plataforma respondió 429 (límite de 60 req/min). Reintentar el cálculo en un minuto.';
         } else if (providerCode) {
           reason += ` | code=${providerCode}`;
         }
@@ -570,7 +714,8 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
         `calculationWindowEnd=period-end ` +
         `revenueScope=${revenueResult.revenueScope || 'perUser'} ` +
         `netwinScope=${revenueResult.netwinScope || 'casino'} ` +
-        `revenueSourceField=${revenueResult.revenueSourceField || 'player_id'} ` +
+        `revenueSourceField=${revenueResult.revenueSourceField || 'username'} ` +
+        `notFoundInPlatform=${revenueResult.notFoundInPlatform === true} ` +
         `commissionCalculationMode=${alreadySettledRevenue > 0 ? 'delta_after_settlement' : 'individual_revenue'}`
       );
       // Mandatory per-referred audit log (matches problem-statement logging requirements)
@@ -599,7 +744,13 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
         : (totalOwnerRevenue <= 0 ? 'skipped' : 'paid');
       const reason = commissionAmount <= 0
         ? (totalOwnerRevenue <= 0
-            ? `Revenue del período es $0 (GGR: $${(totalGgr ?? 0).toFixed(2)}, apuestas: $${(totalBets ?? 0).toFixed(2)}, ganancias: $${(totalWins ?? 0).toFixed(2)})`
+            ? (revenueResult.notFoundInPlatform
+                // Se distingue del "$0 porque no jugó": acá 1girox directamente no
+                // conoce al jugador (o no es de nuestro agente). Suele ser un alta
+                // fallida y hay que arreglarla, no es un mes flojo.
+                ? 'El jugador no existe en 1girox (o no pertenece a nuestro agente): se calculó con netwin $0. ' +
+                  'Revisar el alta del usuario en la plataforma.'
+                : `Revenue del período es $0 (GGR: $${(totalGgr ?? 0).toFixed(2)}, apuestas: $${(totalBets ?? 0).toFixed(2)}, ganancias: $${(totalWins ?? 0).toFixed(2)})`)
             : `Todo el revenue del período ya fue liquidado en un pago anterior (settledRevenue=$${alreadySettledRevenue.toFixed(2)})`)
         : null;
 
@@ -642,6 +793,7 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
         commissionAmount,
         status,
         reason: reason || undefined,
+        notFoundInPlatform: revenueResult.notFoundInPlatform === true,
         isDelta: alreadySettledRevenue > 0
       });
 
@@ -696,6 +848,8 @@ async function calculateCommissionsForPeriod(periodKey, options = {}) {
 
   logger.info(
     `[ReferralCalc] Período ${periodKey} | mode=${mode} providerCallsCount=${providerCallsCount} ` +
+    `(requests reales a 1girox, tandas de ${STATS_BATCH_SIZE}) revenueLookups=${revenueLookups} ` +
+    `netwinScope=${getNetwinScope()} ` +
     `commissionsCreated=${results.commissionsCreated} commissionsSkipped=${results.commissionsSkipped} ` +
     `commissionsExcluded=${results.commissionsExcluded} errors=${results.errors.length}`
   );

@@ -8,6 +8,44 @@
 
 ## Sesión 2026-07-31
 
+### 101. Partner API v1.9: se cae el scraping del panel — netwin, batch e ID por API
+- **Contexto:** 1girox publicó las versiones **1.8 y 1.9** y dieron TODO lo que se les
+  había pedido. Se eliminan de un saque los tres puntos frágiles que quedaban.
+- **Lo que resolvieron:**
+  | Novedad | Qué reemplaza |
+  |---|---|
+  | `GET /players/{username}/stats` | El netwin que sacábamos del PANEL con scraping |
+  | `POST /players/stats/batch` (100 por request) | El batching artesanal de referidos |
+  | `GET /players/{username}` ahora trae `id` | La búsqueda del ID en `/users/fetch` (body adivinado) |
+  | `GET /config` | Adivinar qué feats/multiplicadores están habilitados |
+  | `POST /players/{username}/bonus/claim` | Bonos que quedaban bloqueados sin reclamar |
+- **🔥 `giroxReportsService.js` ELIMINADO.** Era el punto más frágil de toda la
+  integración: pegaba contra `admin.1girox.com` con un Bearer de sesión auto-renovable,
+  parseaba un payload base64+deflate, y resolvía el ID con un filtro que nunca pudimos
+  confirmar. Todo eso desapareció. Con él se van `GIROX_ADMIN_USER`, `GIROX_ADMIN_PASS`,
+  `GIROX_ADMIN_TOKEN`, `GIROX_ADMIN_BASE_URL` y `GIROX_AGENT_USER_ID`.
+- **Reembolsos:** los 3 claims y el status pasan a `girox.getPlayerStats(username, ...)`.
+  Se ELIMINÓ el gate "Tu cuenta no está vinculada a la plataforma" que abortaba si no
+  había ID numérico: ya no aplica (el netwin va por username) y sólo servía para negarle
+  el reembolso a alguien que sí podía cobrarlo. El ID igual se persiste **gratis**, con
+  el que devuelve el propio `stats`.
+- **Referidos:** `referralCalculationService` usa el batch. Para 59 referidos pasó de
+  **59+ requests a 1**. Se eliminó `REVENUE_CONCURRENCY`.
+  ⚠️ Efecto colateral a tener en cuenta: los referidos que antes quedaban en $0 por no
+  tener `giroxUserId` ahora SÍ generan comisión. Si se recalcula un período viejo ya
+  pagado, van a aparecer deltas a pagar.
+- **FIX de huso horario en `getPeriodRange`** (`src/utils/periodKey.js`): armaba las
+  fechas con `new Date(year, month-1, 1)`, o sea en la hora LOCAL DEL PROCESO. En
+  producción el server corre en UTC → "1 de julio 00:00" era en realidad "30 de junio
+  21:00" hora argentina: el período de comisiones arrancaba y terminaba 3 horas antes, y
+  esas 3 horas se contaban en DOS meses. Ahora se anclan a -03:00 explícito. Verificado
+  con el server en UTC, incluido febrero bisiesto.
+- **`GET /api/admin/girox/health`** ya no reporta el panel; en su lugar muestra la
+  configuración real de la plataforma (rollover, bonos, multiplicadores, límites).
+- **Validado:** `node --check` OK en los 18 archivos. Grep: 0 consumidores del servicio
+  eliminado.
+
+
 ### 100. El bono por instalar la app pasa a ser 100% en la próxima carga (lo aplica el agente)
 - **Pedido del owner:** reemplazar los $5.000 que se acreditaban gratis por un **100% en
   la próxima carga**; que al reclamarlo le aparezca al agente que el cliente lo tiene

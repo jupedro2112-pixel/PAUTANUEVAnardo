@@ -419,10 +419,11 @@ function validatePassword(password) {
 // Partner API REST/JSON, auth por X-Api-Key. Cliente único: reemplaza a los 4
 // clientes de JUGAYGANA. Montos en PESOS (sin ×100) e idempotencia por `reference`.
 const girox = require('./src/services/giroxService');
-// Reportes (netwin/GGR) — NO son de la Partner API: salen del panel de administración,
-// que es lo único que expone la pérdida real del jugador. De acá dependen los
-// reembolsos y las comisiones de referidos.
-const giroxReports = require('./src/services/giroxReportsService');
+// NOTA: acá vivía `giroxReportsService`, que sacaba el netwin del PANEL de
+// administración con un Bearer de sesión y el ID numérico del jugador (scraping).
+// Era el punto más frágil de toda la integración. Se ELIMINÓ: desde la Partner API
+// v1.8 el netwin sale de `GET /players/{username}/stats`, con la misma API key que
+// el resto y por username. Con él se fueron GIROX_ADMIN_USER/PASS/TOKEN.
 // Resuelve y cachea el ID numérico del jugador en 1girox (necesario para los reportes).
 const { resolveGiroxUserId } = require('./src/services/giroxUserLinkService');
 // Alta de jugadores bajo la cuenta de un publicista (con su propia API key).
@@ -5402,12 +5403,12 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
       apiKeyPresente: !!process.env.GIROX_API_KEY,
       sitioDeJuego: girox.getPlayUrl()
     },
-    panelReportes: {
-      configurado: giroxReports.isEnabled(),
-      baseUrl: process.env.GIROX_ADMIN_BASE_URL || 'https://admin.1girox.com (default)',
-      usuarioPresente: !!process.env.GIROX_ADMIN_USER,
-      passwordPresente: !!process.env.GIROX_ADMIN_PASS,
-      alcanceNetwin: giroxReports.getNetwinScope()
+    // El netwin (reembolsos y referidos) ahora sale de la MISMA Partner API
+    // (GET /players/{username}/stats, v1.8). Ya no hace falta el panel de
+    // administración ni sus credenciales: se fueron GIROX_ADMIN_USER/PASS.
+    netwin: {
+      fuente: 'Partner API (/players/{username}/stats)',
+      alcance: 'casino'
     },
     pruebas: {}
   };
@@ -5435,18 +5436,26 @@ app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, 
     out.pruebas.consultaJugador = 'FALLÓ: ' + e.message;
   }
 
-  // Prueba del panel de reportes (login + una consulta liviana).
-  if (out.panelReportes.configurado) {
-    try {
-      const agentId = giroxReports.getAgentUserId();
-      out.pruebas.panelReportes = agentId
-        ? `OK — sesión iniciada (agente ${agentId})`
-        : 'Sin sesión todavía (se inicia en la primera consulta de netwin)';
-    } catch (e) {
-      out.pruebas.panelReportes = 'FALLÓ: ' + e.message;
+  // Configuración del sitio (feats habilitados, multiplicadores válidos, límites del
+  // bono). Sirve para ver de un vistazo si rollover/bonos están prendidos.
+  try {
+    const cfg = await girox.getPlatformConfig();
+    if (cfg.success) {
+      const c = cfg.config || {};
+      out.pruebas.configuracion = 'OK';
+      out.configuracionPlataforma = {
+        rolloverHabilitado: !!(c.rollover && c.rollover.enabled),
+        bonosHabilitados: !!(c.bonus && c.bonus.enabled),
+        bonoSueltoHabilitado: !!(c.bonus && c.bonus.standalone_enabled),
+        bonoDebeReclamarse: !!(c.bonus && c.bonus.claim_required),
+        multiplicadoresRollover: (c.rollover && c.rollover.multipliers) || null,
+        limitesBonoFijo: c.bonus ? { min: c.bonus.fixed_min, max: c.bonus.fixed_max } : null
+      };
+    } else {
+      out.pruebas.configuracion = 'FALLÓ: ' + cfg.error;
     }
-  } else {
-    out.pruebas.panelReportes = 'NO CONFIGURADO — los reembolsos y las comisiones de referidos no se van a poder calcular';
+  } catch (e) {
+    out.pruebas.configuracion = 'FALLÓ: ' + e.message;
   }
 
   // Estado de la base de usuarios respecto de la plataforma.
@@ -6364,22 +6373,28 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
     const monthlyFrom = new Date(lastMonthRange.fromEpoch * 1000);
     const monthlyTo = new Date(lastMonthRange.toEpoch * 1000);
 
-    // NETWIN/GGR REAL por período (apostado − ganado), MISMA fuente que referidos.
+    // NETWIN REAL por período (apostado − ganado), MISMA fuente que referidos.
     // El reembolso es sobre la PÉRDIDA REAL de juego, NO sobre cargas − retiros. Si la
-    // plataforma no responde para un período, ese netLoss queda en 0 (no se preview de más).
-    // NOTA 1girox: el netwin del reporte es SÓLO de casino (decisión del owner);
-    // ver GIROX_NETWIN_SCOPE en giroxReportsService.
-    const giroxId = await resolveGiroxUserId(userId, username);
+    // plataforma no responde para un período, ese netLoss queda en 0 (nunca se muestra
+    // de más: preferimos un $0 momentáneo a prometer plata que después no se paga).
+    //
+    // Desde la Partner API v1.8 esto sale de `GET /players/{username}/stats`, con la
+    // misma API key que el resto. Antes había que ir al PANEL de administración con un
+    // Bearer de sesión y el ID numérico del jugador — se fue todo eso.
     const [dN, wN, mN] = await Promise.all([
-      giroxReports.getPlayerNetwinForDateRange(giroxId, dailyFrom, dailyTo, 'refund-daily'),
-      giroxReports.getPlayerNetwinForDateRange(giroxId, weeklyFrom, weeklyTo, 'refund-weekly'),
-      giroxReports.getPlayerNetwinForDateRange(giroxId, monthlyFrom, monthlyTo, 'refund-monthly')
+      girox.getPlayerStats(username, dailyFrom, dailyTo, 'refund-daily'),
+      girox.getPlayerStats(username, weeklyFrom, weeklyTo, 'refund-weekly'),
+      girox.getPlayerStats(username, monthlyFrom, monthlyTo, 'refund-monthly')
     ]);
-    const dailyNetLoss = dN.success ? Math.max(0, Number(dN.totalGgr) || 0) : 0;
-    const weeklyNetLoss = wN.success ? Math.max(0, Number(wN.totalGgr) || 0) : 0;
-    const monthlyNetLoss = mN.success ? Math.max(0, Number(mN.totalGgr) || 0) : 0;
+    // ⚠️ `netwin` POSITIVO = el jugador perdió (lo que se reembolsa). Negativo = ganó
+    // en el período → no hay nada que devolver, se corta en 0.
+    // Se usa SÓLO el netwin de CASINO (decisión del owner; sports queda afuera).
+    const _loss = (r) => (r.success ? Math.max(0, Number(r.casinoNetwin) || 0) : 0);
+    const dailyNetLoss = _loss(dN);
+    const weeklyNetLoss = _loss(wN);
+    const monthlyNetLoss = _loss(mN);
 
-    logger.info(`[REFUND] status — ${username} NETWIN daily:${dN.totalGgr}→${dailyNetLoss} weekly:${wN.totalGgr}→${weeklyNetLoss} monthly:${mN.totalGgr}→${monthlyNetLoss}`);
+    logger.info(`[REFUND] status — ${username} NETWIN(casino) daily:${dN.casinoNetwin}→${dailyNetLoss} weekly:${wN.casinoNetwin}→${weeklyNetLoss} monthly:${mN.casinoNetwin}→${monthlyNetLoss}`);
 
     // RANGOS (Bronce/Plata/Oro): el porcentaje sale de cuánto perdió EN ESE PERÍODO,
     // no de una config fija ni de un acumulado histórico. Ver src/utils/refundTiers.js.
@@ -6466,17 +6481,11 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
-      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const giroxUserId = await resolveGiroxUserId(userId, username);
-
-      if (!giroxUserId) {
-        return res.json({
-          success: false,
-          message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
-          canClaim: true
-        });
-      }
+      // NOTA: acá antes se resolvía el ID numérico del jugador y se ABORTABA si no
+      // se conseguía ("Tu cuenta no está vinculada"). Ya no hace falta: desde la
+      // Partner API v1.8 el netwin se pide por USERNAME. Ese gate hoy sólo serviría
+      // para negarle el reembolso a alguien que sí puede cobrarlo.
+      // El ID igual se guarda más abajo, gratis, con el que devuelve el propio stats.
 
       const { fromEpoch, toEpoch, dateStr } = periodRanges.getYesterdayRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
@@ -6484,13 +6493,21 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
 
       // NETWIN REAL del período (apostado − ganado), misma fuente que referidos.
       // El reembolso es sobre la PÉRDIDA REAL de juego, NO sobre cargas − retiros.
-      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-daily');
+      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-daily');
       if (!netRes.success) {
         logger.warn(`[REFUND] daily — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
       }
-      const netLoss = Math.max(0, Number(netRes.totalGgr) || 0);
-      logger.info('[REFUND] daily — usuario:', username, 'NETWIN(GGR):', netRes.totalGgr, 'netLoss:', netLoss);
+      // netwin POSITIVO = el jugador perdió. Sólo casino (decisión del owner).
+      const netLoss = Math.max(0, Number(netRes.casinoNetwin) || 0);
+      logger.info('[REFUND] daily — usuario:', username, 'apostado:', netRes.wagered,
+        'pagado:', netRes.payout, 'netwin(casino):', netRes.casinoNetwin, 'netLoss:', netLoss);
+
+      // El propio stats devuelve el ID numérico del jugador: se guarda de paso,
+      // sin gastar una request extra. Lo usan el panel y los reportes.
+      if (netRes.playerId) {
+        User.updateOne({ id: userId, giroxUserId: null }, { $set: { giroxUserId: netRes.playerId } }).catch(() => {});
+      }
 
       if (netLoss === 0) {
         logger.info('[REFUND] daily — sin pérdida real para:', username);
@@ -6615,30 +6632,31 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
-      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const giroxUserId = await resolveGiroxUserId(userId, username);
-
-      if (!giroxUserId) {
-        return res.json({
-          success: false,
-          message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
-          canClaim: true
-        });
-      }
+      // NOTA: acá antes se resolvía el ID numérico del jugador y se ABORTABA si no
+      // se conseguía. Ya no hace falta: el netwin se pide por USERNAME (Partner API
+      // v1.8). Mantener ese gate sólo serviría para negarle el reembolso a alguien
+      // que sí puede cobrarlo. El ID se guarda gratis con el que devuelve stats.
       
       const { fromEpoch, toEpoch, fromDateStr, toDateStr } = periodRanges.getLastWeekRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-weekly');
+      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-weekly');
       if (!netRes.success) {
         logger.warn(`[REFUND] weekly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
       }
-      const netLoss = Math.max(0, Number(netRes.totalGgr) || 0);
-      logger.info('[REFUND] weekly — usuario:', username, 'NETWIN(GGR):', netRes.totalGgr, 'netLoss:', netLoss);
+      // netwin POSITIVO = el jugador perdió. Sólo casino (decisión del owner).
+      const netLoss = Math.max(0, Number(netRes.casinoNetwin) || 0);
+      logger.info('[REFUND] weekly — usuario:', username, 'apostado:', netRes.wagered,
+        'pagado:', netRes.payout, 'netwin(casino):', netRes.casinoNetwin, 'netLoss:', netLoss);
+
+      // El propio stats devuelve el ID numérico del jugador: se guarda de paso,
+      // sin gastar una request extra. Lo usan el panel y los reportes.
+      if (netRes.playerId) {
+        User.updateOne({ id: userId, giroxUserId: null }, { $set: { giroxUserId: netRes.playerId } }).catch(() => {});
+      }
 
       if (netLoss === 0) {
         logger.info('[REFUND] weekly — sin pérdida real para:', username);
@@ -6757,30 +6775,31 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
         });
       }
       
-      // Obtener el ID del jugador en 1girox para consultar el NETWIN (misma fuente
-      // que referidos). Si falta, se intenta completar automáticamente (backfill al vuelo).
-      const giroxUserId = await resolveGiroxUserId(userId, username);
-
-      if (!giroxUserId) {
-        return res.json({
-          success: false,
-          message: 'Tu cuenta no está vinculada a la plataforma. Contacta al soporte.',
-          canClaim: true
-        });
-      }
+      // NOTA: acá antes se resolvía el ID numérico del jugador y se ABORTABA si no
+      // se conseguía. Ya no hace falta: el netwin se pide por USERNAME (Partner API
+      // v1.8). Mantener ese gate sólo serviría para negarle el reembolso a alguien
+      // que sí puede cobrarlo. El ID se guarda gratis con el que devuelve stats.
       
       const { fromEpoch, toEpoch, fromDateStr, toDateStr } = periodRanges.getLastMonthRangeArgentinaEpoch();
       const fromDate = new Date(fromEpoch * 1000);
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await giroxReports.getPlayerNetwinForDateRange(giroxUserId, fromDate, toDate, 'refund-monthly');
+      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-monthly');
       if (!netRes.success) {
         logger.warn(`[REFUND] monthly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
       }
-      const netLoss = Math.max(0, Number(netRes.totalGgr) || 0);
-      logger.info('[REFUND] monthly — usuario:', username, 'NETWIN(GGR):', netRes.totalGgr, 'netLoss:', netLoss);
+      // netwin POSITIVO = el jugador perdió. Sólo casino (decisión del owner).
+      const netLoss = Math.max(0, Number(netRes.casinoNetwin) || 0);
+      logger.info('[REFUND] monthly — usuario:', username, 'apostado:', netRes.wagered,
+        'pagado:', netRes.payout, 'netwin(casino):', netRes.casinoNetwin, 'netLoss:', netLoss);
+
+      // El propio stats devuelve el ID numérico del jugador: se guarda de paso,
+      // sin gastar una request extra. Lo usan el panel y los reportes.
+      if (netRes.playerId) {
+        User.updateOne({ id: userId, giroxUserId: null }, { $set: { giroxUserId: netRes.playerId } }).catch(() => {});
+      }
 
       if (netLoss === 0) {
         logger.info('[REFUND] monthly — sin pérdida real para:', username);
@@ -8722,10 +8741,9 @@ async function initializeData() {
     console.error('❌ 1girox SIN CONFIGURAR: faltan GIROX_API_URL y/o GIROX_API_KEY. ' +
       'Cargas, retiros, bonos y el acceso al casino NO van a funcionar.');
   }
-  if (!giroxReports.isEnabled()) {
-    console.error('❌ Reportes de 1girox SIN CONFIGURAR: faltan GIROX_ADMIN_USER/GIROX_ADMIN_PASS. ' +
-      'Los reembolsos y las comisiones de referidos NO se van a poder calcular.');
-  }
+  // El netwin (reembolsos + referidos) ya NO necesita credenciales aparte: desde la
+  // Partner API v1.8 sale del mismo endpoint con la misma API key. Se fueron
+  // GIROX_ADMIN_USER / GIROX_ADMIN_PASS / GIROX_ADMIN_TOKEN.
 
 
   // Verificar/crear admin principal

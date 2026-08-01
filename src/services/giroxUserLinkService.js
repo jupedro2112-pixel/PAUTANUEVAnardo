@@ -1,30 +1,44 @@
 /**
  * giroxUserLinkService.js — Vinculación automática de `User.giroxUserId`.
  *
- * Espejo de `jugayganaUserLinkService.js`, pero para 1girox. Resuelve el ID
- * numérico del jugador en 1girox cuando falta (usuarios viejos / migrados) y lo
- * persiste en la base local (backfill al vuelo).
+ * Resuelve el ID numérico del jugador en 1girox cuando falta (usuarios viejos /
+ * migrados) y lo persiste en la base local (backfill al vuelo).
  *
- * ⚠️ POR QUÉ HACE FALTA UN ID SI 1girox VA POR USERNAME: la Partner API
- * (`giroxService.js`) trabaja SÓLO con el username y nunca devuelve un ID. Pero
- * el panel de reportes —de donde sale el netwin para REEMBOLSOS y COMISIONES DE
- * REFERIDOS— exige `player_id` numérico. Sin este ID no se le puede calcular el
- * reembolso a ese usuario (ver giroxReportsService.getPlayerNetwinForDateRange).
+ * PARA QUÉ SIRVE ESTE ID: históricamente era IMPRESCINDIBLE, porque el netwin
+ * —de donde salen los REEMBOLSOS y las COMISIONES DE REFERIDOS— sólo se podía
+ * sacar del panel de administración, y el panel lo pide por `player_id` numérico.
+ * Sin ese ID, a ese usuario no se le podía calcular el reembolso.
  *
- * Reglas de seguridad (idénticas a las del servicio de JUGAYGANA):
+ * Hoy el netwin también va por username (`giroxService.getPlayerStats`), así que el
+ * ID dejó de ser un requisito para pagarle a alguien. Se sigue resolviendo y
+ * guardando porque es el identificador estable del jugador en la plataforma (el
+ * username se puede leer distinto, el ID no) y porque varios flujos lo muestran y
+ * lo usan para cruzar datos con el panel a mano.
+ *
+ * -----------------------------------------------------------------------------
+ * CAMBIO 2026-07-31 — Partner API v1.9: el ID lo devuelve la propia API
+ * -----------------------------------------------------------------------------
+ * Antes el ID se sacaba del PANEL de administración (`findPlayerIdByUsername`,
+ * scraping de /users/fetch con un Bearer de sesión). Ahora `GET /players/{username}`
+ * trae el `id` numérico, así que acá se usa `giroxService.getUserInfoByName()`:
+ * misma API key que el resto del sistema, sin sesión que renovar y sin depender de
+ * que el panel no cambie su HTML/JSON.
+ *
+ * Dos verificaciones que ANTES eran imprescindibles y hoy ya no hacen falta:
+ *  1. Revalidar que el nombre devuelto sea EXACTAMENTE el buscado. El panel
+ *     buscaba con LIKE ("prueba1" traía prueba1, prueba100, prueba12…) y agarrar
+ *     el ID equivocado significaba pagarle el reembolso a OTRA persona. La Partner
+ *     API resuelve por username exacto en la URL: no hay ambigüedad posible.
+ *  2. Todo lo relativo al login del panel (Bearer, expiración, HTML de bloqueo).
+ *
+ * Reglas de seguridad que SÍ se mantienen:
  * - Sólo completa si el campo está vacío/null.
- * - Sólo persiste si el match del nombre es EXACTO (case-insensitive).
  * - Nunca sobrescribe un ID válido existente (update condicional → sin races).
- * - Si no hay match confiable, devuelve null SIN escribir nada.
- *
- * ⚠️ EL BUSCADOR DEL PANEL HACE "LIKE": buscar "prueba1" trae prueba1, prueba100,
- * prueba12… `findPlayerIdByUsername` ya exige coincidencia exacta internamente,
- * pero acá se REVALIDA. Un ID equivocado significa pagarle el reembolso a otra
- * persona: la doble verificación es barata y el error es caro.
+ * - Si no se consigue un ID válido, devuelve null SIN escribir nada.
  */
 
 const { User } = require('../models');
-const giroxReportsService = require('./giroxReportsService');
+const giroxService = require('./giroxService');
 const logger = require('../utils/logger');
 
 /**
@@ -50,51 +64,44 @@ async function resolveGiroxUserId(userId, username) {
     return existing;
   }
 
-  // 2. Campo vacío: backfill al vuelo buscando en el panel de 1girox por username
+  // 2. Campo vacío: backfill al vuelo consultando el jugador en la Partner API.
   logger.info(
     `[GiroxUserLink] giroxUserId faltante para user=${username} (id=${userId}). Intentando backfill al vuelo…`
   );
 
-  let found = null;
+  let info = null;
   try {
-    found = await giroxReportsService.findPlayerIdByUsername(username);
+    info = await giroxService.getUserInfoByName(username);
   } catch (err) {
     logger.error(
-      `[GiroxUserLink] Error buscando el jugador en 1girox | user=${username}: ${err.message}`
+      `[GiroxUserLink] Error consultando el jugador en 1girox | user=${username}: ${err.message}`
     );
     return null;
   }
 
-  if (!found || !found.success || !found.id) {
+  // ⚠️ `getUserInfoByName` devuelve null tanto si el jugador NO EXISTE como si la
+  // consulta falló (timeout, 429 tras sus reintentos internos, key rechazada). Para
+  // este servicio da igual: en los dos casos no hay ID confiable y no se escribe nada.
+  // La próxima vez que se necesite, se vuelve a intentar.
+  if (!info) {
     logger.warn(
-      `[GiroxUserLink] Jugador no encontrado en 1girox | user=${username} ` +
-      `(code=${found?.code || 'sin_respuesta'}). No se puede completar giroxUserId.`
+      `[GiroxUserLink] La Partner API no devolvió el jugador | user=${username} ` +
+      '(no existe, o la consulta falló). No se puede completar giroxUserId.'
     );
     return null;
   }
 
-  // 3. Revalidar la coincidencia EXACTA del nombre antes de persistir.
-  //    findPlayerIdByUsername ya lo filtra, pero el buscador del panel es un LIKE:
-  //    si algún día ese filtro se afloja, acá se corta igual. Un ID equivocado =
-  //    reembolso pagado a otra persona.
-  const remoteUsername = String(found.name || '').toLowerCase().trim();
-  const localUsername = String(username || '').toLowerCase().trim();
-
-  if (!remoteUsername || remoteUsername !== localUsername) {
-    logger.error(
-      `[GiroxUserLink] Match NO confiable: local="${localUsername}" vs 1girox="${remoteUsername}" ` +
-      `(id=${found.id}). NO se persiste giroxUserId para user=${username}.`
-    );
-    return null;
-  }
-
-  const resolvedId = Number(found.id);
+  const resolvedId = Number(info.id);
   if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
-    logger.warn(`[GiroxUserLink] ID inválido devuelto por el panel (${found.id}) | user=${username}`);
+    // La API respondió pero sin `id` numérico: puede pasar si la instalación
+    // todavía está en una versión anterior a la v1.9. No inventamos nada.
+    logger.warn(
+      `[GiroxUserLink] La Partner API devolvió el jugador SIN id numérico (${info.id}) | user=${username}`
+    );
     return null;
   }
 
-  // 4. Persistir SÓLO si el campo sigue vacío (evita pisar un ID que otra request
+  // 3. Persistir SÓLO si el campo sigue vacío (evita pisar un ID que otra request
   //    concurrente ya haya resuelto).
   try {
     const updateResult = await User.updateOne(

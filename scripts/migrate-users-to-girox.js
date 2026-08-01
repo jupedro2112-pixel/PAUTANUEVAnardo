@@ -5,10 +5,19 @@
 // Crea en 1girox (plataforma NUEVA) una cuenta para cada usuario local con
 // role:'user', y le guarda el ID numérico de jugador en `User.giroxUserId`.
 //
-// Por qué hace falta el ID: la Partner API trabaja SÓLO por username, pero el
-// panel de reportes —de donde sale el netwin— exige `player_id`. SIN ESE ID NO
-// SE PUEDE CALCULAR EL REEMBOLSO NI LA COMISIÓN DE REFERIDOS de ese usuario.
-// Por eso el script no se conforma con crear la cuenta: resuelve y persiste el ID.
+// Para qué sirve el ID: es el identificador estable del jugador en 1girox (el
+// username se puede leer mal, el ID no) y es lo que pide el panel de
+// administración para cruzar datos a mano. Históricamente era además
+// IMPRESCINDIBLE para reembolsos y comisiones de referidos, porque el netwin sólo
+// se conseguía del panel y el panel lo pide por `player_id`; hoy el netwin también
+// va por username. Igual el script no se conforma con crear la cuenta: resuelve y
+// persiste el ID, que ahora sale gratis (viene en la respuesta del alta).
+//
+// ✅ 2026-07-31 — Partner API v1.9: el ID sale de la PROPIA Partner API
+// (`GET /players/{username}` lo devuelve, y el POST de alta también). Antes había
+// que sacarlo del PANEL de administración, con credenciales aparte y un scraping
+// cuyo request estaba medio adivinado. Eso YA NO EXISTE: este script usa una sola
+// API key para todo y no necesita GIROX_ADMIN_USER / GIROX_ADMIN_PASS.
 //
 // -----------------------------------------------------------------------------
 // ⚠️ LAS CONTRASEÑAS NO SE PUEDEN MIGRAR (y no pasa nada)
@@ -52,9 +61,7 @@
 //   MONGODB_URI            (obligatoria) misma base que usa el server.
 //   GIROX_API_URL          (obligatoria con --execute) base de la Partner API.
 //   GIROX_API_KEY          (obligatoria con --execute) header X-Api-Key.
-//   GIROX_ADMIN_BASE_URL   panel (default https://admin.1girox.com) → resolver ID.
-//   GIROX_ADMIN_USER       (obligatoria con --execute) usuario del panel.
-//   GIROX_ADMIN_PASS       (obligatoria con --execute) contraseña del panel.
+//   (NO hacen falta credenciales del panel: el ID lo da la Partner API.)
 //   GIROX_MIGRATION_DELAY_MS        ms de espera entre usuarios (default 2500).
 //   GIROX_MIGRATION_PROGRESS_EVERY  cada cuántos usuarios imprime avance (default 25).
 //   GIROX_MIGRATION_RATE_WAIT_MS    espera ante un 429 (default 65000).
@@ -62,9 +69,12 @@
 // -----------------------------------------------------------------------------
 // THROTTLING — por qué tarda horas (y por qué está bien)
 // -----------------------------------------------------------------------------
-// La Partner API permite 60 requests/minuto y cada usuario consume hasta 3 llamadas
-// (existe? + alta + búsqueda del ID en el panel). El techo real es ~20-30 usuarios
-// por minuto. El delay default de 2500ms deja ~24 usuarios/min.
+// La Partner API permite 60 requests/minuto y cada usuario consume 1 o 2 llamadas:
+//   - ya existe en 1girox → 1 sola (la consulta ya trae el ID);
+//   - hay que crearlo     → 2 (consulta + alta, y el alta ya devuelve el ID).
+// Antes eran hasta 3 porque el ID se buscaba aparte en el panel. Aun así el delay
+// default sigue en 2500ms (~24 usuarios/min) A PROPÓSITO: el techo no lo pone este
+// script sino la cuota compartida con producción (ver abajo).
 //
 // ⚠️ ESE LÍMITE ES COMPARTIDO CON PRODUCCIÓN: mientras esto corre, el server sigue
 // pidiendo saldos, cargas y retiros contra la misma cuota. Conviene correrlo en
@@ -93,7 +103,6 @@ process.chdir(path.join(__dirname, '..'));
 require('dotenv').config({ silent: true });
 
 const giroxService = require('../src/services/giroxService');
-const giroxReportsService = require('../src/services/giroxReportsService');
 
 // =============================================================================
 // ARGUMENTOS
@@ -143,10 +152,11 @@ const RATE_WAIT_MS = Math.max(5000, Number(process.env.GIROX_MIGRATION_RATE_WAIT
 const MAX_TRANSIENT_RETRIES = 3;
 
 // Códigos que significan "no es culpa del usuario, reintentar más tarde".
+// (Los códigos del viejo panel —html_blocked, login_failed, token_rejected— se
+// fueron con él: acá ya sólo hablamos con la Partner API.)
 const TRANSIENT_CODES = new Set([
   'http_429', 'rate_limited_local', 'network_error', 'ECONNABORTED', 'ECONNRESET',
-  'ETIMEDOUT', 'EAI_AGAIN', 'http_500', 'http_502', 'http_503', 'http_504',
-  'html_blocked', 'login_failed', 'token_rejected'
+  'ETIMEDOUT', 'EAI_AGAIN', 'http_500', 'http_502', 'http_503', 'http_504'
 ]);
 
 function isTransient(code) {
@@ -229,11 +239,21 @@ function fmtDuration(ms) {
 // PASOS DE LA MIGRACIÓN (con reintentos ante 429 / red)
 // =============================================================================
 
+/** Extrae un ID de jugador válido (> 0) de un objeto `player`, o null. */
+function pickPlayerId(player) {
+  const id = Number(player && player.id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 /**
  * Alta (o vinculación) en 1girox.
  * `syncUserToPlatform` ya es idempotente: si el jugador existe devuelve
  * alreadyExists:true sin tocar nada, así que reintentar es seguro.
- * @returns {{ok:true, alreadyExists:boolean} | {ok:false, error:string, code:string}}
+ *
+ * Desde la Partner API v1.9 la respuesta trae el `player` CON su id numérico —
+ * tanto si el jugador ya existía (GET /players/{username}) como si lo acabamos de
+ * crear (POST /players). Cuando viene, nos ahorramos la consulta extra del paso 3.
+ * @returns {{ok:true, alreadyExists:boolean, id:number|null} | {ok:false, error:string, code:string}}
  */
 async function createOrLinkPlayer(username) {
   for (let attempt = 1; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
@@ -242,7 +262,9 @@ async function createOrLinkPlayer(username) {
       password: generateStrongPassword()
     });
 
-    if (res.success) return { ok: true, alreadyExists: !!res.alreadyExists };
+    if (res.success) {
+      return { ok: true, alreadyExists: !!res.alreadyExists, id: pickPlayerId(res.player) };
+    }
 
     if (isTransient(res.code) && attempt < MAX_TRANSIENT_RETRIES) {
       const wait = isRateLimit(res.code) ? RATE_WAIT_MS : 5000 * attempt;
@@ -257,29 +279,50 @@ async function createOrLinkPlayer(username) {
 }
 
 /**
- * Resuelve el ID numérico del jugador contra el panel.
+ * Resuelve el ID numérico del jugador consultándolo en la Partner API
+ * (`GET /players/{username}`, que desde la v1.9 devuelve el `id`).
  * Es una lectura pura: reintentarla no tiene ningún efecto secundario.
+ *
+ * ⚠️ `getUserInfoByName` devuelve null tanto si el jugador NO EXISTE como si la
+ * consulta falló (timeout, 429 después de los reintentos internos del cliente):
+ * no hay código de error que mirar. Acá eso no es un problema: esta función se
+ * llama SÓLO después de que el alta salió bien, o sea que el jugador existe sí o
+ * sí → un null es, por descarte, un fallo transitorio y se reintenta.
+ *
+ * Como no sabemos si fue un 429, se espera el tiempo largo (RATE_WAIT_MS) desde el
+ * segundo intento: es preferible perder un minuto a quemar cuota de producción.
  * @returns {{ok:true, id:number} | {ok:false, error:string, code:string}}
  */
 async function resolvePlayerId(username) {
   for (let attempt = 1; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
-    const res = await giroxReportsService.findPlayerIdByUsername(username);
-
-    if (res.success && Number.isFinite(Number(res.id)) && Number(res.id) > 0) {
-      return { ok: true, id: Number(res.id) };
-    }
-    if (res.success) {
-      return { ok: false, error: 'el panel devolvió el jugador sin ID', code: 'no_id_in_response' };
+    let info = null;
+    try {
+      info = await giroxService.getUserInfoByName(username);
+    } catch (err) {
+      info = null;
     }
 
-    if (isTransient(res.code) && attempt < MAX_TRANSIENT_RETRIES) {
-      const wait = isRateLimit(res.code) ? RATE_WAIT_MS : 5000 * attempt;
-      console.log(`\n      ⏳ ${res.code} al buscar el ID — espero ${Math.round(wait / 1000)}s y reintento (${attempt}/${MAX_TRANSIENT_RETRIES - 1})`);
+    const id = pickPlayerId(info);
+    if (id) return { ok: true, id };
+
+    if (info) {
+      // Respondió con el jugador pero SIN id numérico: no es transitorio. Pasa si
+      // la instalación todavía está en una versión anterior a la v1.9 de la API.
+      return { ok: false, error: 'la Partner API devolvió el jugador sin id numérico', code: 'no_id_in_response' };
+    }
+
+    if (attempt < MAX_TRANSIENT_RETRIES) {
+      const wait = attempt === 1 ? 5000 : RATE_WAIT_MS;
+      console.log(`\n      ⏳ la Partner API no devolvió el jugador — espero ${Math.round(wait / 1000)}s y reintento (${attempt}/${MAX_TRANSIENT_RETRIES - 1})`);
       await sleep(wait);
       if (stopRequested) return { ok: false, error: 'interrumpido por Ctrl+C', code: 'interrupted' };
       continue;
     }
-    return { ok: false, error: res.error || 'no se pudo resolver el ID', code: res.code || 'unknown' };
+    return {
+      ok: false,
+      error: 'la Partner API no devolvió el jugador (¿falla transitoria?)',
+      code: 'player_not_returned'
+    };
   }
   return { ok: false, error: 'se agotaron los reintentos', code: 'retries_exhausted' };
 }
@@ -316,16 +359,12 @@ async function main() {
 
   // Sin credenciales no se puede migrar nada. Se chequea ANTES de conectarnos a
   // Mongo para fallar en 2 segundos y no en la mitad de la corrida.
-  if (!dryRun) {
-    if (!giroxService.isEnabled()) {
-      console.error('⛔ Falta GIROX_API_URL / GIROX_API_KEY: sin eso no se pueden crear jugadores.');
-      process.exit(1);
-    }
-    if (!giroxReportsService.isEnabled()) {
-      console.error('⛔ Falta GIROX_ADMIN_USER / GIROX_ADMIN_PASS (o GIROX_ADMIN_TOKEN): sin el panel no se puede ' +
-        'resolver el giroxUserId, y sin ese ID no se calculan reembolsos.');
-      process.exit(1);
-    }
+  // La API key de la Partner API es lo ÚNICO que hace falta: crea el jugador y
+  // devuelve su id numérico. Las credenciales del panel ya no se usan.
+  if (!dryRun && !giroxService.isEnabled()) {
+    console.error('⛔ Falta GIROX_API_URL / GIROX_API_KEY: sin eso no se pueden crear jugadores ' +
+      'ni resolver el giroxUserId (y sin ese ID no se calculan reembolsos).');
+    process.exit(1);
   }
 
   console.log('🔌 Conectando a MongoDB...');
@@ -381,26 +420,29 @@ async function main() {
     return;
   }
 
-  const estimate = total * (DELAY_MS + 1500); // +1.5s estimados de latencia de red por usuario
+  // +1s de latencia de red estimada por usuario: son 1 o 2 requests (antes eran
+  // hasta 3, porque el ID se buscaba aparte en el panel).
+  const estimate = total * (DELAY_MS + 1000);
   console.log(`⏱  Duración estimada: ~${fmtDuration(estimate)} (con ${DELAY_MS}ms de delay). ` +
     'Se puede cortar con Ctrl+C y retomar después con el mismo comando.\n');
 
-  // Chequeo de cordura ANTES de largar horas de corrida: una lectura contra cada
-  // API con el primer candidato. No escribe nada — sólo confirma que las
-  // credenciales andan. Si esto falla, no tiene sentido seguir.
+  // Chequeo de cordura ANTES de largar horas de corrida: una lectura contra la
+  // Partner API. No escribe nada — sólo confirma que la key es válida.
+  //
+  // Se usa `ping()` y NO `getUserInfoByName()` a propósito: este último devuelve
+  // null ante CUALQUIER fallo, así que un 401 con la key rechazada se vería igual
+  // que "el jugador no existe todavía" y el script arrancaría a fallar de a uno.
+  // `ping()` mira el código de error crudo.
   if (!dryRun) {
-    const probe = candidates[0].username;
-    console.log(`🔍 Prueba de credenciales (sólo lectura) con "${probe}"...`);
-    const partnerOk = await giroxService.getUserInfoByName(probe);
-    const panelProbe = await giroxReportsService.findPlayerIdByUsername(probe);
-    console.log(`   Partner API : ${partnerOk ? 'responde (el jugador ya existe)' : 'responde (el jugador no existe todavía)'}`);
-    if (!panelProbe.success && (panelProbe.code === 'login_failed' || panelProbe.code === 'token_rejected' || panelProbe.code === 'not_configured')) {
-      console.error(`⛔ El panel rechazó nuestras credenciales (${panelProbe.code}). Revisar GIROX_ADMIN_USER / GIROX_ADMIN_PASS.`);
-      console.error('   Sin el panel no se puede resolver el giroxUserId → se aborta antes de crear nada.');
+    console.log('🔍 Prueba de credenciales (sólo lectura) contra la Partner API...');
+    const probe = await giroxService.ping();
+    if (!probe.ok) {
+      console.error(`⛔ La Partner API no está usable (${probe.estado}): ${probe.detalle}`);
+      console.error('   Revisar GIROX_API_URL / GIROX_API_KEY. Se aborta antes de crear nada.');
       await mongoose.disconnect();
       process.exit(1);
     }
-    console.log(`   Panel       : responde (${panelProbe.success ? `ID ${panelProbe.id}` : panelProbe.code})\n`);
+    console.log(`   Partner API : ${probe.detalle}\n`);
   }
 
   // ---------------------------------------------------------------------------
@@ -446,14 +488,17 @@ async function main() {
 
     // --- 2) Alta en la plataforma ------------------------------------------
     let status = user.giroxSyncStatus;
+    // ID que ya nos haya devuelto el alta (v1.9): si viene, el paso 3 se saltea y
+    // el usuario se resuelve con una request menos.
+    let playerId = null;
 
     if (dryRun) {
       // En dry run no se llama a la API ni para leer: el objetivo es ver el PLAN.
       if (alreadyOnPlatform) {
-        console.log(`${prefix} → [DRY RUN] ya está en 1girox (${status}): buscaría sólo su giroxUserId`);
+        console.log(`${prefix} → [DRY RUN] ya está en 1girox (${status}): consultaría sólo su giroxUserId`);
         counters.pendingIdOnly++;
       } else {
-        console.log(`${prefix} → [DRY RUN] crearía el jugador y buscaría su ID`);
+        console.log(`${prefix} → [DRY RUN] crearía el jugador (el alta ya devuelve su ID)`);
         counters.created++;
       }
       continue;
@@ -476,11 +521,16 @@ async function main() {
         continue;
       }
       status = alta.alreadyExists ? 'linked' : 'synced';
+      playerId = alta.id;
       if (alta.alreadyExists) counters.linked++; else counters.created++;
     }
 
     // --- 3) ID numérico del jugador (imprescindible para los reembolsos) -----
-    const idRes = await resolvePlayerId(username);
+    // Si el alta ya lo trajo (Partner API v1.9), no se consulta de nuevo: es el
+    // mismo dato, de la misma fuente, y una request menos de la cuota compartida.
+    const idRes = playerId
+      ? { ok: true, id: playerId }
+      : await resolvePlayerId(username);
 
     const update = {
       giroxSyncStatus: status,
@@ -571,10 +621,12 @@ async function main() {
   if (noIdList.length) {
     console.log('\n----------------------------------------------------------');
     console.log('  ⚠️  CUENTA CREADA PERO SIN giroxUserId');
-    console.log('  La cuenta existe y el usuario puede jugar, pero SIN ese ID');
-    console.log('  NO se le puede calcular el reembolso ni la comisión de');
-    console.log('  referidos. Volver a correr el script (sin flags) los');
-    console.log('  reintenta solos: no vuelve a crear la cuenta, sólo busca el ID.');
+    console.log('  La cuenta existe y el usuario puede jugar y cobrar (el netwin');
+    console.log('  va por username), pero le falta el identificador estable con');
+    console.log('  el que se cruzan los datos del panel. Conviene completarlo:');
+    console.log('  volver a correr el script (sin flags) los');
+    console.log('  reintenta solos: no vuelve a crear la cuenta, sólo consulta');
+    console.log('  el jugador en la Partner API para leer su ID.');
     console.log('----------------------------------------------------------');
     noIdList.forEach((u) => console.log(`  - ${u.username}: ${u.error}`));
   }
