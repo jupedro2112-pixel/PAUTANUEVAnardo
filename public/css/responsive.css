@@ -7,7 +7,7 @@
 
     .message {
         max-width: 55%;
-        padding: 14px 18px;
+        padding: 9px 12px 20px 12px;
         font-size: 15px;
     }
 }
@@ -38,7 +38,7 @@
 
     .message {
         max-width: 65%;
-        padding: 10px 14px;
+        padding: 8px 11px 20px 11px;
         font-size: 14px;
     }
 }
@@ -227,18 +227,18 @@
     }
 
     .chat-container {
-        margin: 5px;
-        border-radius: 10px;
+        margin: 0;
+        border-radius: 0;
     }
 
     .message {
         max-width: 85%;
-        padding: 10px 12px;
+        padding: 7px 10px 20px 10px;
         font-size: 14px;
     }
 
     .chat-input-container {
-        padding: 8px 10px;
+        padding: 6px 9px;
     }
 
     .action-btn {
@@ -248,7 +248,7 @@
     }
 
     #messageInput {
-        padding: 10px 12px;
+        padding: 10px 14px;
         font-size: 16px;
     }
 
@@ -353,7 +353,7 @@
 
     .message {
         max-width: 90%;
-        padding: 8px 10px;
+        padding: 6px 9px 19px 9px;
         font-size: 13px;
     }
 
@@ -403,7 +403,7 @@
 
     .message {
         max-width: 92%;
-        padding: 8px 10px;
+        padding: 6px 9px 19px 9px;
         font-size: 13px;
     }
 

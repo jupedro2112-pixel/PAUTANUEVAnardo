@@ -17,22 +17,30 @@
 
 .chat-container {
     flex: 1;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid #d4af37;
-    border-radius: 15px;
+    /* Fondo estilo WhatsApp: beige claro con el patrón sutil de siempre.
+       El patrón es un SVG inline (no hay request extra) con opacidad muy baja,
+       igual que el "doodle" original. */
+    background-color: #ece5dd;
+    background-image:
+        radial-gradient(circle at 20% 30%, rgba(0,0,0,0.022) 0 2px, transparent 2px),
+        radial-gradient(circle at 70% 65%, rgba(0,0,0,0.022) 0 3px, transparent 3px),
+        radial-gradient(circle at 45% 85%, rgba(0,0,0,0.018) 0 2px, transparent 2px);
+    background-size: 130px 130px, 190px 190px, 160px 160px;
+    border: none;
+    border-radius: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    margin: 8px;
+    margin: 0;
 }
 
 .chat-messages {
     flex: 1;
-    padding: 15px 10px 20px 10px;
+    padding: 12px 9px 14px 9px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 4px;
     scroll-behavior: smooth;
 }
 
@@ -53,32 +61,44 @@
 }
 
 .message {
-    max-width: 75%;
-    min-width: 150px;
-    padding: 12px 16px;
-    border-radius: 18px;
+    max-width: 78%;
+    min-width: 90px;
+    padding: 7px 10px 20px 10px;  /* espacio abajo-derecha para la hora */
+    border-radius: 8px;
     position: relative;
     word-wrap: break-word;
     box-sizing: border-box;
     width: fit-content;
+    font-size: 14.5px;
+    line-height: 1.4;
+    box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
 }
 
 .message > div {
-    min-width: 100px;
+    min-width: 60px;
+    /* Reserva a la derecha de la última línea para que el texto no se meta
+       debajo de la hora. */
+    padding-right: 42px;
 }
 
+/* Mensajes DEL AGENTE (los que recibe el cliente) → blancos, a la izquierda.
+   ⚠️ El nombre de la clase engaña: `usuario` = lo que ve el usuario, no lo que
+   escribe. Lo que escribe el cliente es `.agente` (ver chat.js:57). */
 .message.usuario {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
+    background: #ffffff;
+    color: #111b21;
     align-self: flex-start;
     margin-right: auto;
+    border-top-left-radius: 0;   /* la "colita" del lado del que habla */
 }
 
+/* Mensajes PROPIOS del cliente → verde claro, a la derecha. */
 .message.agente {
-    background: linear-gradient(135deg, #d4af37 0%, #00cc6a 100%);
-    color: #000;
+    background: #d9fdd3;
+    color: #111b21;
     align-self: flex-end;
     margin-left: auto;
+    border-top-right-radius: 0;
 }
 
 .message img {
@@ -95,7 +115,7 @@
 
 /* Links clickeables en el chat */
 .chat-link {
-    color: #4fc3f7;
+    color: #027eb5;
     text-decoration: underline;
     word-break: break-all;
 }
@@ -156,15 +176,19 @@
     color: #ff4444;
 }
 
+/* La hora va ANCLADA abajo a la derecha DENTRO de la burbuja, como WhatsApp
+   (por eso .message tiene padding-bottom extra). */
 .message-time {
-    font-size: 0.75em;
-    opacity: 0.7;
-    margin-top: 5px;
-    display: block;
+    position: absolute;
+    right: 9px;
+    bottom: 4px;
+    font-size: 11px;
+    color: #667781;
+    white-space: nowrap;
 }
 
 .copy-btn {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.08);
     border: none;
     border-radius: 50%;
     width: 30px;
@@ -183,17 +207,17 @@
 }
 
 .copy-btn:hover {
-    background: #d4af37;
+    background: rgba(0, 0, 0, 0.18);
     transform: scale(1.1);
 }
 
 /* Chat Input */
 .chat-input-container {
     flex: 0 0 auto;
-    padding: 8px 15px;
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
-    border-top: 1px solid #d4af37;
-    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+    padding: 7px 10px;
+    padding-bottom: max(7px, env(safe-area-inset-bottom, 7px));
+    border-top: none;
+    background: #f0f2f5;   /* gris claro, como la barra de WhatsApp */
     z-index: 999;
 }
 
@@ -241,8 +265,9 @@
 }
 
 .attach-btn {
-    background: linear-gradient(135deg, #d4af37 0%, #ffd700 100%);
-    color: #000;
+    background: #ffffff;
+    color: #54656f;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.05);
 }
 
 .attach-btn:hover {
@@ -320,39 +345,46 @@
     /* Piso de ancho usable: si no entra (letra grande), .chat-input lo baja a
        su propia línea en vez de dejarlo diminuto. Con letra normal no se nota. */
     min-width: 90px;
-    padding: 12px 16px;
-    border: 2px solid #d4af37;
-    border-radius: 25px;
-    background: rgba(0, 0, 0, 0.3);
-    color: #ffffff;
-    font-size: 14px;
+    padding: 11px 16px;
+    border: none;
+    border-radius: 22px;
+    background: #ffffff;
+    color: #111b21;
+    font-size: 15px;
     resize: none;
-    min-height: 45px;
+    min-height: 44px;
     max-height: 100px;
     font-family: inherit;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.05);
 }
+#messageInput::placeholder { color: #8696a0; }
 
 #messageInput:focus {
     outline: none;
-    border-color: #ffd700;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
 }
 
+/* Botón de enviar: círculo verde WhatsApp. */
 .send-btn {
-    background: linear-gradient(135deg, #d4af37 0%, #5d8d76 100%);
-    color: #000;
+    background: #00a884;
+    color: #fff;
     border: none;
-    padding: 12px 20px;
-    border-radius: 25px;
-    font-size: 14px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 17px;
     font-weight: bold;
     cursor: pointer;
-    transition: all 0.3s ease;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
 }
 
-.send-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 255, 136, 0.4);
-}
+.send-btn:hover { background: #017561; }
+.send-btn:active { transform: scale(0.95); }
 
 .chat-date-separator {
     display: flex;
@@ -363,13 +395,14 @@
 }
 
 .chat-date-separator span {
-    background: rgba(212, 175, 55, 0.15);
-    color: #d4af37;
+    background: #ffffff;
+    color: #54656f;
     font-size: 12px;
-    font-weight: 700;
-    padding: 6px 16px;
-    border-radius: 20px;
+    font-weight: 600;
+    padding: 5px 13px;
+    border-radius: 7px;
     text-transform: capitalize;
-    letter-spacing: 0.5px;
-    border: 1px solid rgba(212, 175, 55, 0.25);
+    letter-spacing: 0.2px;
+    border: none;
+    box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
 }
