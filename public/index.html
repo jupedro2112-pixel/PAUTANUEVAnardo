@@ -289,6 +289,12 @@
     </style>
 </head>
 <body>
+<script>
+    // Modo oscuro del chat: se aplica ANTES de que se pinte nada, si no el usuario
+    // ve un flash del chat en claro y recién después se pone oscuro. Por eso va
+    // acá inline y no en app.js (que carga al final).
+    try { if (localStorage.getItem('waDark') === '1') document.body.classList.add('wa-dark'); } catch (e) {}
+</script>
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
@@ -847,12 +853,22 @@
             </style>
             <div id="rouletteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:25500;align-items:flex-start;justify-content:center;padding:8px;overflow-y:auto;-webkit-overflow-scrolling:touch;" onclick="if(event.target===event.currentTarget)VIP.roulette && VIP.roulette.close()"></div>
 
+            <!-- Cabecera del chat, estilo WhatsApp: avatar + "Soporte" + estado.
+                 Va DENTRO de .chat-container para que quede pegada arriba de los
+                 mensajes y comparta el redondeo del contenedor. -->
             <div class="chat-container">
+                <div class="chat-topbar">
+                    <img class="chat-topbar-avatar" src="/icons/icon-96x96.png" alt="VIPCARGAS" width="40" height="40">
+                    <div class="chat-topbar-info">
+                        <span class="chat-topbar-name">Soporte VIPCARGAS</span>
+                        <span class="chat-topbar-status"><i class="chat-topbar-dot"></i>en línea</span>
+                    </div>
+                </div>
                 <div class="chat-messages" id="chatMessages">
                     <!-- Messages will be loaded here -->
                 </div>
                 <!-- Indicador "Escribiendo..." -->
-                <div id="typingIndicator" style="display: none; padding: 8px 15px; color: #00ff88; font-size: 12px; font-style: italic; text-align: left;"></div>
+                <div id="typingIndicator" style="display: none; padding: 8px 15px; color: #667781; font-size: 12px; font-style: italic; text-align: left;"></div>
             </div>
         </section>
 
@@ -871,7 +887,13 @@
                 <button class="action-btn cbu-chat-btn" id="cbuChatBtn" title="Ver datos CBU para transferir">💳 CBU</button>
                 <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
                 <textarea id="messageInput" placeholder="Escribe un mensaje..." rows="1"></textarea>
-                <button class="send-btn" id="sendBtn">📤</button>
+                <!-- Avión de papel en SVG (no emoji): el emoji 📤 se ve distinto en
+                     cada sistema operativo y no se puede colorear. -->
+                <button class="send-btn" id="sendBtn" title="Enviar" aria-label="Enviar">
+                    <svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true">
+                        <path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
             </div>
         </div>
 
@@ -1512,6 +1534,21 @@
                 <p style="color: #ffa500; font-weight: bold; margin: 0 0 6px 0; font-size: 14px;">⚠️ Verificación pendiente</p>
                 <p style="color: #ddd; margin: 0 0 10px 0; font-size: 12px;">Para retirar tu primer premio tenés que verificar un número de teléfono real.</p>
                 <button id="openVerifyPhoneBtn" class="btn btn-primary" style="width: 100%;">🔓 Verificar teléfono</button>
+            </div>
+            <!-- Modo oscuro del chat. Sólo cambia el chat, no el menú. La preferencia
+                 se guarda en el dispositivo (localStorage), no en la cuenta: es una
+                 decisión de comodidad visual y cada aparato puede tener la suya. -->
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;
+                        background:rgba(255,255,255,0.04);border:1px solid rgba(212,175,55,0.2);
+                        border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+                <div style="min-width:0;">
+                    <div style="color:#d4af37;font-weight:700;font-size:13px;">🌙 Modo oscuro del chat</div>
+                    <div style="color:#aaa;font-size:11.5px;margin-top:2px;">Fondo oscuro, más cómodo de noche.</div>
+                </div>
+                <label class="wa-switch" title="Modo oscuro del chat">
+                    <input type="checkbox" id="waDarkToggle">
+                    <span class="wa-switch-track"><span class="wa-switch-thumb"></span></span>
+                </label>
             </div>
             <div class="modal-actions" style="flex-direction: column;">
                 <button id="openNotifPlanBtn" class="btn btn-secondary" style="width: 100%;">🔔 Plan de notificaciones</button>

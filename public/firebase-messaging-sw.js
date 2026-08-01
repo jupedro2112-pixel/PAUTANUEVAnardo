@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v57'; // v57: chat con look de WhatsApp
+const CACHE_VERSION = 'v58'; // v58: cabecera del chat, boton enviar y modo oscuro
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

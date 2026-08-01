@@ -406,3 +406,143 @@
     border: none;
     box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
 }
+
+/* ============================================================
+   CABECERA DEL CHAT (estilo WhatsApp)
+   ============================================================ */
+.chat-topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 13px;
+    background: #075e54;          /* verde WhatsApp */
+    color: #fff;
+}
+
+.chat-topbar-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #0b7d6e;
+    flex-shrink: 0;
+}
+
+.chat-topbar-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;               /* deja que el nombre se recorte en vez de empujar */
+}
+
+.chat-topbar-name {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-topbar-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+/* Puntito verde de "en línea". Es decorativo (no es un estado real de conexión
+   del agente): el soporte atiende 24/7, así que se muestra fijo. */
+.chat-topbar-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #25d366;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+/* ============================================================
+   MODO OSCURO (se activa con .wa-dark en <body>; ver ui.js)
+   ============================================================
+   Sólo afecta al CHAT. El menú/dashboard queda igual en los dos modos. */
+body.wa-dark .chat-container {
+    background-color: #0b141a;
+    background-image:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,0.022) 0 2px, transparent 2px),
+        radial-gradient(circle at 70% 65%, rgba(255,255,255,0.022) 0 3px, transparent 3px),
+        radial-gradient(circle at 45% 85%, rgba(255,255,255,0.018) 0 2px, transparent 2px);
+}
+
+body.wa-dark .chat-topbar { background: #1f2c33; }
+
+body.wa-dark .message.usuario {          /* mensajes del agente */
+    background: #202c33;
+    color: #e9edef;
+}
+
+body.wa-dark .message.agente {           /* mensajes propios */
+    background: #005c4b;
+    color: #e9edef;
+}
+
+body.wa-dark .message-time { color: #8696a0; }
+
+body.wa-dark .chat-date-separator span {
+    background: #182229;
+    color: #8696a0;
+}
+
+body.wa-dark .chat-input-container { background: #1f2c33; }
+
+body.wa-dark #messageInput {
+    background: #2a3942;
+    color: #e9edef;
+}
+body.wa-dark #messageInput::placeholder { color: #8696a0; }
+
+body.wa-dark .attach-btn {
+    background: #2a3942;
+    color: #8696a0;
+}
+
+body.wa-dark .chat-link { color: #53bdeb; }
+
+body.wa-dark .copy-btn { background: rgba(255,255,255,0.12); }
+body.wa-dark .copy-btn:hover { background: rgba(255,255,255,0.22); }
+
+body.wa-dark #typingIndicator { color: #8696a0 !important; }
+
+/* ============================================================
+   INTERRUPTOR del modo oscuro (Configuración)
+   ============================================================ */
+.wa-switch { position: relative; display: inline-block; flex-shrink: 0; cursor: pointer; }
+.wa-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.wa-switch-track {
+    display: block;
+    width: 46px;
+    height: 26px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 13px;
+    transition: background 0.2s ease;
+}
+
+.wa-switch-thumb {
+    display: block;
+    width: 20px;
+    height: 20px;
+    margin: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
+.wa-switch input:checked + .wa-switch-track { background: #00a884; }
+.wa-switch input:checked + .wa-switch-track .wa-switch-thumb { transform: translateX(20px); }
+/* Foco visible por teclado (accesibilidad): sin esto el switch es inalcanzable
+   para quien no usa mouse. */
+.wa-switch input:focus-visible + .wa-switch-track { outline: 2px solid #d4af37; outline-offset: 2px; }

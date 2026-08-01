@@ -463,8 +463,25 @@ function setupEventListeners() {
             const pendingBlock = document.getElementById('verifyPhonePendingBlock');
             const isPending = VIP.state.currentUser && VIP.state.currentUser.phoneVerificationPending === true;
             if (pendingBlock) pendingBlock.style.display = isPending ? '' : 'none';
+            // El switch refleja el estado real cada vez que se abre el modal (por si
+            // se cambió en otra pestaña).
+            const darkToggle = document.getElementById('waDarkToggle');
+            if (darkToggle) darkToggle.checked = document.body.classList.contains('wa-dark');
             VIP.ui.showModal('settingsModal');
         });
+
+        // ---- Modo oscuro del chat ----
+        // Se guarda en localStorage (por dispositivo, no por cuenta): es comodidad
+        // visual y cada aparato puede tener su preferencia. Se aplica al <body>
+        // porque el CSS del modo oscuro cuelga de `body.wa-dark`.
+        const waDarkToggle = document.getElementById('waDarkToggle');
+        if (waDarkToggle) {
+            waDarkToggle.addEventListener('change', () => {
+                const on = waDarkToggle.checked;
+                document.body.classList.toggle('wa-dark', on);
+                try { localStorage.setItem('waDark', on ? '1' : '0'); } catch (e) {}
+            });
+        }
 
         // Botón "🔓 Verificar teléfono" dentro del modal de settings: abre el modal de verify-phone.
         const openVerifyPhoneBtn = document.getElementById('openVerifyPhoneBtn');
