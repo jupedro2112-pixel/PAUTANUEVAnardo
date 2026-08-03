@@ -13355,9 +13355,10 @@ app.get('/api/admin/hgcash/movements', authMiddleware, adminMiddleware, async (r
 // Regenerar desde el panel pisa el hash → el link anterior deja de servir.
 app.post('/api/admin/users/:userId/access-link', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    // SOLO el admin general: este link es acceso total a la cuenta del cliente.
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Solo el admin general puede generar links de acceso.' });
+    // Admin general y depositor (decisión del owner 2026-08-03: los depositors
+    // también dan de alta clientes). withdrawer/comunidad/publisher_admin NO.
+    if (!['admin', 'depositor'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Solo el admin general o un depositor pueden generar links de acceso.' });
     }
     const { userId } = req.params;
     const user = await User.findOne({ id: userId }).select('id username role isBlocked').lean();

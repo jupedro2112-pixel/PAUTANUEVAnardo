@@ -17,9 +17,10 @@
   - `User.accessLinkHash` (+`accessLinkCreatedAt`): se guarda SOLO el sha256 — el
     link en claro lo ve únicamente el admin al generarlo (un dump de la base no
     regala logins). Token: 24 bytes random base64url (192 bits).
-  - `POST /api/admin/users/:userId/access-link` — **SOLO admin general** (el link es
-    acceso total a la cuenta; depositor/withdrawer no pueden). Regenerar pisa el
-    hash → el anterior muere. Solo cuentas role 'user' no bloqueadas.
+  - `POST /api/admin/users/:userId/access-link` — **admin general y depositor**
+    (decisión del owner: los depositors también dan de alta clientes;
+    withdrawer/comunidad/publisher_admin NO). Regenerar pisa el hash → el anterior
+    muere. Solo cuentas role 'user' no bloqueadas.
   - `POST /api/auth/access-link` (público + authLimiter): canje **single-use a
     prueba de carreras** — el findOneAndUpdate borra el hash y setea
     `mustChangePassword:true` + lastLogin en el MISMO paso; dos aperturas

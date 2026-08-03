@@ -3995,8 +3995,8 @@ function renderUsers(users) {
               '</div>'
             : '';
 
-        // Link de acceso de un solo uso: SOLO admin general y solo para clientes.
-        const accessLinkBtn = (adminRole === 'admin' && !isAdminUser)
+        // Link de acceso de un solo uso: admin general y depositor, solo clientes.
+        const accessLinkBtn = (['admin', 'depositor'].includes(adminRole) && !isAdminUser)
             ? `<button class="action-btn-small" title="Generar link de acceso (un solo uso — loguea al cliente automáticamente)" onclick='handleGenerateAccessLink(${JSON.stringify(user.id)}, ${JSON.stringify(user.username)})'>🔗</button>`
             : '';
 
@@ -5174,9 +5174,9 @@ async function handleCreateUser() {
             document.getElementById('newUserEmail').value = '';
             document.getElementById('newUserPhone').value = '';
             document.getElementById('newUserRole').value = 'user';
-            // Link de acceso de un solo uso del recién creado (solo clientes y
-            // solo admin general — el backend lo re-valida igual).
-            if (data.user && data.user.role === 'user' && currentAdmin && currentAdmin.role === 'admin') {
+            // Link de acceso de un solo uso del recién creado (solo clientes;
+            // admin general y depositor — el backend lo re-valida igual).
+            if (data.user && data.user.role === 'user' && currentAdmin && ['admin', 'depositor'].includes(currentAdmin.role)) {
                 generateAccessLink(data.user.id, data.user.username,
                     '✅ Usuario creado. Este es su link para entrar por primera vez:');
             }

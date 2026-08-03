@@ -521,8 +521,8 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
 - **Bono instalación $5.000**: exige standalone real (token FCM), teléfono verificado,
   anti-multicuenta por token FCM compartido, reserva atómica. Crédito con depósito libre
   (`vip-install-<userId>` — una sola vez en la vida del usuario).
-- **Link de acceso de un solo uso** (2026-08-03): el admin GENERAL genera
-  `?acceso=<token>` para un cliente (`POST /api/admin/users/:userId/access-link`,
+- **Link de acceso de un solo uso** (2026-08-03): el admin general o un DEPOSITOR
+  generan `?acceso=<token>` para un cliente (`POST /api/admin/users/:userId/access-link`,
   también desde el alta del panel; regenerar pisa el anterior). En `User` vive SOLO
   el sha256 (`accessLinkHash`). El canje (`POST /api/auth/access-link`, público +
   authLimiter) borra el hash EN EL MISMO findOneAndUpdate (single-use a prueba de
