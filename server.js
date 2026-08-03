@@ -13346,6 +13346,80 @@ app.get('/api/admin/hgcash/movements', authMiddleware, adminMiddleware, async (r
   }
 });
 
+// ============================================
+// LINK DE ACCESO DE UN SOLO USO (alta desde el panel)
+// ============================================
+// El admin general genera un link `https://vipcargas.com/?acceso=<token>`; el
+// cliente lo abre y entra LOGUEADO automáticamente, el link muere en ese momento
+// (un solo uso) y se le exige crear una contraseña nueva (mustChangePassword).
+// Regenerar desde el panel pisa el hash → el link anterior deja de servir.
+app.post('/api/admin/users/:userId/access-link', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // SOLO el admin general: este link es acceso total a la cuenta del cliente.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el admin general puede generar links de acceso.' });
+    }
+    const { userId } = req.params;
+    const user = await User.findOne({ id: userId }).select('id username role isBlocked').lean();
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.role !== 'user') return res.status(400).json({ error: 'Solo se pueden generar links para cuentas de clientes.' });
+    if (user.isBlocked) return res.status(400).json({ error: 'La cuenta está bloqueada — desbloqueala antes de generar el link.' });
+
+    // 24 bytes random → 32 chars URL-safe (192 bits: no se puede adivinar).
+    const token = crypto.randomBytes(24).toString('base64url');
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+    await User.updateOne({ id: userId }, { $set: { accessLinkHash: hash, accessLinkCreatedAt: new Date() } });
+
+    const link = `${PUBLIC_BASE_URL}/?acceso=${token}`;
+    logger.info(`[access-link] link generado para ${user.username} por ${req.user.username}`);
+    res.json({ success: true, link, username: user.username });
+  } catch (error) {
+    console.error('Error generando link de acceso:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Canje del link (público, rate-limiteado). UN SOLO USO a prueba de carreras: el
+// findOneAndUpdate borra el hash en el mismo paso — un segundo canje del mismo
+// link no encuentra nada. Al canjear se fuerza mustChangePassword: al entrar, la
+// PWA le muestra el recuadro de crear su contraseña nueva (flujo ya existente).
+app.post('/api/auth/access-link', authLimiter, async (req, res) => {
+  try {
+    const token = String((req.body && req.body.token) || '').trim();
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) {
+      return res.status(400).json({ error: 'Este link de acceso no es válido.' });
+    }
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOneAndUpdate(
+      { accessLinkHash: hash, role: 'user', isActive: { $ne: false }, isBlocked: { $ne: true } },
+      { $set: { accessLinkHash: null, mustChangePassword: true, lastLogin: new Date() } },
+      { new: true }
+    ).select('id username role tokenVersion').lean();
+
+    if (!user) {
+      // Genérico a propósito: no revelar si el link existió, venció o la cuenta
+      // está bloqueada.
+      return res.status(401).json({ error: 'Este link de acceso ya fue usado o no es válido. Pedile uno nuevo al soporte.' });
+    }
+
+    const jwtToken = jwt.sign(
+      { userId: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion ?? 0 },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    logger.info(`[access-link] canjeado por ${user.username}`);
+    res.json({
+      token: jwtToken,
+      user: { id: user.id, username: user.username, role: user.role, mustChangePassword: true }
+    });
+  } catch (error) {
+    console.error('Error canjeando link de acceso:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 // Saldo EN VIVO de la(s) cuenta(s) hgcash (GET /accounts). Para que el agente vea la
 // plata real sin entrar a hg.cash. Solo admin general. Cache de 15s para no martillar
 // la API de hgcash con el refresco en vivo del panel.

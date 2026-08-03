@@ -490,9 +490,9 @@
             <button class="menu-item settings-btn" id="settingsBtn" title="Configuración" role="menuitem">
                 <span class="menu-item-icon">⚙️</span><span class="menu-item-label">Configuración</span>
             </button>
-            <button class="menu-item logout-btn" id="logoutBtn" title="Cerrar sesión" style="display:none;" role="menuitem">
-                <span class="menu-item-icon">🚪</span><span class="menu-item-label">Cerrar sesión</span>
-            </button>
+            <!-- 🪦 Acá había un botón "Cerrar sesión" (logoutBtn): ELIMINADO a pedido
+                 del owner (2026-08-03) — no tiene que haber logout en la app. El
+                 listener de app.js queda con su guard `if (logoutBtn)` sin efecto. -->
         </div>
         </header>
         <script>
@@ -1185,6 +1185,75 @@
     </div>
 
     <!-- Modal Cambio de Contraseña Obligatorio -->
+    <style>
+        /* ============================================================
+           RECUADRO DE CONTRASEÑA — look WhatsApp (claro y oscuro)
+           Aplica al modal de cambio de clave (incluido el flujo forzado
+           del link de acceso de un solo uso): tarjeta blanca/oscura,
+           inputs pill y botón verde WhatsApp, tipografía del sistema.
+           ============================================================ */
+        #changePasswordModal .modal-content {
+            background: #ffffff;
+            border: none;
+            border-radius: 14px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+            color: #111b21;
+        }
+        #changePasswordModal .modal-header h2 { color: #111b21; }
+        #changePasswordModal .modal-header p { color: #667781; }
+        #changePasswordModal label { color: #54656f; font-size: 13px; }
+        #changePasswordModal input[type="password"],
+        #changePasswordModal input[type="text"],
+        #changePasswordModal input[type="tel"],
+        #changePasswordModal select {
+            background: #f0f2f5 !important;
+            border: 1px solid #e0e4e8 !important;
+            border-radius: 10px !important;
+            color: #111b21 !important;
+        }
+        #changePasswordModal input::placeholder { color: #8696a0 !important; }
+        #changePasswordModal input:focus, #changePasswordModal select:focus {
+            outline: none !important;
+            border-color: #00a884 !important;
+            box-shadow: 0 0 0 1px #00a884 !important;
+        }
+        #changePasswordModal .btn-primary {
+            background: #00a884 !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 24px !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+        }
+        #changePasswordModal .btn-primary:hover { background: #017561 !important; }
+        #changePasswordModal .btn-secondary {
+            background: #f0f2f5 !important;
+            color: #111b21 !important;
+            border: 1px solid #e0e4e8 !important;
+            border-radius: 24px !important;
+        }
+        /* Modo oscuro (body.wa-dark): paleta dark de WhatsApp. */
+        body.wa-dark #changePasswordModal .modal-content {
+            background: #202c33;
+            color: #e9edef;
+        }
+        body.wa-dark #changePasswordModal .modal-header h2 { color: #e9edef; }
+        body.wa-dark #changePasswordModal .modal-header p { color: #8696a0; }
+        body.wa-dark #changePasswordModal label { color: #8696a0; }
+        body.wa-dark #changePasswordModal input[type="password"],
+        body.wa-dark #changePasswordModal input[type="text"],
+        body.wa-dark #changePasswordModal input[type="tel"],
+        body.wa-dark #changePasswordModal select {
+            background: #2a3942 !important;
+            border-color: #2a3942 !important;
+            color: #e9edef !important;
+        }
+        body.wa-dark #changePasswordModal .btn-secondary {
+            background: #2a3942 !important;
+            color: #e9edef !important;
+            border-color: #3b4a54 !important;
+        }
+    </style>
     <div id="changePasswordModal" class="modal hidden" onclick="if(event.target===event.currentTarget)VIP.ui.hideModal('changePasswordModal')">
         <div class="modal-content" style="position: relative;">
             <button id="changePasswordCloseBtn" onclick="VIP.ui.hideModal('changePasswordModal')" style="position: absolute; top: 15px; right: 15px; background: none; border: none; color: #888; font-size: 24px; cursor: pointer; z-index: 10;">✕</button>
@@ -1200,11 +1269,11 @@
                 </div>
                 <div class="input-group">
                     <label>Nueva Contraseña</label>
-                    <input type="password" id="newPasswordInput" name="new-password" placeholder="Mínimo 6 caracteres" required minlength="6" autocomplete="new-password">
+                    <input type="password" id="newPasswordInput" name="new-password" placeholder="Mínimo 8 caracteres, con letras y números" required minlength="8" autocomplete="new-password">
                 </div>
                 <div class="input-group">
                     <label>Repetir Contraseña</label>
-                    <input type="password" id="confirmPasswordInput" name="confirm-password" placeholder="Repite tu contraseña" required minlength="6" autocomplete="new-password">
+                    <input type="password" id="confirmPasswordInput" name="confirm-password" placeholder="Repetí tu contraseña" required minlength="8" autocomplete="new-password">
                 </div>
                 <div class="input-group" id="changePasswordWhatsAppGroup">
                     <label>Número de WhatsApp *</label>

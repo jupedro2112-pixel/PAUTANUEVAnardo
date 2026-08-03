@@ -7,9 +7,16 @@
 // ========================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    if (VIP.state.currentToken) {
-        VIP.auth.verifyToken();
-    }
+    // Link de acceso de un solo uso (?acceso=<token>): si viene en la URL se
+    // canjea PRIMERO — si sale bien, verifyToken completa la sesión como un
+    // login normal (incluido el recuadro obligatorio de crear contraseña).
+    const _accessLinkPromise = (VIP.auth && VIP.auth.tryAccessLink)
+        ? VIP.auth.tryAccessLink() : Promise.resolve(false);
+    _accessLinkPromise.then((viaLink) => {
+        if (viaLink || VIP.state.currentToken) VIP.auth.verifyToken();
+    }).catch(() => {
+        if (VIP.state.currentToken) VIP.auth.verifyToken();
+    });
     setupEventListeners();
 
     // Welcome del publicista: se muestra PRE-AUTH si el visitante llegó por

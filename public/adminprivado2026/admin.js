@@ -3995,6 +3995,11 @@ function renderUsers(users) {
               '</div>'
             : '';
 
+        // Link de acceso de un solo uso: SOLO admin general y solo para clientes.
+        const accessLinkBtn = (adminRole === 'admin' && !isAdminUser)
+            ? `<button class="action-btn-small" title="Generar link de acceso (un solo uso — loguea al cliente automáticamente)" onclick='handleGenerateAccessLink(${JSON.stringify(user.id)}, ${JSON.stringify(user.username)})'>🔗</button>`
+            : '';
+
         // Medalla del nivel VIP (apostado acumulado). El backend manda
         // vipLevelInfo ya resuelto (nombre/emoji) — acá no se duplica la escalera.
         const vipBadge = user.vipLevelInfo
@@ -4023,10 +4028,74 @@ function renderUsers(users) {
                 </button>
                 ${pwdBtn}
                 ${blockBtn}
+                ${accessLinkBtn}
             </td>
         </tr>
         `;
     }).join('');
+}
+
+// ============================================
+// LINK DE ACCESO DE UN SOLO USO
+// ============================================
+// El admin general genera un link que loguea al cliente automáticamente al
+// abrirlo (un solo uso). Regenerar pisa el anterior. El cliente, al entrar,
+// tiene que crear su contraseña nueva (mustChangePassword).
+
+async function handleGenerateAccessLink(userId, username) {
+    if (!confirm(`¿Generar un link de acceso de UN SOLO USO para "${username}"?\n\nSi ya existía un link sin usar, el anterior deja de servir.`)) return;
+    await generateAccessLink(userId, username, '');
+}
+
+async function generateAccessLink(userId, username, note) {
+    try {
+        const r = await authFetch(`/api/admin/users/${userId}/access-link`, { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+            showToast(j.error || 'No se pudo generar el link', 'error');
+            return;
+        }
+        showAccessLinkModal(j.link, username, note);
+    } catch (e) {
+        showToast('Error de conexión', 'error');
+    }
+}
+
+function showAccessLinkModal(link, username, note) {
+    let overlay = document.getElementById('accessLinkModal');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'accessLinkModal';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:16px;';
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+        <div style="background:linear-gradient(160deg,#2d0052,#1a0033);border:1px solid #d4af37;border-radius:14px;max-width:520px;width:100%;padding:20px;">
+            <h3 style="color:#d4af37;margin:0 0 6px;font-size:16px;">🔗 Link de acceso de ${escapeHtml(username)}</h3>
+            ${note ? `<p style="color:#00ff88;font-size:12px;margin:0 0 8px;">${escapeHtml(note)}</p>` : ''}
+            <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
+                Pasáselo al cliente: al abrirlo entra <b>logueado automáticamente</b> y se le pide
+                crear su contraseña. Es de <b>UN SOLO USO</b> — después de usarse (o si generás
+                otro) este link muere. No lo publiques en ningún lado.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;background:rgba(0,0,0,0.35);border:1px solid rgba(212,175,55,0.35);border-radius:9px;padding:10px;">
+                <span id="accessLinkText" style="flex:1;min-width:0;color:#00ff88;font-size:12px;word-break:break-all;">${escapeHtml(link)}</span>
+                <button onclick="copyAccessLink()" style="flex-shrink:0;background:rgba(212,175,55,0.2);border:1px solid #d4af37;color:#d4af37;padding:7px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;">📋 Copiar</button>
+            </div>
+            <button onclick="document.getElementById('accessLinkModal').style.display='none'"
+                style="width:100%;margin-top:14px;background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;border:none;padding:11px;border-radius:9px;font-weight:700;cursor:pointer;">Cerrar</button>
+        </div>`;
+    overlay.style.display = 'flex';
+}
+
+function copyAccessLink() {
+    const el = document.getElementById('accessLinkText');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(
+        () => showToast('Link copiado al portapapeles', 'success'),
+        () => showToast('No se pudo copiar — copialo a mano', 'error')
+    );
 }
 
 // ============================================
@@ -5105,6 +5174,12 @@ async function handleCreateUser() {
             document.getElementById('newUserEmail').value = '';
             document.getElementById('newUserPhone').value = '';
             document.getElementById('newUserRole').value = 'user';
+            // Link de acceso de un solo uso del recién creado (solo clientes y
+            // solo admin general — el backend lo re-valida igual).
+            if (data.user && data.user.role === 'user' && currentAdmin && currentAdmin.role === 'admin') {
+                generateAccessLink(data.user.id, data.user.username,
+                    '✅ Usuario creado. Este es su link para entrar por primera vez:');
+            }
         } else {
             showToast(data.error || 'Error al crear usuario', 'error');
         }

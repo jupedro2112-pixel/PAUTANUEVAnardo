@@ -8,6 +8,41 @@
 
 ## Sesión 2026-08-03
 
+### 111. Link de acceso de UN SOLO USO + modal de clave estilo WhatsApp + sin logout
+- **Pedido del owner:** (a) sin botón de cerrar sesión; (b) crear usuarios desde el
+  panel con un link de un solo uso que loguee automáticamente al abrirlo (y no sirva
+  más), regenerable desde el panel; (c) al entrar por el link, recuadro para crear
+  una contraseña nueva segura; (d) todo con diseño tipo WhatsApp claro/oscuro.
+- **Backend:**
+  - `User.accessLinkHash` (+`accessLinkCreatedAt`): se guarda SOLO el sha256 — el
+    link en claro lo ve únicamente el admin al generarlo (un dump de la base no
+    regala logins). Token: 24 bytes random base64url (192 bits).
+  - `POST /api/admin/users/:userId/access-link` — **SOLO admin general** (el link es
+    acceso total a la cuenta; depositor/withdrawer no pueden). Regenerar pisa el
+    hash → el anterior muere. Solo cuentas role 'user' no bloqueadas.
+  - `POST /api/auth/access-link` (público + authLimiter): canje **single-use a
+    prueba de carreras** — el findOneAndUpdate borra el hash y setea
+    `mustChangePassword:true` + lastLogin en el MISMO paso; dos aperturas
+    simultáneas → una sola gana. Emite el mismo JWT de 30d del login. Error
+    genérico a propósito (no revela si el link existió).
+- **PWA:** `VIP.auth.tryAccessLink()` corre PRIMERO en el arranque (app.js): lee
+  `?acceso=`, LIMPIA la URL del historial antes de canjear, guarda el JWT y deja
+  que `verifyToken()` complete la sesión — el flujo `mustChangePassword` existente
+  abre solo el recuadro obligatorio de contraseña nueva.
+- **Recuadro de contraseña — look WhatsApp** (claro y oscuro vía `body.wa-dark`):
+  tarjeta blanca/#202c33, inputs pill #f0f2f5/#2a3942, botón verde #00a884.
+  **Contraseña segura**: piso del FRONT subido a 8+ caracteres con letras y números
+  (el server sigue aceptando ≥6 para no romper claves viejas en el login).
+- **Panel:** al crear un usuario cliente (admin general) se genera el link solo y
+  aparece un modal con el link + botón copiar; en la tabla de Usuarios hay un botón
+  🔗 "Generar link de acceso" (= regenerar) por cliente.
+- **Sin logout:** eliminado el botón "Cerrar sesión" del menú ☰ (llevaba oculto por
+  default desde siempre; el listener de app.js queda inerte con su guard).
+- **Validado:** `node --check` OK en los 5 JS. SW a **v70**. Back necesita redeploy.
+  PROBAR tras deploy: crear un usuario desde el panel → copiar el link → abrirlo en
+  incógnito (entra logueado + modal de contraseña estilo WhatsApp) → abrirlo de
+  nuevo (rechazado, ya usado) → regenerar con 🔗 y repetir.
+
 ### 110. Wording: "Unite al canal de Telegram" → "Unite a la Comunidad de Telegram"
 - Pedido del owner. Cambiado en el pill del header, el ítem del menú ☰ y el texto de
   ayuda del panel. Solo texto — misma config y mismos IDs. SW a **v69**.

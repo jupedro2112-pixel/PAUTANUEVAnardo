@@ -426,6 +426,41 @@ VIP.auth = (function () {
         }
     }
 
+    // ============================================
+    // LINK DE ACCESO DE UN SOLO USO (?acceso=<token>)
+    // ============================================
+    // El admin genera el link desde el panel; el cliente lo abre y entra logueado
+    // automáticamente. El link muere al canjearse (single use, lo garantiza el
+    // backend) y el usuario queda con mustChangePassword → verifyToken() le abre
+    // el recuadro de crear su contraseña nueva (flujo existente).
+    async function tryAccessLink() {
+        let token = null;
+        try { token = new URLSearchParams(window.location.search).get('acceso'); } catch (e) {}
+        if (!token) return false;
+
+        // Sacar el token de la URL YA MISMO: es de un solo uso y no tiene que
+        // quedar en el historial ni compartirse por accidente.
+        try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
+
+        try {
+            const response = await fetch(`${VIP.config.API_URL}/api/auth/access-link`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+            const data = await response.json();
+            if (response.ok && data.token) {
+                VIP.state.currentToken = data.token;
+                localStorage.setItem('userToken', data.token);
+                return true; // el caller sigue con verifyToken() → sesión completa
+            }
+            VIP.ui.showToast(data.error || 'Este link de acceso ya fue usado o no es válido.', 'error');
+        } catch (e) {
+            VIP.ui.showToast('Error de conexión al validar tu link de acceso. Probá de nuevo.', 'error');
+        }
+        return false;
+    }
+
     function handleLogout() {
         // Avisar al backend para limpiar el token FCM de este dispositivo, así
         // las notificaciones del próximo user no se entregan a la sesión cerrada.
@@ -667,8 +702,11 @@ VIP.auth = (function () {
             errorDiv.classList.add('show');
             return;
         }
-        if (newPassword.length < 6) {
-            errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        // Contraseña SEGURA: mínimo 8 con al menos una letra y un número
+        // (endurecido 2026-08-03 junto con el flujo del link de acceso; el server
+        // acepta ≥6, este es el piso del FRONT para claves nuevas).
+        if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+            errorDiv.textContent = 'La contraseña debe tener al menos 8 caracteres, con letras y números.';
             errorDiv.classList.add('show');
             return;
         }
@@ -1362,6 +1400,7 @@ VIP.auth = (function () {
         handleVerifyPhoneConfirm,
         handleLogin,
         verifyToken,
+        tryAccessLink,
         handleLogout,
         ensureUserLoaded,
         initializeSession,

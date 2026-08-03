@@ -233,6 +233,23 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
+  // ============================================
+  // LINK DE ACCESO DE UN SOLO USO (alta desde el panel admin)
+  // ============================================
+  // Se guarda SOLO el hash sha256 del token — el link en claro lo ve únicamente
+  // el admin al generarlo (un dump de la base no regala logins). Al canjearse se
+  // borra en el MISMO findOneAndUpdate (un solo uso, a prueba de carreras).
+  // Regenerar desde el panel pisa el hash → el link anterior muere solo.
+  accessLinkHash: {
+    type: String,
+    default: null,
+    index: true
+  },
+  accessLinkCreatedAt: {
+    type: Date,
+    default: null
+  },
+
 
   // Token FCM para notificaciones push (último registrado – se mantiene para compatibilidad y vista admin)
   fcmToken: { 
