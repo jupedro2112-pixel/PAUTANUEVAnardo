@@ -5052,15 +5052,8 @@ app.get('/api/config/cbu', authMiddleware, async (req, res) => {
 });
 
 // Ruta GET para obtener URL del Canal Informativo (panel usuario)
-app.get('/api/config/canal-url', authMiddleware, async (req, res) => {
-  try {
-    const url = await getConfig('canalInformativoUrl', '');
-    res.json({ url: url || '' });
-  } catch (error) {
-    console.error('Error obteniendo canal URL:', error);
-    res.status(500).json({ error: 'Error del servidor' });
-  }
-});
+// 🪦 Acá vivía GET /api/config/canal-url: ELIMINADO — el front ahora lee el canal
+// de GET /api/config/community (channelUrl). Ver la nota en /api/admin/canal-url.
 
 app.post('/api/cbu/request', authMiddleware, async (req, res) => {
   try {
@@ -11688,27 +11681,10 @@ app.get('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) =
   }
 });
 
-app.post('/api/admin/canal-url', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { url } = req.body;
-    const safeUrl = (url || '').trim();
-    if (safeUrl) {
-      try {
-        const parsed = new URL(safeUrl);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          return res.status(400).json({ error: 'URL inválida. Debe comenzar con http:// o https://' });
-        }
-      } catch {
-        return res.status(400).json({ error: 'URL inválida. Verificá que sea una URL completa y válida.' });
-      }
-    }
-    await setConfig('canalInformativoUrl', safeUrl);
-    res.json({ success: true, message: 'URL del Canal Informativo actualizada correctamente' });
-  } catch (error) {
-    console.error('Error guardando canal URL:', error);
-    res.status(500).json({ error: 'Error del servidor' });
-  }
-});
+// 🪦 Acá vivía POST /api/admin/canal-url (guardaba canalInformativoUrl): ELIMINADO
+// junto con GET /api/config/canal-url — el canal de Telegram es UNO solo (owner
+// 2026-08-03) y se configura en Comunidad (communityConfig.channelUrl). El GET de
+// la comunidad conserva un fallback de lectura al canalInformativoUrl viejo.
 
 app.put('/api/admin/config/cbu', authMiddleware, adminMiddleware, async (req, res) => {
   try {
@@ -16125,9 +16101,12 @@ app.post('/api/admin/bonus-strategy/activate', authMiddleware, adminMiddleware, 
 app.get('/api/config/community', authMiddleware, async (req, res) => {
   try {
     const c = (await getConfig('communityConfig')) || {};
-    // Fallback al esquema viejo {name,url} -> canal oficial.
+    // Fallbacks de lectura: esquema viejo {name,url}, y el canalInformativoUrl de
+    // la sección "Canal Informativo" del panel (eliminada 2026-08-03 al unificar
+    // el canal en la Comunidad) — así una URL cargada ahí no se pierde.
+    const legacyCanal = await getConfig('canalInformativoUrl', '');
     res.json({
-      channelUrl: c.channelUrl || c.url || '',
+      channelUrl: c.channelUrl || c.url || legacyCanal || '',
       supportUrl: c.supportUrl || ''
     });
   } catch (err) {

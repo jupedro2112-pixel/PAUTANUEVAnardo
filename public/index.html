@@ -836,15 +836,11 @@
                     </div>
                 </div>
 
-                <!-- Canales de Telegram: abajo de Jugá Aquí -->
+                <!-- Soporte por Telegram, abajo de Jugá Aquí. 🪦 Acá también vivía el
+                     botón "Canal Exclusivo" (communityChannelBtn): se ELIMINÓ porque
+                     duplicaba el pill "Unite al canal de Telegram" del header — el
+                     canal es UNO solo (owner 2026-08-03) y su botón vive arriba. -->
                 <div class="dash-community" id="communitySection" style="display:none;">
-                    <a id="communityChannelBtn" href="#" target="_blank" rel="noopener" class="dash-tg-btn" style="display:none;">
-                        <span class="dash-tg-emoji">📢</span>
-                        <span class="dash-tg-text">
-                            <strong>Canal Exclusivo</strong>
-                            <span>Telegram</span>
-                        </span>
-                    </a>
                     <a id="communitySupportBtn" href="#" target="_blank" rel="noopener" class="dash-tg-btn dash-tg-support" style="display:none;">
                         <span class="dash-tg-emoji">💬</span>
                         <span class="dash-tg-text">
@@ -864,10 +860,8 @@
                       .then(function (d) {
                           if (!d) return;
                           var sec = document.getElementById('communitySection');
-                          var ch = document.getElementById('communityChannelBtn');
                           var sup = document.getElementById('communitySupportBtn');
                           var any = false;
-                          if (ch && d.channelUrl) { ch.href = d.channelUrl; ch.style.display = ''; any = true; }
                           if (sup && d.supportUrl) { sup.href = d.supportUrl; sup.style.display = ''; any = true; }
                           if (sec && any) sec.style.display = '';
                       }).catch(function () {});

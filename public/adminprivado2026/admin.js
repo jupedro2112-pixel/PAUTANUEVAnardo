@@ -5184,9 +5184,7 @@ async function loadCBUConfig() {
         console.error('Error loading CBU:', error);
     }
     
-    // Cargar también la URL del Canal Informativo
-    loadCanalUrlConfig();
-    // Cargar la config de la Comunidad (Telegram)
+    // Cargar la config de la Comunidad / Canal de Telegram (config única del canal)
     loadCommunityConfig();
     // Cargar la config del banco automático (hgcash)
     loadHgcashConfig();
@@ -5630,49 +5628,9 @@ async function saveCBUConfig() {
     }
 }
 
-async function loadCanalUrlConfig() {
-    try {
-        const response = await fetch(`${API_URL}/api/admin/config`, {
-            headers: { 'Authorization': `Bearer ${currentToken}` }
-        });
-        if (response.ok) {
-            const data = await response.json();
-            const urlInput = document.getElementById('canalInformativoUrl');
-            if (urlInput) {
-                urlInput.value = data.canalInformativoUrl || '';
-            }
-        }
-    } catch (error) {
-        console.error('Error loading canal URL:', error);
-    }
-}
-
-async function saveCanalUrl() {
-    const urlInput = document.getElementById('canalInformativoUrl');
-    const url = urlInput ? urlInput.value.trim() : '';
-    
-    try {
-        const response = await fetch(`${API_URL}/api/admin/canal-url`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentToken}`
-            },
-            body: JSON.stringify({ url })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showToast('URL del Canal Informativo guardada correctamente', 'success');
-        } else {
-            showToast(data.error || data.message || 'Error al guardar URL', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving canal URL:', error);
-        showToast('Error al guardar URL', 'error');
-    }
-}
+// 🪦 Acá vivían loadCanalUrlConfig/saveCanalUrl (config "Canal Informativo",
+// canalInformativoUrl): ELIMINADAS — el canal es UNO solo y se configura en
+// Comunidad (channelUrl), que alimenta el botón celeste de la app (2026-08-03).
 
 async function loadCommunityConfig() {
     try {

@@ -560,33 +560,23 @@
                                 <span class="icon icon-save"></span> Guardar CBU
                             </button>
                         </div>
-                        <!-- Canal de Telegram (ex "Canal Informativo" — misma config) -->
+                        <!-- Comunidad / Canal de Telegram — CONFIG ÚNICA del canal.
+                             🪦 Acá arriba había una sección "Canal de Telegram" aparte
+                             (canalInformativoUrl): se ELIMINÓ el mismo día que se creó
+                             porque el canal es UNO solo (owner 2026-08-03). -->
                         <div class="panel-subheader" style="margin-top: 24px;">
-                            <h3>📣 Canal de Telegram</h3>
-                        </div>
-                        <div class="cbu-form">
-                            <div class="form-group">
-                                <label>URL del canal (t.me/...):</label>
-                                <input type="url" id="canalInformativoUrl" placeholder="https://t.me/tu_canal" style="width:100%;">
-                                <small style="color:#aaa;font-size:11px;">Aparece como el botón celeste "📣 Unite al canal de Telegram" arriba en la app del cliente y en su menú ☰. El botón se muestra SIEMPRE: si esto está vacío, lleva a una página inexistente (404) hasta que cargues la URL real.</small>
-                            </div>
-                            <button class="btn-primary" onclick="saveCanalUrl()">
-                                <span class="icon icon-save"></span> Guardar URL del canal
-                            </button>
-                        </div>
-                        <!-- Comunidad / Canales de Telegram -->
-                        <div class="panel-subheader" style="margin-top: 24px;">
-                            <h3>Comunidad (Telegram)</h3>
+                            <h3>📣 Comunidad / Canal de Telegram</h3>
                         </div>
                         <div class="cbu-form">
                             <div class="form-group">
                                 <label>Canal Oficial Telegram:</label>
                                 <input type="url" id="communityChannelUrl" placeholder="https://t.me/tu_canal" style="width:100%;">
+                                <small style="color:#aaa;font-size:11px;">Es el botón celeste "📣 Unite al canal de Telegram" que el cliente ve arriba en la app y en su menú ☰. El botón aparece SIEMPRE: si esto está vacío, lleva a una página inexistente (404) hasta que cargues la URL real.</small>
                             </div>
                             <div class="form-group">
                                 <label>Soporte VIP Telegram:</label>
                                 <input type="url" id="communitySupportUrl" placeholder="https://t.me/tu_soporte" style="width:100%;">
-                                <small style="color:#aaa;font-size:11px;">Se muestran en la pantalla principal del usuario. Cada campo vacío = ese botón oculto.</small>
+                                <small style="color:#aaa;font-size:11px;">Botón "Soporte Telegram" en la pantalla principal del cliente. Vacío = oculto.</small>
                             </div>
                             <button class="btn-primary" onclick="saveCommunityConfig()">
                                 <span class="icon icon-save"></span> Guardar Comunidad

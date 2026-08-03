@@ -8,6 +8,23 @@
 
 ## Sesión 2026-08-03
 
+### 107. Canal de Telegram UNIFICADO con la Comunidad (una config, un botón)
+- **Pedido del owner:** el canal de Telegram y la comunidad de Telegram son LO MISMO —
+  dejar uno solo, sin botones duplicados.
+- **Config única:** `communityConfig.channelUrl` (panel → "📣 Comunidad / Canal de
+  Telegram"). El pill celeste del header y la opción del menú ☰ ahora leen
+  `GET /api/config/community`. `GET /api/config/community` conserva fallback de
+  lectura al `canalInformativoUrl` viejo (por si había quedado una URL cargada ahí).
+- **ELIMINADO (con lápidas):** la sección "Canal de Telegram" del panel (creada en
+  #106, duró un día), `loadCanalUrlConfig`/`saveCanalUrl` (admin.js), los endpoints
+  `GET /api/config/canal-url` y `POST /api/admin/canal-url` (server.js), y el botón
+  "Canal Exclusivo" del dashboard de la PWA (`communityChannelBtn`) que duplicaba el
+  pill del header. El botón "Soporte Telegram" del dashboard QUEDA (es otra cosa).
+- **Validado:** `node --check` OK (server.js, chat.js, admin.js). Grep: 0 referencias
+  vivas a lo eliminado. SW del cliente a **v66**. Back necesita redeploy (endpoints
+  eliminados). PROBAR tras deploy: cargar el canal en Comunidad → pill del header y
+  opción del menú apuntan ahí; el dashboard muestra solo Soporte.
+
 ### 106. Botón "Unite al canal de Telegram" (header + menú ☰), configurable desde el panel
 - **Pedido del owner** (con captura de referencia): botón celeste estilo Telegram para
   el canal, configurable desde el panel admin; achicar el recuadro de "Información de

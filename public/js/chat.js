@@ -620,12 +620,13 @@ VIP.chat = (function () {
         }
     }
 
-    // Canal de Telegram (URL configurable desde el panel admin). Maneja los DOS
-    // botones: el pill celeste del header y la opción del menú hamburguesa.
-    // El botón aparece SIEMPRE (decisión del owner 2026-08-03): si todavía no hay
-    // URL configurada, lleva a una página inexistente del propio dominio (404) —
-    // se eligió el dominio propio y no un t.me inventado para que nadie pueda
-    // registrar ese canal y quedarse con los clicks.
+    // Canal de Telegram = el canal de la COMUNIDAD (owner 2026-08-03: es UNO solo,
+    // config única en el panel → Comunidad (Telegram) → "Canal Oficial"). Alimenta
+    // los DOS botones: el pill celeste del header y la opción del menú hamburguesa.
+    // El botón aparece SIEMPRE: si todavía no hay URL configurada, lleva a una
+    // página inexistente del propio dominio (404) — se eligió el dominio propio y
+    // no un t.me inventado para que nadie pueda registrar ese canal y quedarse con
+    // los clicks.
     const CANAL_FALLBACK_URL = 'https://vipcargas.com/canal-proximamente';
 
     function _applyCanalUrl(url) {
@@ -638,12 +639,12 @@ VIP.chat = (function () {
 
     async function loadCanalInformativoUrl() {
         try {
-            const response = await fetch(`${VIP.config.API_URL}/api/config/canal-url`, {
+            const response = await fetch(`${VIP.config.API_URL}/api/config/community`, {
                 headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
             });
             if (!response.ok) return;
             const data = await response.json();
-            _applyCanalUrl(data.url || '');
+            _applyCanalUrl(data.channelUrl || '');
         } catch {
             _applyCanalUrl('');
         }
