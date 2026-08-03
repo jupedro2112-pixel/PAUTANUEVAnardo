@@ -8,6 +8,10 @@
 
 ## Sesión 2026-08-03
 
+### 110. Wording: "Unite al canal de Telegram" → "Unite a la Comunidad de Telegram"
+- Pedido del owner. Cambiado en el pill del header, el ítem del menú ☰ y el texto de
+  ayuda del panel. Solo texto — misma config y mismos IDs. SW a **v69**.
+
 ### 109. FIX "Instalar App" roto en el menú + layout adaptable sin scroll ni recortes
 - **Síntoma (captura del owner):** el ítem "Instalar App" del menú ☰ se veía diminuto
   y con otro estilo. **Causa:** conserva su clase histórica `.app-install-btn`, que

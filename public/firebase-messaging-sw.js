@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v68'; // v68: fix "Instalar App" del menú + layout sin recortes en pantallas bajas
+const CACHE_VERSION = 'v69'; // v69: "Unite a la Comunidad de Telegram" (antes decía canal)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
