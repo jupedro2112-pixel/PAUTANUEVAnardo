@@ -20,11 +20,15 @@
   de Telegram (pill celeste con glow, flex:1) | ☰]. Sin URL configurada el pill no
   aparece y el ☰ queda pegado a la derecha (margin-left:auto).
 - **Menú ☰:** la opción "Canal Informativo" pasó a "📣 Unite al canal de Telegram"
-  (texto celeste). `chat.js loadCanalInformativoUrl` ahora muestra/oculta LOS DOS
-  botones (header + menú) con la misma URL.
-- **Validado:** `node --check` OK (chat.js). SW del cliente a **v64**. PROBAR tras
-  deploy: cargar una URL t.me en el panel → aparece el pill arriba y la opción en el
-  menú; vaciarla → desaparecen los dos.
+  (texto celeste). `chat.js loadCanalInformativoUrl` setea LOS DOS botones (header +
+  menú) con la misma URL.
+- **UPDATE (mismo día, pedido del owner):** el botón aparece **SIEMPRE**, aunque la
+  URL esté vacía — en ese caso lleva a `https://vipcargas.com/canal-proximamente`
+  (404 del dominio PROPIO a propósito: un t.me inventado lo podría registrar
+  cualquiera y quedarse con los clicks de todos los clientes).
+- **Validado:** `node --check` OK (chat.js). SW del cliente a **v65**. PROBAR tras
+  deploy: sin URL en el panel el pill aparece igual (y da 404 al tocarlo); al cargar
+  la URL real, los dos botones llevan al canal.
 
 ### 105. Descubribilidad del perfil: CTA en el recuadro USUARIO + "Mi Perfil" en el menú
 - **Pedido del owner:** que se note que el recuadro del usuario (al lado de los

@@ -622,18 +622,18 @@ VIP.chat = (function () {
 
     // Canal de Telegram (URL configurable desde el panel admin). Maneja los DOS
     // botones: el pill celeste del header y la opción del menú hamburguesa.
-    // Sin URL configurada, ninguno aparece.
+    // El botón aparece SIEMPRE (decisión del owner 2026-08-03): si todavía no hay
+    // URL configurada, lleva a una página inexistente del propio dominio (404) —
+    // se eligió el dominio propio y no un t.me inventado para que nadie pueda
+    // registrar ese canal y quedarse con los clicks.
+    const CANAL_FALLBACK_URL = 'https://vipcargas.com/canal-proximamente';
+
     function _applyCanalUrl(url) {
+        const href = url || CANAL_FALLBACK_URL;
         const menuBtn = document.getElementById('canalInformativoBtn');
         const headerBtn = document.getElementById('canalTelegramHeaderBtn');
-        if (menuBtn) {
-            if (url) { menuBtn.href = url; menuBtn.style.display = 'inline-flex'; }
-            else { menuBtn.style.display = 'none'; }
-        }
-        if (headerBtn) {
-            if (url) { headerBtn.href = url; headerBtn.style.display = 'flex'; }
-            else { headerBtn.style.display = 'none'; }
-        }
+        if (menuBtn) { menuBtn.href = href; menuBtn.style.display = 'inline-flex'; }
+        if (headerBtn) { headerBtn.href = href; headerBtn.style.display = 'flex'; }
     }
 
     async function loadCanalInformativoUrl() {

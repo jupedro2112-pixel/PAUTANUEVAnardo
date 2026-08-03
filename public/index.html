@@ -434,9 +434,10 @@
             </button>
             <!-- Canal de Telegram: pill celeste estilo Telegram (captura del owner,
                  2026-08-03). La URL se configura desde el panel admin (Config →
-                 Canal de Telegram); sin URL el botón no aparece. La muestra/oculta
-                 chat.js (loadCanalInformativoUrl), junto con la opción del menú ☰. -->
-            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" title="Unite al canal de Telegram">
+                 Canal de Telegram). El botón aparece SIEMPRE: sin URL configurada
+                 lleva al fallback 404 del dominio propio (ver chat.js
+                 CANAL_FALLBACK_URL, que también setea la URL real al loguear). -->
+            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="https://vipcargas.com/canal-proximamente" target="_blank" rel="noopener noreferrer" title="Unite al canal de Telegram">
                 <span class="tb-telegram-icon">📣</span>
                 <span class="tb-telegram-text">Unite al canal de Telegram</span>
             </a>
@@ -474,7 +475,7 @@
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
             </button>
-            <a id="canalInformativoBtn" href="#" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite al canal de Telegram" style="display:none;" role="menuitem">
+            <a id="canalInformativoBtn" href="https://vipcargas.com/canal-proximamente" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite al canal de Telegram" role="menuitem">
                 <span class="menu-item-icon">📣</span><span class="menu-item-label" style="color:#53bdeb;">Unite al canal de Telegram</span>
             </a>
             <button class="menu-item settings-btn" id="settingsBtn" title="Configuración" role="menuitem">

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v64'; // v64: botón "Unite al canal de Telegram" en el header + menú
+const CACHE_VERSION = 'v65'; // v65: el botón del canal de Telegram aparece siempre (404 si no hay URL)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
