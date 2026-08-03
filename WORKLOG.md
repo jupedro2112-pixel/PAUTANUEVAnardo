@@ -8,6 +8,49 @@
 
 ## Sesión 2026-08-03
 
+### 104. PWA: menú hamburguesa, barra de chat 100% WhatsApp, fueguito a la cabecera, info y referidos al día
+- **Pedido del owner** (con foto de referencia de la barra de WhatsApp): (a) menú
+  hamburguesa arriba a la derecha con todo adentro, (b) referidos más explicativo,
+  (c) botón de soporte con logo de soporte, (d) "Información de nuestro servicio"
+  estaba vieja, (e) barra de escribir idéntica a WhatsApp (claro y oscuro), con la
+  cámara igual a la de WhatsApp y el CBU como ícono del mismo estilo, y (f) el
+  fueguito FUERA de la barra.
+- **Menú hamburguesa (☰):** el header queda [Información de nuestro servicio | ☰].
+  Todo lo demás vive en el desplegable: Mis Referidos, Soporte 24/7 (con **auricular
+  SVG**, el logo universal de soporte — antes era un 💬 anónimo), Notificaciones,
+  Instalar App, Canal Informativo, Configuración y Cerrar sesión.
+  ⚠️ **Los IDs de los botones NO cambiaron** (referralBtn, notificationBtn,
+  appInstallBtn, settingsBtn, logoutBtn, canalInformativoBtn): el cableado de
+  app.js/ui.js/el inline de FCM los busca por id y los encuentra igual dentro del
+  menú. El inline de FCM REESCRIBE el innerHTML del botón de notificaciones
+  ('🔔 NOTIS', '🔕', etc.) — la fila del menú lo tolera (muestra ese texto).
+  El menú se ancla al header (va DENTRO del <header>, position:relative) y se
+  cierra tocando afuera o al elegir una opción.
+- **Barra de chat = réplica de la foto:** fondo beige (#f0ebe3), input pill blanco
+  con placeholder "Mensaje", íconos SVG de **trazo fino sin fondo** (como WhatsApp,
+  se ven iguales en todos los OS): tarjeta = pedir CBU (antes pill violeta "💳 CBU"),
+  cámara idéntica a la de WhatsApp = enviar foto (antes 📸 en círculo blanco), send
+  circular verde (ya estaba). Modo oscuro: íconos #aebac1 sobre la barra #1f2c33.
+  Se quitó la clase `action-btn` de esos botones (nueva clase `wa-icon-btn`).
+- **Fueguito:** salió de la barra → esquina DERECHA de la cabecera "Soporte
+  VIPCARGAS" (`.fire-topbar-btn`, mismo id fireBtn + badge fireStreak). Se eligió la
+  cabecera porque queda siempre visible sin ensuciar la barra estilo WhatsApp.
+- **Referidos:** el modal ahora explica el sistema en 3 pasos numerados (compartir →
+  amigo juega → cobrás el **8% mensual de la pérdida neta de tus referidos, de por
+  vida**) con ejemplo concreto ($100.000 de pérdida → $8.000). El 8% verificado en
+  `referralCalculationService`/`utils/referralRate` — es config
+  (`GIROX_REFERRAL_COMMISSION_PCT`): si el owner lo cambia, actualizar el copy.
+- **Información del servicio (infoModal + adServiceModal) actualizada:** afuera los
+  20/10/5% viejos (eran de JUGAYGANA) → reembolsos por rango hasta 10%, niveles VIP
+  + rakeback semanal, fueguito, ruleta, referidos 8%, bono de instalación = **100%
+  en la próxima carga** (ya no "$5.000"), bonos hasta 30% y soporte 24/7. Los DOS
+  modales dicen lo mismo (uno compacto) — mantenerlos a la par.
+- **Validado:** tags balanceados, `node --check` N/A (HTML/CSS), sintaxis del script
+  inline verificada aparte. SW del cliente a **v62**. PROBAR tras deploy: abrir/cerrar
+  el menú (y que cada opción siga funcionando, en especial NOTIS e Instalar App),
+  mandar foto y pedir CBU desde los íconos nuevos, fueguito desde la cabecera, y el
+  modo oscuro de la barra.
+
 ### 103. On/off de los niveles VIP desde el panel (solo admin general) — reemplaza la env
 - **Pedido del owner:** que los niveles se apaguen desde el administrador (solo admin
   general), en vez de la env `VIP_LEVELS_DISABLED` (que se eliminó).

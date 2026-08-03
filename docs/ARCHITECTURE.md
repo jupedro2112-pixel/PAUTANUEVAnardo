@@ -532,10 +532,20 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   auth, socket, chat, ui, refunds, fire, roulette, reviews, promobonus, notifications,
   withdraw, installbonus, notifsurvey, publisherwelcome, campaign, meta-pixel, apptest,
   app). El orden real de carga está en index.html (el comentario de app.js está viejo).
-- **SW único**: `firebase-messaging-sw.js` (CACHE_VERSION v50) — FCM + caché:
-  `/js/` y `/css/` stale-while-revalidate (deploy llega en la SIGUIENTE carga sin
-  bumpear versión), `/app.js` y manifest network-first, API/socket nunca. `user-sw.js`
-  es un stub de auto-desregistro (no volver a registrarlo).
+- **SW único**: `firebase-messaging-sw.js` (CACHE_VERSION se bumpea por release —
+  ver el valor actual en el archivo) — FCM + caché: `/js/` y `/css/`
+  stale-while-revalidate (deploy llega en la SIGUIENTE carga sin bumpear versión),
+  `/app.js` y manifest network-first, API/socket nunca. `user-sw.js` es un stub de
+  auto-desregistro (no volver a registrarlo).
+- **Header del chatScreen** (2026-08-03): [botón Información | menú hamburguesa ☰].
+  TODAS las acciones (referidos, soporte con ícono de auricular, notificaciones,
+  instalar app, canal, configuración, logout) viven en el desplegable `#mainMenu`
+  DENTRO del `<header>`. ⚠️ Los IDs de los botones son los históricos — el JS los
+  cablea por id; el inline de FCM reescribe el innerHTML de `#notificationBtn`.
+- **Barra de escribir estilo WhatsApp** (réplica de foto del owner): íconos SVG de
+  trazo fino sin fondo (`.wa-icon-btn`) — tarjeta = CBU, cámara = foto — + send
+  verde. El fueguito NO va ahí: vive en la cabecera del chat (`.fire-topbar-btn`
+  en `.chat-topbar`, ids fireBtn/fireStreak intactos). Modo oscuro vía `body.wa-dark`.
 - **FCM**: todo el manejo real (getToken 3 tiers, refresh, register-token) está en el
   INLINE de index.html; `window.sendFcmTokenAfterLogin` del inline pisa a propósito la
   de notifications.js. Firebase config duplicada en index.html Y en el SW (cambiar

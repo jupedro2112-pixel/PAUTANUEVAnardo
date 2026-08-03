@@ -211,13 +211,14 @@
     transform: scale(1.1);
 }
 
-/* Chat Input */
+/* Chat Input — réplica de la barra de WhatsApp (foto de referencia del owner):
+   fondo beige, input pill blanco, íconos de trazo fino SIN fondo. */
 .chat-input-container {
     flex: 0 0 auto;
-    padding: 7px 10px;
+    padding: 7px 8px;
     padding-bottom: max(7px, env(safe-area-inset-bottom, 7px));
     border-top: none;
-    background: #f0f2f5;   /* gris claro, como la barra de WhatsApp */
+    background: #f0ebe3;   /* beige de la barra de WhatsApp mobile */
     z-index: 999;
 }
 
@@ -264,49 +265,55 @@
     box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
 }
 
-.attach-btn {
-    background: #ffffff;
-    color: #54656f;
-    box-shadow: 0 1px 1px rgba(0,0,0,0.05);
+/* Íconos de la barra al estilo WhatsApp: trazo fino, SIN fondo ni círculo.
+   (Los usan #cbuChatBtn y #attachBtn — el color va por `currentColor` del SVG.) */
+.wa-icon-btn {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 46px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #1b1b1b;          /* casi negro, como los íconos de la foto */
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease, color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.attach-btn:hover {
-    transform: scale(1.1);
-}
+.wa-icon-btn:hover { color: #000; }
+.wa-icon-btn:active { transform: scale(0.88); }
 
-.cbu-chat-btn {
-    background: linear-gradient(135deg, #9d4edd 0%, #6603a8 100%);
+/* Botón Fueguito (racha diaria): en la CABECERA del chat, a la derecha —
+   fuera de la barra de escribir para que esa quede 100% WhatsApp. */
+.fire-topbar-btn {
+    margin-left: auto;       /* empuja el fueguito al borde derecho de la cabecera */
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
     color: #fff;
-    font-size: 9px;
-    font-weight: bold;
-    width: auto;
-    padding: 0 10px;
-    border-radius: 20px;
-}
-
-.cbu-chat-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 15px rgba(157, 78, 221, 0.5);
-}
-
-/* Botón Fueguito (racha diaria) en la barra del chat, entre la cámara y CBU. */
-.fire-chat-btn {
-    background: linear-gradient(135deg, #ff4500 0%, #ff8c00 100%);
-    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     position: relative;
     overflow: visible;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.fire-chat-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 15px rgba(255, 69, 0, 0.5);
-}
+.fire-topbar-btn:active { transform: scale(0.92); }
 
 /* Badge con el número de racha, en la esquina del botón. */
 .fire-streak-badge {
     position: absolute;
-    top: -4px;
-    right: -4px;
+    top: -3px;
+    right: -3px;
     min-width: 18px;
     height: 18px;
     padding: 0 4px;
@@ -505,10 +512,11 @@ body.wa-dark #messageInput {
 }
 body.wa-dark #messageInput::placeholder { color: #8696a0; }
 
-body.wa-dark .attach-btn {
-    background: #2a3942;
-    color: #8696a0;
-}
+/* Íconos de la barra en oscuro: gris claro sobre la barra, como WhatsApp dark. */
+body.wa-dark .wa-icon-btn { color: #aebac1; }
+body.wa-dark .wa-icon-btn:hover { color: #e9edef; }
+
+body.wa-dark .fire-topbar-btn { background: rgba(255, 255, 255, 0.08); }
 
 body.wa-dark .chat-link { color: #53bdeb; }
 

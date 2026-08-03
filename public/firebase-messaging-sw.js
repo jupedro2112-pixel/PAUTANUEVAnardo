@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v61'; // v61: niveles VIP (perfil, rakeback, % en reembolsos)
+const CACHE_VERSION = 'v62'; // v62: menú hamburguesa + barra de chat WhatsApp + info actualizada
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

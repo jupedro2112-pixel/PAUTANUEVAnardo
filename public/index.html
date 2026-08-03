@@ -423,22 +423,80 @@
 
     <!-- Chat Screen -->
     <div id="chatScreen" class="chat-screen hidden">
-        <!-- Barra superior: referidos · info · herramientas -->
+        <!-- Barra superior: info + menú hamburguesa (todas las acciones viven
+             en el menú desplegable — pedido del owner 2026-08-03).
+             ⚠️ Los IDs de los botones NO cambian: el cableado JS (app.js /
+             ui.js / inline de notificaciones) los busca por id. -->
         <header class="header header-toolbar">
-            <button class="tb-btn referral-btn" id="referralBtn" title="Mis Referidos">🤝</button>
             <button class="tb-info" id="infoBtn" title="Información de nuestro servicio">
                 <span class="tb-info-icon">ℹ️</span>
                 <span class="tb-info-text">Información de nuestro servicio</span>
             </button>
-            <div class="tb-right">
-                <button class="tb-btn settings-btn" id="settingsBtn" title="Configuración">⚙️</button>
-                <button class="tb-btn notification-btn" id="notificationBtn" title="Activar Notificaciones">🔔</button>
-                <button class="tb-btn app-install-btn" id="appInstallBtn" title="Instalar App">📱</button>
-                <a class="tb-btn" href="https://wa.link/metawin2026" target="_blank" title="Soporte">💬</a>
-                <a id="canalInformativoBtn" href="#" target="_blank" rel="noopener noreferrer" class="tb-btn" title="Canal Informativo" style="display:none;">📢</a>
-                <button class="tb-btn logout-btn" id="logoutBtn" title="Cerrar sesión" style="display:none;">🚪</button>
-            </div>
+            <button class="tb-hamburger" id="menuToggleBtn" title="Menú" aria-label="Abrir menú" aria-expanded="false">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+        <!-- Menú desplegable del hamburguesa. VA DENTRO del <header> a propósito:
+             el .main-menu es position:absolute y se ancla al header (position:relative). -->
+        <div id="mainMenu" class="main-menu hidden" role="menu" aria-label="Menú principal">
+            <button class="menu-item referral-btn" id="referralBtn" title="Mis Referidos" role="menuitem">
+                <span class="menu-item-icon">🤝</span><span class="menu-item-label">Mis Referidos</span>
+            </button>
+            <a class="menu-item support-btn" href="https://wa.link/metawin2026" target="_blank" rel="noopener" title="Soporte" role="menuitem">
+                <span class="menu-item-icon menu-item-svg">
+                    <!-- Auricular con micrófono: logo universal de soporte -->
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 13v-2a8 8 0 0 1 16 0v2"/>
+                        <rect x="2.5" y="12.5" width="4.2" height="6.5" rx="2.1"/>
+                        <rect x="17.3" y="12.5" width="4.2" height="6.5" rx="2.1"/>
+                        <path d="M20 19v.8a2.7 2.7 0 0 1-2.7 2.7H13"/>
+                    </svg>
+                </span><span class="menu-item-label">Soporte 24/7</span>
+            </a>
+            <button class="menu-item notification-btn" id="notificationBtn" title="Activar Notificaciones" role="menuitem">
+                <span class="menu-item-icon">🔔</span><span class="menu-item-label">Notificaciones</span>
+            </button>
+            <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
+                <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
+            </button>
+            <a id="canalInformativoBtn" href="#" target="_blank" rel="noopener noreferrer" class="menu-item" title="Canal Informativo" style="display:none;" role="menuitem">
+                <span class="menu-item-icon">📢</span><span class="menu-item-label">Canal Informativo</span>
+            </a>
+            <button class="menu-item settings-btn" id="settingsBtn" title="Configuración" role="menuitem">
+                <span class="menu-item-icon">⚙️</span><span class="menu-item-label">Configuración</span>
+            </button>
+            <button class="menu-item logout-btn" id="logoutBtn" title="Cerrar sesión" style="display:none;" role="menuitem">
+                <span class="menu-item-icon">🚪</span><span class="menu-item-label">Cerrar sesión</span>
+            </button>
+        </div>
         </header>
+        <script>
+        // Abrir/cerrar el menú hamburguesa. Se cierra al tocar afuera o al elegir
+        // una opción (con un delay chico para que el click de la opción dispare
+        // primero su propio handler).
+        (function () {
+            var btn = document.getElementById('menuToggleBtn');
+            var menu = document.getElementById('mainMenu');
+            if (!btn || !menu) return;
+            function setOpen(open) {
+                menu.classList.toggle('hidden', !open);
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                btn.classList.toggle('open', open);
+            }
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                setOpen(menu.classList.contains('hidden'));
+            });
+            document.addEventListener('click', function (e) {
+                if (menu.classList.contains('hidden')) return;
+                if (!menu.contains(e.target) && e.target !== btn) setOpen(false);
+            });
+            menu.addEventListener('click', function (e) {
+                if (e.target.closest('button, a')) setTimeout(function () { setOpen(false); }, 180);
+            });
+        })();
+        </script>
 
         <!-- Banner deslizante "Atención 24hs" eliminado para agrandar el chat -->
 
@@ -514,20 +572,6 @@
                 }
                 /* Layout en columna: el chat ocupa todo el alto disponible. */
                 .chat-section { margin:0 !important; }
-                .header-toolbar .tb-btn {
-                    flex:0 0 auto; background:linear-gradient(135deg,#2d0052,#1a0033);
-                    border:1px solid #d4af37; border-radius:9px;
-                    font-size:14px; line-height:1; padding:6px 7px; cursor:pointer;
-                    color:#fff; text-decoration:none; display:inline-flex;
-                    align-items:center; justify-content:center;
-                }
-                /* Estados del botón de notificaciones (el CSS viejo apuntaba a .header-right, que ya no existe). */
-                .header-toolbar .notification-btn.active { background:linear-gradient(135deg,#00cc6a,#00ff88); color:#000; }
-                .header-toolbar .notification-btn.blocked { background:linear-gradient(135deg,#555,#333); color:#ccc; }
-                /* El botón "Instalar app" usa el estilo violeta del toolbar; se neutraliza el glow verde
-                   heredado de .app-install-btn para que no quede incoherente sobre el fondo violeta. */
-                .header-toolbar .app-install-btn,
-                .header-toolbar .app-install-btn:hover { animation:none; box-shadow:none; text-shadow:none; }
                 .header-toolbar .tb-info {
                     flex:1; min-width:0; display:flex; align-items:center; justify-content:center;
                     gap:6px; background:linear-gradient(135deg,#d4af37,#ffd700); border:none;
@@ -536,7 +580,47 @@
                 }
                 .header-toolbar .tb-info-icon { font-size:14px; flex-shrink:0; }
                 .header-toolbar .tb-info-text { line-height:1.12; text-align:center; }
-                .header-toolbar .tb-right { display:flex; align-items:center; gap:4px; flex:0 0 auto; }
+                /* ===== Menú hamburguesa (arriba a la derecha) ===== */
+                .tb-hamburger {
+                    flex:0 0 auto; background:linear-gradient(135deg,#2d0052,#1a0033);
+                    border:1px solid #d4af37; border-radius:9px; color:#d4af37;
+                    width:38px; height:34px; padding:0; cursor:pointer;
+                    display:inline-flex; align-items:center; justify-content:center;
+                }
+                .tb-hamburger:active { transform:scale(.94); }
+                .tb-hamburger.open { background:linear-gradient(135deg,#d4af37,#ffd700); color:#1a0033; }
+                .main-menu {
+                    position:absolute; top:calc(100% - 2px); right:8px; z-index:10500;
+                    min-width:230px; padding:6px;
+                    background:linear-gradient(160deg,#2d0052,#1a0033);
+                    border:1px solid #d4af37; border-radius:13px;
+                    box-shadow:0 12px 32px rgba(0,0,0,.55);
+                    display:flex; flex-direction:column; gap:2px;
+                }
+                /* El menú se ancla al header (position:relative en el padre). */
+                .header.header-toolbar { position:relative; }
+                .main-menu.hidden { display:none; }
+                .main-menu .menu-item {
+                    display:flex; align-items:center; gap:11px; width:100%;
+                    background:none; border:none; border-radius:9px;
+                    padding:11px 12px; cursor:pointer; text-align:left;
+                    color:#fff; font-size:13.5px; font-weight:700; text-decoration:none;
+                    -webkit-tap-highlight-color:rgba(212,175,55,.25);
+                }
+                .main-menu .menu-item:active,
+                .main-menu .menu-item:hover { background:rgba(212,175,55,.14); }
+                .main-menu .menu-item-icon {
+                    flex:0 0 24px; display:flex; align-items:center; justify-content:center;
+                    font-size:17px; line-height:1;
+                }
+                .main-menu .menu-item-svg { color:#d4af37; }
+                .main-menu .menu-item-label { flex:1; min-width:0; }
+                /* Estados del botón de notificaciones dentro del menú. */
+                .main-menu .notification-btn.active .menu-item-label::after { content:' ✓'; color:#00ff88; }
+                .main-menu .notification-btn.blocked { opacity:.6; }
+                /* Neutralizar el glow verde heredado de .app-install-btn. */
+                .main-menu .app-install-btn,
+                .main-menu .app-install-btn:hover { animation:none; box-shadow:none; text-shadow:none; }
                 .home-dash { max-width:680px; margin:10px auto 4px; padding:0 8px; display:flex; flex-direction:column; gap:10px; }
                 .dash-top {
                     display:flex; flex-wrap:wrap; gap:7px; align-items:stretch;
@@ -865,6 +949,10 @@
                         <span class="chat-topbar-name">Soporte VIPCARGAS</span>
                         <span class="chat-topbar-status"><i class="chat-topbar-dot"></i>en línea</span>
                     </div>
+                    <!-- Fueguito (racha diaria): vive en la cabecera del chat, NO en la
+                         barra de escribir (la barra es 100% estilo WhatsApp). El click lo
+                         cablea app.js (#fireBtn) y fire.js actualiza #fireStreak. -->
+                    <button class="fire-topbar-btn" id="fireBtn" title="Fueguito — racha diaria, reclamá tu premio cada día">🔥<span id="fireStreak" class="fire-streak-badge">0</span></button>
                 </div>
                 <div class="chat-messages" id="chatMessages">
                     <!-- Messages will be loaded here -->
@@ -880,15 +968,30 @@
             <div id="sendingIndicator" style="display: none; padding: 8px 15px; background: rgba(212, 175, 55, 0.2); border-radius: 8px; margin-bottom: 8px; color: #d4af37; font-size: 13px; text-align: center;">
                 <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Enviando imagen...
             </div>
+            <!-- Barra de escribir 100% estilo WhatsApp (foto de referencia del owner,
+                 2026-08-03): íconos de trazo fino SIN fondo, input pill blanco y send
+                 circular verde. Íconos en SVG (no emoji) para que se vean IGUALES en
+                 todos los sistemas, como los de WhatsApp. El fueguito se fue a la
+                 cabecera del chat (.chat-topbar). -->
             <div class="chat-input">
-                <button class="action-btn attach-btn" id="attachBtn" title="Adjuntar imagen">📸</button>
-                <!-- Fueguito (racha diaria): entre la cámara y el CBU. El click
-                     lo cablea app.js (#fireBtn → VIP.fire.showFireModal) y
-                     fire.js actualiza la racha en #fireStreak. -->
-                <button class="action-btn fire-chat-btn" id="fireBtn" title="Fueguito — racha diaria, reclamá tu premio cada día">🔥<span id="fireStreak" class="fire-streak-badge">0</span></button>
-                <button class="action-btn cbu-chat-btn" id="cbuChatBtn" title="Ver datos CBU para transferir">💳 CBU</button>
+                <!-- CBU para transferir: tarjeta en el trazo de WhatsApp -->
+                <button class="wa-icon-btn cbu-chat-btn" id="cbuChatBtn" title="Pedir CBU para transferir" aria-label="Pedir CBU">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2.5" y="5.5" width="19" height="13.5" rx="2.8"/>
+                        <path d="M2.5 10h19"/>
+                        <path d="M6.2 15.2h4.5"/>
+                    </svg>
+                </button>
                 <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
-                <textarea id="messageInput" placeholder="Escribe un mensaje..." rows="1"></textarea>
+                <textarea id="messageInput" placeholder="Mensaje" rows="1"></textarea>
+                <!-- Cámara idéntica a la de WhatsApp: mandar foto / comprobante -->
+                <button class="wa-icon-btn attach-btn" id="attachBtn" title="Enviar foto o comprobante" aria-label="Enviar foto">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 8.6A2.6 2.6 0 0 1 5.6 6h1.5l1.1-1.6a1.6 1.6 0 0 1 1.3-.7h5a1.6 1.6 0 0 1 1.3.7L16.9 6h1.5A2.6 2.6 0 0 1 21 8.6v8.8a2.6 2.6 0 0 1-2.6 2.6H5.6A2.6 2.6 0 0 1 3 17.4z"/>
+                        <circle cx="12" cy="13" r="3.8"/>
+                        <circle cx="17.6" cy="9.1" r="0.55" fill="currentColor" stroke="none"/>
+                    </svg>
+                </button>
                 <!-- Avión de papel en SVG (no emoji): el emoji 📤 se ve distinto en
                      cada sistema operativo y no se puede colorear. -->
                 <button class="send-btn" id="sendBtn" title="Enviar" aria-label="Enviar">
@@ -1399,38 +1502,51 @@
             <button onclick="hideModal('infoModal')" style="position: absolute; top: 15px; right: 15px; background: none; border: none; color: #888; font-size: 24px; cursor: pointer; z-index: 10;">✕</button>
             <div class="modal-header">
                 <h2>🎮 Información del Servicio</h2>
-                <p>Descubre todos los beneficios de nuestra Sala de Juegos</p>
+                <p>Todos los beneficios de jugar en VIPCARGAS, explicados clarito</p>
             </div>
+            <!-- ⚠️ Mantener esto al día con la realidad del negocio: reembolsos por
+                 RANGOS 3/6/10 (no los 20/10/5 viejos), niveles VIP con rakeback,
+                 bono de instalación = 100% en la próxima carga (no $5.000). -->
             <div class="info-grid">
                 <div class="info-card">
                     <div class="info-card-icon">💰</div>
-                    <div class="info-card-title">Reembolso Diario</div>
-                    <div class="info-card-desc">20% de tus pérdidas del día anterior, a tu cuenta.</div>
+                    <div class="info-card-title">Reembolsos hasta 10%</div>
+                    <div class="info-card-desc">Te devolvemos parte de lo que perdés: diario, semanal (lun-mar) y mensual (desde el día 7). Cuanto más jugás, mayor el %: 3, 6 o hasta 10%.</div>
                 </div>
                 <div class="info-card">
-                    <div class="info-card-icon">📅</div>
-                    <div class="info-card-title">Reembolso Semanal</div>
-                    <div class="info-card-desc">10% de tus pérdidas de la semana (lunes y martes).</div>
+                    <div class="info-card-icon">👑</div>
+                    <div class="info-card-title">Niveles VIP</div>
+                    <div class="info-card-desc">Todo lo que apostás suma para siempre: subí de Bronce a Diamante y cobrá un bono en cada nivel nuevo. Tocá tu perfil para ver tu progreso.</div>
                 </div>
                 <div class="info-card">
-                    <div class="info-card-icon">🗓️</div>
-                    <div class="info-card-title">Reembolso Mensual</div>
-                    <div class="info-card-desc">5% de tus pérdidas del mes, desde el día 7.</div>
+                    <div class="info-card-icon">💸</div>
+                    <div class="info-card-title">Rakeback semanal</div>
+                    <div class="info-card-desc">Desde nivel Bronce: cada semana te devolvemos un % de TODO lo que apostaste, ganes o pierdas.</div>
                 </div>
                 <div class="info-card">
                     <div class="info-card-icon">🎰</div>
                     <div class="info-card-title">Ruleta Diaria</div>
-                    <div class="info-card-desc">1 giro gratis por día. Ganá hasta $10.000 al instante.</div>
+                    <div class="info-card-desc">1 giro gratis por día con la app instalada. Premios en fichas al instante.</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-icon">🔥</div>
+                    <div class="info-card-title">Fueguito diario</div>
+                    <div class="info-card-desc">Entrá todos los días y mantené tu racha: los hitos pagan premios en efectivo a tu cuenta.</div>
                 </div>
                 <div class="info-card">
                     <div class="info-card-icon">🤝</div>
-                    <div class="info-card-title">Referidos</div>
-                    <div class="info-card-desc">Invitá amigos con tu código y ganá recompensas por cada uno.</div>
+                    <div class="info-card-title">Referidos: 8% mensual</div>
+                    <div class="info-card-desc">Invitá amigos con tu código y cobrá todos los meses el 8% de su actividad, de por vida y sin límite.</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-icon">📲</div>
+                    <div class="info-card-title">Bono por instalar la app</div>
+                    <div class="info-card-desc">Instalá la app, reclamá el bono y tu próxima carga se duplica: 100% de regalo, por única vez.</div>
                 </div>
                 <div class="info-card">
                     <div class="info-card-icon">🎁</div>
-                    <div class="info-card-title">Bonificaciones</div>
-                    <div class="info-card-desc">Bonos de hasta el 30% en tus cargas según promos.</div>
+                    <div class="info-card-title">Bonos en tus cargas</div>
+                    <div class="info-card-desc">Promos con hasta 30% extra en tus cargas. Atención por chat 24/7 y retiros por transferencia.</div>
                 </div>
             </div>
             <!-- Test de app + notificaciones. Render desde js/apptest.js -->
@@ -1455,36 +1571,37 @@
                 <h2 style="color:#d4af37; font-size:17px; margin:0 0 3px; padding-right:20px;">🎮 Información del Servicio</h2>
                 <p style="color:#b0b0b0; font-size:11px; margin:0;">Todos los beneficios de nuestra Sala de Juegos</p>
             </div>
+            <!-- ⚠️ Mismo contenido que infoModal pero compacto: mantener los DOS al día. -->
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
                     <div style="font-size:22px; line-height:1;">💰</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Reembolso Diario</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">20% de tus pérdidas de ayer.</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Reembolsos hasta 10%</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">De tus pérdidas: diario, semanal y mensual.</div>
                 </div>
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
-                    <div style="font-size:22px; line-height:1;">📅</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Reembolso Semanal</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">10% de tus pérdidas de la semana.</div>
+                    <div style="font-size:22px; line-height:1;">👑</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Niveles VIP</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Subí de nivel jugando y cobrá bonos + rakeback semanal.</div>
                 </div>
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
-                    <div style="font-size:22px; line-height:1;">🗓️</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Reembolso Mensual</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">5% de tus pérdidas del mes.</div>
+                    <div style="font-size:22px; line-height:1;">📲</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Bono 100% con la app</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Instalá la app y tu próxima carga se duplica.</div>
                 </div>
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
                     <div style="font-size:22px; line-height:1;">🎰</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Ruleta Diaria</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">1 giro gratis por día. Hasta $10.000.</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Ruleta + Fueguito</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Giro gratis y racha diaria con premios en efectivo.</div>
                 </div>
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
                     <div style="font-size:22px; line-height:1;">🤝</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Referidos</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Invitá amigos y ganá por cada uno.</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Referidos: 8% mensual</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Invitá amigos y cobrá todos los meses, de por vida.</div>
                 </div>
                 <div style="background:linear-gradient(135deg,rgba(0,255,136,0.10),rgba(0,204,106,0.10)); border:1px solid rgba(0,255,136,0.55); border-radius:9px; padding:8px 6px; text-align:center;">
                     <div style="font-size:22px; line-height:1;">🎁</div>
-                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Bonificaciones</div>
-                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Bonos de hasta el 30% en tus cargas.</div>
+                    <div style="color:#00ff88; font-weight:700; font-size:11px; margin:3px 0 2px;">Bonos y soporte 24/7</div>
+                    <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Hasta 30% extra en cargas y atención por chat todo el día.</div>
                 </div>
             </div>
             <!-- Reseñas (prueba social). Render desde js/reviews.js; se oculta si no hay. -->
@@ -3705,9 +3822,31 @@
             <button onclick="hideModal('referralModal')" style="position:absolute;top:15px;right:15px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;">✕</button>
             <div class="modal-header">
                 <h2>🤝 Mis Referidos</h2>
-                <p>Compartí tu código y ganá una comisión mensual sobre la actividad de tus referidos</p>
+                <p>Invitá amigos y cobrá <strong style="color:#d4af37;">todos los meses el 8%</strong> de su actividad — sin límite de referidos</p>
             </div>
             <div id="referralContent">
+                <!-- Cómo funciona, en 3 pasos (pedido del owner 2026-08-03: que sea
+                     BIEN explicativo — antes solo había un microcopy chiquito) -->
+                <div style="background:rgba(212,175,55,0.06);border:1px solid rgba(212,175,55,0.3);border-radius:12px;padding:14px;margin-bottom:16px;">
+                    <div style="color:#d4af37;font-size:13px;font-weight:800;margin-bottom:10px;">💡 ¿Cómo funciona? Así de simple:</div>
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                        <div style="display:flex;gap:10px;align-items:flex-start;">
+                            <span style="flex:0 0 26px;height:26px;background:linear-gradient(135deg,#d4af37,#ffd700);color:#1a0033;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;">1</span>
+                            <div style="flex:1;font-size:12px;color:#ddd;line-height:1.5;"><strong style="color:#fff;">Compartí tu código o tu link</strong> (los tenés acá abajo) con tus amigos por WhatsApp, Telegram o donde quieras.</div>
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:flex-start;">
+                            <span style="flex:0 0 26px;height:26px;background:linear-gradient(135deg,#d4af37,#ffd700);color:#1a0033;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;">2</span>
+                            <div style="flex:1;font-size:12px;color:#ddd;line-height:1.5;"><strong style="color:#fff;">Tu amigo se registra con tu código</strong> (o entrando por tu link) y juega normalmente en la sala. Queda vinculado a vos para siempre.</div>
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:flex-start;">
+                            <span style="flex:0 0 26px;height:26px;background:linear-gradient(135deg,#d4af37,#ffd700);color:#1a0033;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;">3</span>
+                            <div style="flex:1;font-size:12px;color:#ddd;line-height:1.5;"><strong style="color:#00ff88;">Cobrás el 8% de lo que tus referidos dejan en la sala</strong> (su pérdida neta jugando), todos los meses, en fichas directo a tu cuenta. Mientras sigan jugando, vos seguís cobrando — <strong style="color:#fff;">de por vida</strong>.</div>
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:#999;line-height:1.5;margin-top:10px;border-top:1px solid rgba(212,175,55,0.15);padding-top:8px;">
+                        📌 La comisión se calcula al inicio de cada mes sobre la actividad del mes anterior y se acredita sola. Ejemplo: si tus referidos pierden $100.000 en el mes, vos cobrás <strong style="color:#d4af37;">$8.000</strong>. No hay límite de referidos ni de ganancia.
+                    </div>
+                </div>
                 <!-- Código y link -->
                 <div style="background:rgba(255,255,255,0.05);border:1px solid #d4af37;border-radius:12px;padding:16px;margin-bottom:16px;">
                     <div style="margin-bottom:12px;">
@@ -3755,10 +3894,10 @@
                         <span id="referralCreditDate" style="color:#888;font-size:11px;">—</span>
                     </div>
                 </div>
-                <!-- Microcopy: cómo funcionan los referidos -->
+                <!-- Aclaración de los cortes de pago -->
                 <div style="background:rgba(212,175,55,0.04);border:1px solid rgba(212,175,55,0.15);border-radius:10px;padding:12px;margin-bottom:16px;">
                     <p style="color:#b0b0b0;font-size:11px;margin:0;line-height:1.6;">
-                        💡 <strong style="color:#d4af37;">¿Cómo funciona?</strong> Las ganancias se calculan y acreditan al inicio de cada mes en base a la actividad del período anterior. Si un referido sigue generando movimiento después de un pago, el nuevo saldo se acredita en el siguiente corte.
+                        ⏰ <strong style="color:#d4af37;">¿Cuándo cobro?</strong> Al inicio de cada mes se calcula lo del mes anterior y se acredita solo. Si un referido sigue jugando después de un pago, lo nuevo entra en el corte siguiente — nunca se pierde nada.
                     </p>
                 </div>
                 <!-- Historial agrupado por período -->
