@@ -440,6 +440,12 @@
         <!-- Menú desplegable del hamburguesa. VA DENTRO del <header> a propósito:
              el .main-menu es position:absolute y se ancla al header (position:relative). -->
         <div id="mainMenu" class="main-menu hidden" role="menu" aria-label="Menú principal">
+            <!-- Mi Perfil: mismo modal que el recuadro USUARIO del dashboard
+                 (nivel VIP + rakeback + reembolsos). -->
+            <button class="menu-item profile-btn" title="Mi Perfil — nivel VIP y reembolsos" role="menuitem"
+                onclick="if(window.VIP&&VIP.refunds)VIP.refunds.showProfileModal()">
+                <span class="menu-item-icon">👤</span><span class="menu-item-label">Mi Perfil <span style="font-weight:600;color:#d4af37;font-size:11px;">(nivel y reembolsos)</span></span>
+            </button>
             <button class="menu-item referral-btn" id="referralBtn" title="Mis Referidos" role="menuitem">
                 <span class="menu-item-icon">🤝</span><span class="menu-item-label">Mis Referidos</span>
             </button>
@@ -655,6 +661,15 @@
                     font-size:11px; font-weight:900; color:#fff; max-width:74px; text-align:center;
                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                 }
+                /* Pill dorado pulsante: avisa que el recuadro se toca y qué hay adentro. */
+                .dash-user-cta {
+                    margin-top:2px; font-size:6.8px; font-weight:900; letter-spacing:.3px;
+                    color:#1a0033; background:linear-gradient(135deg,#d4af37,#ffd700);
+                    border-radius:7px; padding:2px 5px; white-space:nowrap; max-width:78px;
+                    overflow:hidden; text-overflow:ellipsis;
+                    animation:dashUserCtaPulse 2.4s ease-in-out infinite;
+                }
+                @keyframes dashUserCtaPulse { 0%,100%{opacity:1;} 50%{opacity:.55;} }
                 #rouletteHomeCard { flex:0 0 84px; display:flex; overflow:hidden; }
                 .dash-roulette {
                     flex:1; display:flex; flex-direction:column; align-items:center;
@@ -774,10 +789,13 @@
                         </div>
                         <button id="unifiedRefundBtn" class="refund-btn unified-refund-btn" title="Reembolsos" onclick="VIP.refunds.showUnifiedRefundModal()" style="display:none;">🎁 Reembolsos</button>
                     </div>
-                    <div class="dash-user" onclick="VIP.refunds.showProfileModal()" title="Ver mi perfil y mis rangos">
+                    <div class="dash-user" onclick="VIP.refunds.showProfileModal()" title="Tocá para ver tu nivel VIP y tus reembolsos">
                         <span class="dash-user-avatar">👤</span>
                         <span class="dash-user-label">USUARIO</span>
                         <span class="dash-user-name" id="dashUserName">Usuario</span>
+                        <!-- CTA para que se note que el recuadro se toca: ahí adentro
+                             está el nivel VIP y el detalle de los reembolsos. -->
+                        <span class="dash-user-cta">NIVEL Y REEMBOLSOS ▾</span>
                     </div>
                 </div>
 

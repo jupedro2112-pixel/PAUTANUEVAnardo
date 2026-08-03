@@ -8,6 +8,17 @@
 
 ## Sesión 2026-08-03
 
+### 105. Descubribilidad del perfil: CTA en el recuadro USUARIO + "Mi Perfil" en el menú
+- **Pedido del owner:** que se note que el recuadro del usuario (al lado de los
+  reembolsos) se puede tocar para ver el nivel y los reembolsos, y que el perfil
+  también esté en el menú hamburguesa.
+- Recuadro USUARIO: pill dorado pulsante **"NIVEL Y REEMBOLSOS ▾"** debajo del nombre
+  (`.dash-user-cta`, animación de opacidad suave). Sigue visible con "Ocultar menú"
+  (el recuadro vive en `.dash-top`).
+- Menú ☰: opción **"👤 Mi Perfil (nivel y reembolsos)"** como primera fila — abre el
+  mismo `VIP.refunds.showProfileModal()` que el recuadro.
+- SW del cliente a **v63**.
+
 ### 104. PWA: menú hamburguesa, barra de chat 100% WhatsApp, fueguito a la cabecera, info y referidos al día
 - **Pedido del owner** (con foto de referencia de la barra de WhatsApp): (a) menú
   hamburguesa arriba a la derecha con todo adentro, (b) referidos más explicativo,
