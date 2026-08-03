@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v63'; // v63: CTA "nivel y reembolsos" en el recuadro USUARIO + Mi Perfil en el menú
+const CACHE_VERSION = 'v64'; // v64: botón "Unite al canal de Telegram" en el header + menú
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

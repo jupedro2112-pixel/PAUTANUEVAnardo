@@ -8,6 +8,24 @@
 
 ## Sesión 2026-08-03
 
+### 106. Botón "Unite al canal de Telegram" (header + menú ☰), configurable desde el panel
+- **Pedido del owner** (con captura de referencia): botón celeste estilo Telegram para
+  el canal, configurable desde el panel admin; achicar el recuadro de "Información de
+  nuestro servicio" para hacerle lugar; y que también aparezca en el menú hamburguesa.
+- **Se REUTILIZÓ la config existente** `canalInformativoUrl` (Config → sección del
+  panel, endpoint `GET /api/config/canal-url` + `POST /api/admin/canal-url`): no se
+  creó nada nuevo en el backend. La sección del panel se renombró a "📣 Canal de
+  Telegram" con la explicación de dónde aparece el botón.
+- **Header de la PWA:** ahora es [ℹ️ Info del servicio (compacto) | 📣 Unite al canal
+  de Telegram (pill celeste con glow, flex:1) | ☰]. Sin URL configurada el pill no
+  aparece y el ☰ queda pegado a la derecha (margin-left:auto).
+- **Menú ☰:** la opción "Canal Informativo" pasó a "📣 Unite al canal de Telegram"
+  (texto celeste). `chat.js loadCanalInformativoUrl` ahora muestra/oculta LOS DOS
+  botones (header + menú) con la misma URL.
+- **Validado:** `node --check` OK (chat.js). SW del cliente a **v64**. PROBAR tras
+  deploy: cargar una URL t.me en el panel → aparece el pill arriba y la opción en el
+  menú; vaciarla → desaparecen los dos.
+
 ### 105. Descubribilidad del perfil: CTA en el recuadro USUARIO + "Mi Perfil" en el menú
 - **Pedido del owner:** que se note que el recuadro del usuario (al lado de los
   reembolsos) se puede tocar para ver el nivel y los reembolsos, y que el perfil

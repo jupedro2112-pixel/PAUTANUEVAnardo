@@ -430,8 +430,16 @@
         <header class="header header-toolbar">
             <button class="tb-info" id="infoBtn" title="Información de nuestro servicio">
                 <span class="tb-info-icon">ℹ️</span>
-                <span class="tb-info-text">Información de nuestro servicio</span>
+                <span class="tb-info-text">Info del servicio</span>
             </button>
+            <!-- Canal de Telegram: pill celeste estilo Telegram (captura del owner,
+                 2026-08-03). La URL se configura desde el panel admin (Config →
+                 Canal de Telegram); sin URL el botón no aparece. La muestra/oculta
+                 chat.js (loadCanalInformativoUrl), junto con la opción del menú ☰. -->
+            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" title="Unite al canal de Telegram">
+                <span class="tb-telegram-icon">📣</span>
+                <span class="tb-telegram-text">Unite al canal de Telegram</span>
+            </a>
             <button class="tb-hamburger" id="menuToggleBtn" title="Menú" aria-label="Abrir menú" aria-expanded="false">
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
                     <path d="M4 6h16M4 12h16M4 18h16"/>
@@ -466,8 +474,8 @@
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
             </button>
-            <a id="canalInformativoBtn" href="#" target="_blank" rel="noopener noreferrer" class="menu-item" title="Canal Informativo" style="display:none;" role="menuitem">
-                <span class="menu-item-icon">📢</span><span class="menu-item-label">Canal Informativo</span>
+            <a id="canalInformativoBtn" href="#" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite al canal de Telegram" style="display:none;" role="menuitem">
+                <span class="menu-item-icon">📣</span><span class="menu-item-label" style="color:#53bdeb;">Unite al canal de Telegram</span>
             </a>
             <button class="menu-item settings-btn" id="settingsBtn" title="Configuración" role="menuitem">
                 <span class="menu-item-icon">⚙️</span><span class="menu-item-label">Configuración</span>
@@ -578,14 +586,33 @@
                 }
                 /* Layout en columna: el chat ocupa todo el alto disponible. */
                 .chat-section { margin:0 !important; }
+                /* Info del servicio: COMPACTO (antes ocupaba todo el ancho; se achicó
+                   para hacerle lugar al botón del canal de Telegram). */
                 .header-toolbar .tb-info {
-                    flex:1; min-width:0; display:flex; align-items:center; justify-content:center;
-                    gap:6px; background:linear-gradient(135deg,#d4af37,#ffd700); border:none;
-                    border-radius:9px; padding:7px 9px; cursor:pointer; color:#1a0033;
-                    font-weight:900; font-size:11px;
+                    flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+                    gap:5px; background:linear-gradient(135deg,#d4af37,#ffd700); border:none;
+                    border-radius:9px; padding:7px 8px; cursor:pointer; color:#1a0033;
+                    font-weight:900; font-size:10px; max-width:34vw;
                 }
-                .header-toolbar .tb-info-icon { font-size:14px; flex-shrink:0; }
-                .header-toolbar .tb-info-text { line-height:1.12; text-align:center; }
+                .header-toolbar .tb-info-icon { font-size:13px; flex-shrink:0; }
+                .header-toolbar .tb-info-text {
+                    line-height:1.12; text-align:center;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                }
+                /* Botón del canal de Telegram: pill celeste con glow, como la captura. */
+                .tb-telegram {
+                    flex:1; min-width:0; display:flex; align-items:center; justify-content:center;
+                    gap:6px; background:linear-gradient(135deg,#37b2f0,#1e96d6);
+                    border:none; border-radius:20px; padding:8px 10px;
+                    color:#fff; font-weight:800; font-size:11.5px; text-decoration:none;
+                    box-shadow:0 0 12px rgba(42,171,238,0.55);
+                    -webkit-tap-highlight-color:rgba(42,171,238,.3);
+                }
+                .tb-telegram:active { transform:scale(.98); }
+                .tb-telegram-icon { font-size:13px; flex-shrink:0; }
+                .tb-telegram-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                /* Sin canal configurado, el ☰ queda pegado a la derecha igual. */
+                .tb-hamburger { margin-left:auto; }
                 /* ===== Menú hamburguesa (arriba a la derecha) ===== */
                 .tb-hamburger {
                     flex:0 0 auto; background:linear-gradient(135deg,#2d0052,#1a0033);

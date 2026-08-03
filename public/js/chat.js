@@ -620,6 +620,22 @@ VIP.chat = (function () {
         }
     }
 
+    // Canal de Telegram (URL configurable desde el panel admin). Maneja los DOS
+    // botones: el pill celeste del header y la opción del menú hamburguesa.
+    // Sin URL configurada, ninguno aparece.
+    function _applyCanalUrl(url) {
+        const menuBtn = document.getElementById('canalInformativoBtn');
+        const headerBtn = document.getElementById('canalTelegramHeaderBtn');
+        if (menuBtn) {
+            if (url) { menuBtn.href = url; menuBtn.style.display = 'inline-flex'; }
+            else { menuBtn.style.display = 'none'; }
+        }
+        if (headerBtn) {
+            if (url) { headerBtn.href = url; headerBtn.style.display = 'flex'; }
+            else { headerBtn.style.display = 'none'; }
+        }
+    }
+
     async function loadCanalInformativoUrl() {
         try {
             const response = await fetch(`${VIP.config.API_URL}/api/config/canal-url`, {
@@ -627,17 +643,9 @@ VIP.chat = (function () {
             });
             if (!response.ok) return;
             const data = await response.json();
-            const btn = document.getElementById('canalInformativoBtn');
-            if (!btn) return;
-            if (data.url) {
-                btn.href = data.url;
-                btn.style.display = 'inline-flex';
-            } else {
-                btn.style.display = 'none';
-            }
+            _applyCanalUrl(data.url || '');
         } catch {
-            const btn = document.getElementById('canalInformativoBtn');
-            if (btn) btn.style.display = 'none';
+            _applyCanalUrl('');
         }
     }
 
