@@ -610,6 +610,14 @@
                                 <input type="number" id="welcomeCodeAmount" min="0" max="10000000" step="100" style="width:100%;">
                                 <small style="color:#aaa;font-size:11px;">Lo pueden cambiar el admin general y los depositors. El monto queda CONGELADO para cada cliente al momento de canjear.</small>
                             </div>
+                            <div class="form-group">
+                                <label>Tipo de bono:</label>
+                                <select id="welcomeCodeType" style="width:100%;">
+                                    <option value="next_charge">🎁 Bono extra en la PRÓXIMA CARGA (lo aplica el agente y lo marca como usado)</option>
+                                    <option value="cash">💰 Monto sorpresa AUTOMÁTICO (se acredita solo al canjear, sin intervención del agente)</option>
+                                </select>
+                                <small style="color:#aaa;font-size:11px;">También queda congelado por cliente al canjear: cambiarlo después no afecta canjes ya hechos.</small>
+                            </div>
                             <button class="btn-primary" onclick="saveWelcomeCodeConfig()">
                                 <span class="icon icon-save"></span> Guardar código de bienvenida
                             </button>

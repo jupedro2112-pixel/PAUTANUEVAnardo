@@ -4022,6 +4022,16 @@
                 '</div>';
         }
 
+        // Tipo cash: la plata ya se acreditó sola al canjear.
+        function _renderCredited(amount) {
+            _body().innerHTML =
+                '<div style="background:linear-gradient(135deg,#0f4c00,#1a8200);border-radius:12px;padding:16px;text-align:center;color:#fff;">' +
+                    '<div style="font-size:34px;margin-bottom:6px;">💰</div>' +
+                    '<div style="font-size:15px;font-weight:900;margin-bottom:6px;">¡' + _money(amount) + ' acreditados en tu cuenta!</div>' +
+                    '<div style="font-size:12.5px;line-height:1.5;opacity:.95;">Tu bono sorpresa de bienvenida ya está en tu saldo. ¡A jugarlo! 🎰</div>' +
+                '</div>';
+        }
+
         window.openWelcomeCodeModal = async function () {
             showModal('welcomeCodeModal');
             _body().innerHTML = '<p style="color:#aaa;font-size:13px;">Cargando...</p>';
@@ -4032,6 +4042,7 @@
                 const d = await r.json();
                 if (!r.ok) { _renderInput(''); return; }
                 if (d.status === 'pending') return _renderPending(d.amount);
+                if (d.status === 'credited') return _renderCredited(d.amount);
                 if (d.status === 'used') return _renderUsed(d.amount);
                 _renderInput(d.available ? '' : 'Todavía no hay un código activo — unite a la Comunidad para no perdértelo cuando salga.');
             } catch (e) {
@@ -4054,7 +4065,13 @@
                 });
                 const d = await r.json();
                 if (r.ok && d.success) {
-                    _renderPending(d.amount);
+                    if (d.status === 'credited') {
+                        _renderCredited(d.amount);
+                        // La plata ya está en el saldo → refrescar el header.
+                        if (window.VIP && VIP.ui && VIP.ui.syncBalance) VIP.ui.syncBalance();
+                    } else {
+                        _renderPending(d.amount);
+                    }
                     if (window.VIP && VIP.ui && VIP.ui.showToast) VIP.ui.showToast('✅ ' + d.message, 'success');
                 } else {
                     if (err) err.textContent = d.error || 'No se pudo canjear el código.';

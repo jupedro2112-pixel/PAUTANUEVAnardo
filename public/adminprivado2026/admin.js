@@ -4355,6 +4355,17 @@ function renderWelcomeCodeBonusBanner(user) {
         return;
     }
 
+    if (status === 'credited') {
+        // Tipo cash: la plata se acreditó SOLA al canjear — informativo, sin acción.
+        banner.style.display = '';
+        banner.innerHTML =
+            '<div style="background:rgba(46,204,113,0.10);color:#7fe07f;border:1px solid rgba(46,204,113,0.3);' +
+            'border-radius:10px;padding:7px 12px;margin:6px 0;font-size:11.5px;">' +
+                '💰 Bono sorpresa (' + monto + ') acreditado AUTOMÁTICAMENTE al canjear el código. No hay que hacer nada.' +
+            '</div>';
+        return;
+    }
+
     banner.style.display = 'none';
     banner.innerHTML = '';
 }
@@ -5839,6 +5850,8 @@ async function loadWelcomeCodeConfig() {
         const j = await r.json();
         const amountInput = document.getElementById('welcomeCodeAmount');
         if (amountInput && j.amount != null) amountInput.value = j.amount;
+        const typeSelect = document.getElementById('welcomeCodeType');
+        if (typeSelect && j.bonusType) typeSelect.value = j.bonusType;
         const codeGroup = document.getElementById('welcomeCodeCodeGroup');
         const codeInput = document.getElementById('welcomeCodeInput');
         if (j.code !== undefined) {
@@ -5858,7 +5871,11 @@ async function saveWelcomeCodeConfig() {
     const amountInput = document.getElementById('welcomeCodeAmount');
     const codeGroup = document.getElementById('welcomeCodeCodeGroup');
     const codeInput = document.getElementById('welcomeCodeInput');
-    const body = { amount: amountInput ? amountInput.value : undefined };
+    const typeSelect = document.getElementById('welcomeCodeType');
+    const body = {
+        amount: amountInput ? amountInput.value : undefined,
+        bonusType: typeSelect ? typeSelect.value : undefined
+    };
     // El código solo viaja si el campo está visible (admin general).
     if (codeInput && codeGroup && codeGroup.style.display !== 'none') {
         body.code = codeInput.value.trim();

@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-03
 
+### 113. Bono de bienvenida con DOS tipos: monto sorpresa automático o bono en la próxima carga
+- **Pedido del owner:** que el bono del código pueda ser (a) un **monto sorpresa que
+  se acredita AUTOMÁTICO** al canjear, o (b) el **bono extra en la próxima carga**
+  (manual: el agente lo suma y lo marca como usado — el flujo de #112).
+- **Config nueva:** `communityWelcomeBonusType` (`cash` | `next_charge`, default
+  next_charge). Selector en la card del panel — lo cambian admin general y depositor
+  (misma regla que el monto). **Tipo y monto quedan CONGELADOS por cliente al
+  canjear** (`User.welcomeCodeBonusType`).
+- **Tipo `cash`:** la reserva atómica queda en 'pending' y recién con el crédito OK
+  pasa a **'credited'** (enum nuevo). Reference **`vip-welcome-{userId}`** (uno por
+  cuenta para siempre → imposible pagar dos veces, aunque se reintente). Si el
+  crédito falla, la reserva se RESTAURA (guard en 'pending') y el cliente puede
+  reintentar. Transaction type 'bonus' con `metadata.source:'welcome_code'` —
+  agregado a los `GIFT_SOURCES` para que NO cuente como carga real en la analítica.
+  Mensaje al cliente por **`/sys_welcome_code_cash`** (comando nuevo) y nota
+  informativa al agente ("no hay que hacer nada"). El modal de la PWA muestra el
+  recuadro verde "$X acreditados" y refresca el saldo del header.
+- **Tipo `next_charge`:** sin cambios (#112) — banner azul + marcar como usado.
+- **Panel:** banner nuevo para 'credited' (verde informativo, sin botón).
+- **Validado:** `node --check` OK + parse del inline. SW a **v72**. Back necesita
+  redeploy. PROBAR: canje con tipo cash (saldo sube solo, banner verde en el panel)
+  y con tipo próxima carga (flujo manual de siempre).
+
 ### 112. CÓDIGO DE BIENVENIDA de la Comunidad de Telegram (bono sorpresa) + "Soporte 1Girox"
 - **Pedido del owner:** (a) renombrar la cabecera del chat "Soporte VIPCARGAS" →
   **"Soporte 1Girox"**; (b) ítem "Código de Bienvenida" en el menú ☰: al entrar a la

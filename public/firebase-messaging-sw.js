@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v71'; // v71: código de bienvenida de la Comunidad + Soporte 1Girox
+const CACHE_VERSION = 'v72'; // v72: bono de bienvenida con 2 tipos (cash automático / próxima carga manual)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

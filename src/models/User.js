@@ -511,14 +511,24 @@ const userSchema = new mongoose.Schema({
   // CÓDIGO DE BIENVENIDA de la Comunidad de Telegram (2026-08-03)
   // ============================================
   // El owner publica un código en la comunidad; el usuario lo canjea UNA sola
-  // vez en la vida y queda con un "bono sorpresa" pendiente que el agente aplica
-  // a mano en su próxima carga. Mismo mecanismo que el bono 100% de arriba:
-  // pending → (el agente carga y aplica) → used.
+  // vez en la vida. Según la config, el bono es:
+  //   - 'cash'        → MONTO SORPRESA acreditado AUTOMÁTICO al canjear
+  //                     (status pasa a 'credited'; reference vip-welcome-{userId})
+  //   - 'next_charge' → bono extra en la PRÓXIMA CARGA, lo aplica el agente a
+  //                     mano (pending → used, mismo mecanismo que el bono 100%).
   welcomeCodeBonusStatus: {
     type: String,
-    enum: ['none', 'pending', 'used'],
+    // 'credited' = plata ya acreditada automáticamente (tipo cash).
+    enum: ['none', 'pending', 'used', 'credited'],
     default: 'none',
     index: true
+  },
+  // Tipo CONGELADO al canjear (igual que el monto): cambiar la config después no
+  // altera canjes ya hechos.
+  welcomeCodeBonusType: {
+    type: String,
+    enum: ['cash', 'next_charge', null],
+    default: null
   },
   // Monto CONGELADO al canjear: si el admin cambia el monto en la config después,
   // los bonos ya otorgados no cambian.

@@ -9120,9 +9120,15 @@ async function initializeData() {
     },
     {
       name: '/sys_welcome_code',
-      description: 'Mensaje automático cuando el cliente canjea el código de bienvenida de la Comunidad de Telegram (bono sorpresa para su próxima carga). Variables: {username}, ${amount}. Si lo dejás vacío, no se envía.',
+      description: 'Mensaje automático cuando el cliente canjea el código de bienvenida de la Comunidad de Telegram y el bono es EN LA PRÓXIMA CARGA (lo aplica el agente). Variables: {username}, ${amount}. Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '🎉 ¡Código de bienvenida canjeado, {username}!\n\n🎁 Tenés un BONO SORPRESA de ${amount} para tu PRÓXIMA CARGA.\n\nCuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento. 🥳\n\n⚠️ Es por única vez.',
+    },
+    {
+      name: '/sys_welcome_code_cash',
+      description: 'Mensaje automático cuando el cliente canjea el código de bienvenida y el bono es MONTO SORPRESA (se acredita solo). Variables: {username}, ${amount}. Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '🎉 ¡Código de bienvenida canjeado, {username}!\n\n💰 Tu BONO SORPRESA de ${amount} ya está ACREDITADO en tu cuenta. ¡A jugarlo! 🎰\n\n⚠️ Es por única vez.',
     }
   ];
   for (const cmd of systemCmds) {
@@ -9757,14 +9763,15 @@ app.post('/api/admin/users/:userId/first-charge-bonus/use', authMiddleware, admi
 app.get('/api/community-code/status', authMiddleware, async (req, res) => {
   try {
     const user = await User.findOne({ id: req.user.userId })
-      .select('welcomeCodeBonusStatus welcomeCodeBonusAmount').lean();
+      .select('welcomeCodeBonusStatus welcomeCodeBonusAmount welcomeCodeBonusType').lean();
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     const code = String((await getConfig('communityWelcomeCode', '')) || '').trim();
+    const st = user.welcomeCodeBonusStatus || 'none';
     res.json({
-      status: user.welcomeCodeBonusStatus || 'none',
-      // El monto sólo se devuelve cuando YA lo canjeó (pending/used).
-      amount: (user.welcomeCodeBonusStatus === 'pending' || user.welcomeCodeBonusStatus === 'used')
-        ? (user.welcomeCodeBonusAmount || 0) : null,
+      status: st,
+      // El monto sólo se devuelve cuando YA lo canjeó (es sorpresa hasta entonces).
+      amount: ['pending', 'used', 'credited'].includes(st) ? (user.welcomeCodeBonusAmount || 0) : null,
+      type: user.welcomeCodeBonusType || null,
       available: !!code
     });
   } catch (error) {
@@ -9793,15 +9800,20 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     if (amount <= 0) {
       return res.status(400).json({ error: 'El código todavía no tiene un bono configurado. Probá más tarde.' });
     }
+    // Tipo del bono (config): 'cash' = monto sorpresa acreditado AUTOMÁTICO;
+    // 'next_charge' (default) = bono extra en la próxima carga, lo aplica el agente.
+    const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
 
     // Reserva atómica: UNA vez por cuenta PARA SIEMPRE (aunque el código cambie).
     // $nin cubre docs viejos sin el campo. Si dos requests concurrentes entran,
-    // sólo uno gana el doc — el otro recibe null.
+    // sólo uno gana el doc — el otro recibe null. Los dos tipos reservan en
+    // 'pending': el cash pasa a 'credited' recién con la plata acreditada.
     const user = await User.findOneAndUpdate(
-      { id: req.user.userId, role: 'user', welcomeCodeBonusStatus: { $nin: ['pending', 'used'] } },
+      { id: req.user.userId, role: 'user', welcomeCodeBonusStatus: { $nin: ['pending', 'used', 'credited'] } },
       { $set: {
         welcomeCodeBonusStatus: 'pending',
-        welcomeCodeBonusAmount: amount,   // congelado: cambios de config no lo tocan
+        welcomeCodeBonusType: bonusType,  // congelado: cambios de config no lo tocan
+        welcomeCodeBonusAmount: amount,   // ídem
         welcomeCodeClaimedAt: new Date()
       } },
       { new: true }
@@ -9811,6 +9823,75 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       return res.status(400).json({ error: 'Ya usaste tu código de bienvenida. Es una sola vez por cuenta.', code: 'ALREADY_CLAIMED' });
     }
 
+    const montoFmt = amount.toLocaleString('es-AR');
+
+    // ============ TIPO CASH: acreditación AUTOMÁTICA ============
+    if (bonusType === 'cash') {
+      // Reference por usuario: el bono es uno por cuenta para siempre → aunque
+      // esto se reintente, la plataforma nunca paga dos veces (duplicate:true).
+      const credit = await girox.creditUserBalance(user.username, amount, `vip-welcome-${user.id}`, {
+        description: 'Bono sorpresa — código de bienvenida de la Comunidad'
+      });
+      if (!credit.success) {
+        // Restaurar la reserva (guard en 'pending') para que pueda reintentar.
+        await User.updateOne(
+          { id: user.id, welcomeCodeBonusStatus: 'pending' },
+          { $set: { welcomeCodeBonusStatus: 'none', welcomeCodeBonusType: null, welcomeCodeBonusAmount: 0, welcomeCodeClaimedAt: null } }
+        ).catch(() => {});
+        logger.warn(`[welcome-code] crédito cash falló para ${user.username}: ${credit.error || 's/detalle'}`);
+        return res.status(502).json({ error: 'No pudimos acreditar el bono en este momento. Probá de nuevo en unos minutos.' });
+      }
+
+      await User.updateOne(
+        { id: user.id, welcomeCodeBonusStatus: 'pending' },
+        { $set: { welcomeCodeBonusStatus: 'credited' } }
+      ).catch(() => {});
+
+      // Registro para la analítica: type bonus + source de REGALO (excluido de
+      // los reportes de carga real — ver GIFT_SOURCES).
+      await Transaction.create({
+        id: uuidv4(),
+        type: 'bonus',
+        userId: user.id,
+        username: user.username,
+        amount,
+        description: 'Bono sorpresa — código de bienvenida de la Comunidad',
+        transactionId: (credit.data && (credit.data.transfer_id || credit.data.transferId)) || null,
+        metadata: { source: 'welcome_code' },
+        timestamp: new Date()
+      }).catch((e) => logger.warn(`[welcome-code] no se pudo guardar la Transaction: ${e.message}`));
+
+      // Mensaje al cliente (editable en COMANDOS /sys_welcome_code_cash).
+      const contentCash = await renderSystemCommand(
+        '/sys_welcome_code_cash',
+        '🎉 ¡Código de bienvenida canjeado, {username}!\n\n' +
+        '💰 Tu BONO SORPRESA de ${amount} ya está ACREDITADO en tu cuenta. ¡A jugarlo! 🎰\n\n' +
+        '⚠️ Es por única vez.',
+        { username: user.username, amount: montoFmt }
+      );
+      if (contentCash) await Message.create({
+        id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+        receiverId: user.id, receiverRole: 'user', content: contentCash,
+        type: 'system', timestamp: new Date(), read: false
+      });
+
+      // Nota informativa al agente (no requiere acción).
+      await _emitAdminOnlyChatNote(
+        user.id,
+        user.username,
+        `💰 BONO SORPRESA ACREDITADO AUTOMÁTICAMENTE ($${montoFmt}) — este cliente canjeó el código de bienvenida de la Comunidad. No hay que hacer nada: la plata ya está en su cuenta.`
+      ).catch(() => {});
+
+      logger.info(`[welcome-code] ${user.username} canjeó el código — $${amount} acreditados automáticamente`);
+      return res.json({
+        success: true,
+        status: 'credited',
+        amount,
+        message: `¡Código válido! Tu bono sorpresa de $${montoFmt} ya está acreditado en tu cuenta. 🎰`
+      });
+    }
+
+    // ============ TIPO NEXT_CHARGE: lo aplica el agente ============
     // Mensaje al cliente en el chat (editable desde COMANDOS /sys_welcome_code).
     const content = await renderSystemCommand(
       '/sys_welcome_code',
@@ -9818,7 +9899,7 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       '🎁 Tenés un BONO SORPRESA de ${amount} para tu PRÓXIMA CARGA.\n\n' +
       'Cuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento. 🥳\n\n' +
       '⚠️ Es por única vez.',
-      { username: user.username, amount: amount.toLocaleString('es-AR') }
+      { username: user.username, amount: montoFmt }
     );
     if (content) await Message.create({
       id: uuidv4(),
@@ -9838,8 +9919,8 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     await _emitAdminOnlyChatNote(
       user.id,
       user.username,
-      `🎁 BONO SORPRESA PENDIENTE ($${amount.toLocaleString('es-AR')}) — este cliente canjeó el código de bienvenida de la Comunidad de Telegram.\n` +
-      `👉 En su PRÓXIMA CARGA, sumale $${amount.toLocaleString('es-AR')} y después marcalo como usado desde el botón del chat. Es por única vez.`
+      `🎁 BONO SORPRESA PENDIENTE ($${montoFmt}) — este cliente canjeó el código de bienvenida de la Comunidad de Telegram.\n` +
+      `👉 En su PRÓXIMA CARGA, sumale $${montoFmt} y después marcalo como usado desde el botón del chat. Es por única vez.`
     ).catch(() => {});
 
     logger.info(`[welcome-code] ${user.username} canjeó el código — bono $${amount} pendiente`);
@@ -9847,7 +9928,7 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       success: true,
       status: 'pending',
       amount,
-      message: `¡Código válido! Tenés un bono sorpresa de $${amount.toLocaleString('es-AR')} para tu próxima carga.`
+      message: `¡Código válido! Tenés un bono sorpresa de $${montoFmt} para tu próxima carga.`
     });
   } catch (error) {
     logger.error(`Error canjeando código de bienvenida: ${error.message}`);
@@ -9907,8 +9988,10 @@ app.get('/api/admin/community-code', authMiddleware, adminMiddleware, async (req
     }
     const code = String((await getConfig('communityWelcomeCode', '')) || '');
     const amount = Math.max(0, Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0);
+    const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
     res.json({
       amount,
+      bonusType,
       hasCode: !!code.trim(),
       // El código en claro sólo lo ve el admin general.
       ...(req.user.role === 'admin' ? { code } : {})
@@ -9934,6 +10017,16 @@ app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (re
       }
       await setConfig('communityWelcomeBonusAmount', Math.round(amount));
       logger.info(`[welcome-code] monto del bono sorpresa → $${Math.round(amount)} (por ${req.user.username})`);
+    }
+
+    // Tipo del bono: admin general y depositor (misma regla que el monto).
+    // 'cash' = se acredita solo al canjear; 'next_charge' = lo aplica el agente.
+    if (b.bonusType !== undefined) {
+      if (!['cash', 'next_charge'].includes(b.bonusType)) {
+        return res.status(400).json({ error: 'Tipo de bono inválido.' });
+      }
+      await setConfig('communityWelcomeBonusType', b.bonusType);
+      logger.info(`[welcome-code] tipo del bono sorpresa → ${b.bonusType} (por ${req.user.username})`);
     }
 
     // Código: SOLO admin general. Vacío = desactivar el canje.
@@ -10401,7 +10494,7 @@ async function computeCampaignStats(code) {
   // transacción marcada como bono/regalo aunque por error venga como type='deposit'
   // (futuras integraciones / scripts). Hoy install-bonus se registra como type='bonus'
   // y queda fuera por el filtro principal — esta exclusión es defensiva.
-  const GIFT_SOURCES = ['install_bonus', 'welcome_gift'];
+  const GIFT_SOURCES = ['install_bonus', 'welcome_gift', 'welcome_code'];
   const [depositsByUser, withdrawalsAgg] = await Promise.all([
     Transaction.aggregate([
       { $match: {
@@ -11074,7 +11167,7 @@ app.get('/api/admin/publisher-admin/my-stats', authMiddleware, publisherAdminMid
     let totalDeposits = 0;
     let totalWithdrawals = 0;
     if (usernames.length > 0) {
-      const GIFT_SOURCES = ['install_bonus', 'welcome_gift'];
+      const GIFT_SOURCES = ['install_bonus', 'welcome_gift', 'welcome_code'];
       const [depAgg, witAgg] = await Promise.all([
         Transaction.aggregate([
           { $match: {
@@ -11457,7 +11550,7 @@ app.get('/api/admin/publishers/dashboard', authMiddleware, adminMiddleware, asyn
     }
 
     // Para cada publisher, sumar deposits y withdrawals de sus usernames.
-    const GIFT_SOURCES = ['install_bonus', 'welcome_gift'];
+    const GIFT_SOURCES = ['install_bonus', 'welcome_gift', 'welcome_code'];
     const txDateFilter = {};
     if (hasDateFilter) txDateFilter.timestamp = dateFilter;
 
@@ -11547,7 +11640,7 @@ app.get('/api/admin/publishers/:publisher/users', authMiddleware, adminMiddlewar
     let depByUser = {};
     let witByUser = {};
     if (usernames.length > 0) {
-      const GIFT_SOURCES = ['install_bonus', 'welcome_gift'];
+      const GIFT_SOURCES = ['install_bonus', 'welcome_gift', 'welcome_code'];
       const [depAgg, witAgg] = await Promise.all([
         Transaction.aggregate([
           { $match: {
