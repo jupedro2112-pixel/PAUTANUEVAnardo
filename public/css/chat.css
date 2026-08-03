@@ -185,7 +185,24 @@
     font-size: 11px;
     color: #667781;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 3px;
 }
+
+/* Tildes de los mensajes PROPIOS del cliente, como WhatsApp: ✓✓ gris = enviado,
+   ✓✓ celestes = un admin abrió el chat y los leyó. El celeste es el MISMO tono
+   que usa WhatsApp para el "leído" (#53bdeb). El flip en vivo lo hace socket.js
+   (evento messages_read_by_admin). */
+.msg-ticks {
+    display: inline-flex;
+    align-items: center;
+    color: #8696a0;
+}
+
+.msg-ticks svg { display: block; }
+
+.msg-ticks.msg-read { color: #53bdeb; }
 
 .copy-btn {
     background: rgba(0, 0, 0, 0.08);
@@ -277,8 +294,10 @@
     color: #1b1b1b;          /* casi negro, como los íconos de la foto */
     cursor: pointer;
     display: flex;
+    flex-direction: column;  /* deja poner una mini-etiqueta bajo el ícono (CBU) */
     align-items: center;
     justify-content: center;
+    gap: 1px;
     transition: transform 0.15s ease, color 0.15s ease;
     -webkit-tap-highlight-color: transparent;
 }
@@ -286,10 +305,38 @@
 .wa-icon-btn:hover { color: #000; }
 .wa-icon-btn:active { transform: scale(0.88); }
 
+/* Mini-etiqueta bajo el ícono ("CBU"): para que se sepa qué es el botón. */
+.wa-btn-label {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    line-height: 1;
+}
+
+/* Botón de modo claro/oscuro: en la cabecera del chat, a la vista (es el que
+   empuja el bloque de botones al borde derecho con margin-left:auto). */
+.theme-topbar-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 17px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.theme-topbar-btn:active { transform: scale(0.92); }
+
 /* Botón Fueguito (racha diaria): en la CABECERA del chat, a la derecha —
    fuera de la barra de escribir para que esa quede 100% WhatsApp. */
 .fire-topbar-btn {
-    margin-left: auto;       /* empuja el fueguito al borde derecho de la cabecera */
+    margin-left: 7px;        /* el empuje a la derecha lo hace .theme-topbar-btn */
     flex-shrink: 0;
     width: 42px;
     height: 42px;

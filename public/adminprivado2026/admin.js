@@ -5641,8 +5641,10 @@ async function loadCommunityConfig() {
             const data = await response.json();
             const channelInput = document.getElementById('communityChannelUrl');
             const supportInput = document.getElementById('communitySupportUrl');
+            const logoInput = document.getElementById('communityChatLogoUrl');
             if (channelInput) channelInput.value = data.channelUrl || '';
             if (supportInput) supportInput.value = data.supportUrl || '';
+            if (logoInput) logoInput.value = data.chatLogoUrl || '';
         }
     } catch (error) {
         console.error('Error loading community config:', error);
@@ -5652,8 +5654,10 @@ async function loadCommunityConfig() {
 async function saveCommunityConfig() {
     const channelInput = document.getElementById('communityChannelUrl');
     const supportInput = document.getElementById('communitySupportUrl');
+    const logoInput = document.getElementById('communityChatLogoUrl');
     const channelUrl = channelInput ? channelInput.value.trim() : '';
     const supportUrl = supportInput ? supportInput.value.trim() : '';
+    const chatLogoUrl = logoInput ? logoInput.value.trim() : '';
     try {
         const response = await fetch(`${API_URL}/api/admin/community`, {
             method: 'POST',
@@ -5661,7 +5665,7 @@ async function saveCommunityConfig() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${currentToken}`
             },
-            body: JSON.stringify({ channelUrl, supportUrl })
+            body: JSON.stringify({ channelUrl, supportUrl, chatLogoUrl })
         });
         const data = await response.json();
         if (response.ok) {

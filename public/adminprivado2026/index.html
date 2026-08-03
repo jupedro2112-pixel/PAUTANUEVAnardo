@@ -576,7 +576,12 @@
                             <div class="form-group">
                                 <label>Soporte VIP Telegram:</label>
                                 <input type="url" id="communitySupportUrl" placeholder="https://t.me/tu_soporte" style="width:100%;">
-                                <small style="color:#aaa;font-size:11px;">Botón "Soporte Telegram" en la pantalla principal del cliente. Vacío = oculto.</small>
+                                <small style="color:#aaa;font-size:11px;">Alimenta el "Soporte 24/7 (Telegram)" del menú ☰ del cliente (ese botón aparece SIEMPRE; sin URL usa el link por defecto) y el botón "Soporte Telegram" de la pantalla principal (ese sí se oculta si está vacío).</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Logo del chat de soporte (URL de imagen):</label>
+                                <input type="url" id="communityChatLogoUrl" placeholder="https://... (imagen cuadrada, ej. 96x96)" style="width:100%;">
+                                <small style="color:#aaa;font-size:11px;">Es la foto de perfil que el cliente ve en la cabecera "Soporte VIPCARGAS" del chat. Vacío = el logo de VIPCARGAS de siempre.</small>
                             </div>
                             <button class="btn-primary" onclick="saveCommunityConfig()">
                                 <span class="icon icon-save"></span> Guardar Comunidad

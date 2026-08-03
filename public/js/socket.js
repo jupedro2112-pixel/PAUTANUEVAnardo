@@ -174,6 +174,15 @@ VIP.socket = (function () {
             }
         });
 
+        // Un admin abrió el chat → todos los mensajes propios pasan a "leído":
+        // los ✓✓ grises se pintan de celeste (como WhatsApp), en vivo.
+        VIP.state.socket.on('messages_read_by_admin', function () {
+            document.querySelectorAll('#chatMessages .msg-ticks').forEach(function (el) {
+                el.classList.add('msg-read');
+                el.title = 'Leído';
+            });
+        });
+
         VIP.state.socket.on('error', function (data) {
             console.error('❌ Error de socket:', data);
         });

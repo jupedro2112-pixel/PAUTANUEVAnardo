@@ -78,7 +78,16 @@ VIP.chat = (function () {
             contentHtml = `<div style="white-space: pre-wrap;">${content}</div>`;
         }
 
-        msgDiv.innerHTML = `${contentHtml}<span class="message-time">${time}</span>`;
+        // Tildes estilo WhatsApp SOLO en los mensajes propios del cliente:
+        // ✓✓ gris = enviado; ✓✓ celeste (#53bdeb, el tono del "leído" de WhatsApp)
+        // = un admin abrió el chat. El estado inicial sale de message.read; el
+        // cambio en vivo lo empuja el server (evento messages_read_by_admin).
+        const ticksHtml = isFromUser
+            ? `<span class="msg-ticks${message.read ? ' msg-read' : ''}" title="${message.read ? 'Leído' : 'Enviado'}">` +
+              `<svg viewBox="0 0 18 12" width="17" height="11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+              `<path d="M1.3 6.8l3.1 3.1L10.9 3.2"/><path d="M7.6 9.6l1.3 1.3L16.7 3.2"/></svg></span>`
+            : '';
+        msgDiv.innerHTML = `${contentHtml}<span class="message-time">${time}${ticksHtml}</span>`;
 
         if (imageUrl) {
             const img = msgDiv.querySelector('img');
@@ -645,6 +654,14 @@ VIP.chat = (function () {
             if (!response.ok) return;
             const data = await response.json();
             _applyCanalUrl(data.channelUrl || '');
+            // Soporte 24/7 del menú ☰: si hay URL configurada (Comunidad →
+            // supportUrl) apunta ahí; si no, conserva el href por defecto del HTML
+            // (el botón aparece SIEMPRE).
+            const supportBtn = document.getElementById('menuSupportBtn');
+            if (supportBtn && data.supportUrl) supportBtn.href = data.supportUrl;
+            // Logo del chat de soporte, configurable desde el panel.
+            const avatar = document.getElementById('chatTopbarAvatar');
+            if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
         } catch {
             _applyCanalUrl('');
         }

@@ -8,6 +8,35 @@
 
 ## Sesión 2026-08-03
 
+### 108. PWA: tildes de leído estilo WhatsApp, oscuro por default, toggle a la vista, CBU con etiqueta, soporte Telegram y logo del chat configurables
+- **Pedido del owner (6 puntos):**
+  1. **"CBU" abajo de la tarjeta** de la barra del chat (`.wa-btn-label`, 8px) — para
+     que se sepa que ese botón pide el CBU ACTIVO. `.wa-icon-btn` pasó a columna.
+  2. **"Información de nuestro servicio" en el menú ☰** — dispara `infoBtn.click()`
+     para no duplicar la lógica (diagnósticos + reseñas del handler real).
+  3. **Soporte 24/7 con logo de TELEGRAM** (SVG del avioncito celeste). La URL sale
+     de Comunidad → `supportUrl` (la misma del botón del dashboard); si no está
+     configurada, el botón del menú aparece IGUAL con su href por defecto.
+  4. **Logo del chat de soporte configurable**: campo nuevo "Logo del chat" en el
+     panel (Comunidad) → `communityConfig.chatLogoUrl` → chat.js lo aplica a la
+     cabecera (`#chatTopbarAvatar`). Vacío = ícono de VIPCARGAS. La CSP ya permite
+     `img-src https:` → cualquier imagen HTTPS sirve.
+  5. **Modo OSCURO por default** (el boot inline aplica `wa-dark` salvo
+     `waDark==='0'` explícito) + **toggle a la vista**: botón 🌙/☀️ en la cabecera
+     del chat (`#themeToggleBtn`), sincronizado con el switch de Configuración vía
+     `applyWaDark` (app.js). El ícono muestra a qué modo se cambia.
+  6. **Tildes estilo WhatsApp en los mensajes del cliente**: ✓✓ gris = enviado,
+     ✓✓ CELESTE **#53bdeb** (el mismo tono del "leído" de WhatsApp) cuando un admin
+     abre el chat. Estado inicial de `message.read` (los mensajes ya lo traían);
+     el flip en vivo: `POST /api/messages/read/:userId` (lo llama el panel al abrir
+     el chat) ahora TAMBIÉN emite `messages_read_by_admin` a `user_{id}` y
+     socket.js pinta todos los `.msg-ticks`. Ticks en SVG (no emoji) para que se
+     vean iguales en todos los OS.
+- **Validado:** `node --check` OK (server.js, chat.js, socket.js, app.js, admin.js).
+  SW del cliente a **v67**. Back necesita redeploy (evento nuevo + config extendida).
+  PROBAR tras deploy: mandar un mensaje (✓✓ gris) y abrir el chat desde el panel
+  (→ celeste en vivo); tocar 🌙/☀️; cargar un logo en el panel y ver la cabecera.
+
 ### 107. Canal de Telegram UNIFICADO con la Comunidad (una config, un botón)
 - **Pedido del owner:** el canal de Telegram y la comunidad de Telegram son LO MISMO —
   dejar uno solo, sin botones duplicados.

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v66'; // v66: canal de Telegram unificado con la Comunidad (un solo botón/config)
+const CACHE_VERSION = 'v67'; // v67: tildes de leído, oscuro por default, toggle a la vista, CBU con etiqueta
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

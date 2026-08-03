@@ -5963,10 +5963,14 @@ app.post('/api/messages/read/:userId', authMiddleware, adminMiddleware, async (r
       { senderId: userId, receiverRole: 'admin' },
       { read: true }
     );
-    
+
     // Notificar a todos los admins que los mensajes de este usuario fueron leídos
     notifyAdmins('messages_read', { userId, by: req.user.userId });
-    
+
+    // Avisar TAMBIÉN al cliente: sus ✓✓ grises pasan a celeste (leído por un
+    // admin), como WhatsApp. socket.js escucha este evento.
+    io.to(`user_${userId}`).emit('messages_read_by_admin', { at: Date.now() });
+
     res.json({ message: 'Mensajes marcados como leídos' });
   } catch (error) {
     console.error('Error marcando mensajes como leídos:', error);
@@ -16107,7 +16111,10 @@ app.get('/api/config/community', authMiddleware, async (req, res) => {
     const legacyCanal = await getConfig('canalInformativoUrl', '');
     res.json({
       channelUrl: c.channelUrl || c.url || legacyCanal || '',
-      supportUrl: c.supportUrl || ''
+      supportUrl: c.supportUrl || '',
+      // Logo del chat de soporte de la PWA (cabecera del chat). Vacío = el
+      // ícono default de VIPCARGAS que ya trae el HTML.
+      chatLogoUrl: c.chatLogoUrl || ''
     });
   } catch (err) {
     logger.error(`/api/config/community: ${err.message}`);
@@ -16124,9 +16131,10 @@ app.post('/api/admin/community', authMiddleware, adminMiddleware, async (req, re
     }
     const channelUrl = _normUrl(req.body && req.body.channelUrl);
     const supportUrl = _normUrl(req.body && req.body.supportUrl);
-    await setConfig('communityConfig', { channelUrl, supportUrl });
+    const chatLogoUrl = _normUrl(req.body && req.body.chatLogoUrl);
+    await setConfig('communityConfig', { channelUrl, supportUrl, chatLogoUrl });
     logger.info(`[community] config guardada por ${(req.user && req.user.username) || '?'}`);
-    res.json({ success: true, channelUrl, supportUrl });
+    res.json({ success: true, channelUrl, supportUrl, chatLogoUrl });
   } catch (err) {
     logger.error(`POST /api/admin/community: ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });

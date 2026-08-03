@@ -293,7 +293,9 @@
     // Modo oscuro del chat: se aplica ANTES de que se pinte nada, si no el usuario
     // ve un flash del chat en claro y recién después se pone oscuro. Por eso va
     // acá inline y no en app.js (que carga al final).
-    try { if (localStorage.getItem('waDark') === '1') document.body.classList.add('wa-dark'); } catch (e) {}
+    // DEFAULT = OSCURO (owner 2026-08-03): solo queda claro si el usuario eligió
+    // claro explícitamente (waDark === '0').
+    try { if (localStorage.getItem('waDark') !== '0') document.body.classList.add('wa-dark'); } catch (e) { document.body.classList.add('wa-dark'); }
 </script>
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">
@@ -458,16 +460,23 @@
             <button class="menu-item referral-btn" id="referralBtn" title="Mis Referidos" role="menuitem">
                 <span class="menu-item-icon">🤝</span><span class="menu-item-label">Mis Referidos</span>
             </button>
-            <a class="menu-item support-btn" href="https://wa.link/metawin2026" target="_blank" rel="noopener" title="Soporte" role="menuitem">
+            <!-- Info del servicio: dispara el MISMO handler del botón del header
+                 (.click() para no duplicar la lógica de diagnósticos + reseñas). -->
+            <button class="menu-item" title="Información de nuestro servicio" role="menuitem"
+                onclick="var b=document.getElementById('infoBtn'); if(b) b.click();">
+                <span class="menu-item-icon">ℹ️</span><span class="menu-item-label">Información de nuestro servicio</span>
+            </button>
+            <!-- Soporte por TELEGRAM (logo de Telegram a pedido del owner). La URL
+                 sale de la config de Comunidad (supportUrl) — chat.js la setea al
+                 loguear; si no está configurada queda este href por defecto, así el
+                 botón SIEMPRE aparece y siempre lleva a algún lado. -->
+            <a class="menu-item support-btn" id="menuSupportBtn" href="https://wa.link/metawin2026" target="_blank" rel="noopener" title="Soporte por Telegram" role="menuitem">
                 <span class="menu-item-icon menu-item-svg">
-                    <!-- Auricular con micrófono: logo universal de soporte -->
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M4 13v-2a8 8 0 0 1 16 0v2"/>
-                        <rect x="2.5" y="12.5" width="4.2" height="6.5" rx="2.1"/>
-                        <rect x="17.3" y="12.5" width="4.2" height="6.5" rx="2.1"/>
-                        <path d="M20 19v.8a2.7 2.7 0 0 1-2.7 2.7H13"/>
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                        <circle cx="12" cy="12" r="12" fill="#29a9eb"/>
+                        <path fill="#fff" d="M5.5 11.8l11.4-4.5c.54-.21 1.01.11.84.93l-1.94 9.15c-.15.65-.54.81-1.09.5l-3.02-2.22-1.45 1.4c-.16.16-.3.3-.59.3l.21-3.07 5.6-5.06c.24-.22-.05-.34-.37-.13l-6.92 4.36-2.98-.93c-.65-.2-.66-.65.31-1.03z"/>
                     </svg>
-                </span><span class="menu-item-label">Soporte 24/7</span>
+                </span><span class="menu-item-label">Soporte 24/7 <span style="font-weight:600;color:#53bdeb;font-size:11px;">(Telegram)</span></span>
             </a>
             <button class="menu-item notification-btn" id="notificationBtn" title="Activar Notificaciones" role="menuitem">
                 <span class="menu-item-icon">🔔</span><span class="menu-item-label">Notificaciones</span>
@@ -984,11 +993,17 @@
                  mensajes y comparta el redondeo del contenedor. -->
             <div class="chat-container">
                 <div class="chat-topbar">
-                    <img class="chat-topbar-avatar" src="/icons/icon-96x96.png" alt="VIPCARGAS" width="40" height="40">
+                    <!-- El logo del chat es configurable desde el panel admin (Comunidad →
+                         "Logo del chat de soporte"); chat.js lo pisa al loguear. -->
+                    <img class="chat-topbar-avatar" id="chatTopbarAvatar" src="/icons/icon-96x96.png" alt="VIPCARGAS" width="40" height="40">
                     <div class="chat-topbar-info">
                         <span class="chat-topbar-name">Soporte VIPCARGAS</span>
                         <span class="chat-topbar-status"><i class="chat-topbar-dot"></i>en línea</span>
                     </div>
+                    <!-- Modo claro/oscuro A LA VISTA (owner 2026-08-03: en Configuración
+                         nadie lo encontraba). El ícono muestra a qué modo se cambia.
+                         Sincronizado con el switch de Configuración (app.js applyWaDark). -->
+                    <button class="theme-topbar-btn" id="themeToggleBtn" title="Cambiar modo claro / oscuro" aria-label="Cambiar modo claro u oscuro">🌙</button>
                     <!-- Fueguito (racha diaria): vive en la cabecera del chat, NO en la
                          barra de escribir (la barra es 100% estilo WhatsApp). El click lo
                          cablea app.js (#fireBtn) y fire.js actualiza #fireStreak. -->
@@ -1014,13 +1029,15 @@
                  todos los sistemas, como los de WhatsApp. El fueguito se fue a la
                  cabecera del chat (.chat-topbar). -->
             <div class="chat-input">
-                <!-- CBU para transferir: tarjeta en el trazo de WhatsApp -->
-                <button class="wa-icon-btn cbu-chat-btn" id="cbuChatBtn" title="Pedir CBU para transferir" aria-label="Pedir CBU">
-                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <!-- CBU para transferir: tarjeta en el trazo de WhatsApp, con la
+                     palabra CBU abajo para que se sepa qué es (owner 2026-08-03). -->
+                <button class="wa-icon-btn cbu-chat-btn" id="cbuChatBtn" title="Pedir CBU ACTIVO para transferir" aria-label="Pedir CBU">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="2.5" y="5.5" width="19" height="13.5" rx="2.8"/>
                         <path d="M2.5 10h19"/>
                         <path d="M6.2 15.2h4.5"/>
                     </svg>
+                    <span class="wa-btn-label">CBU</span>
                 </button>
                 <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
                 <textarea id="messageInput" placeholder="Mensaje" rows="1"></textarea>

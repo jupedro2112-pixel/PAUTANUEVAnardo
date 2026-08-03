@@ -474,14 +474,30 @@ function setupEventListeners() {
         // Se guarda en localStorage (por dispositivo, no por cuenta): es comodidad
         // visual y cada aparato puede tener su preferencia. Se aplica al <body>
         // porque el CSS del modo oscuro cuelga de `body.wa-dark`.
+        // DEFAULT: OSCURO (lo aplica el inline del <body> antes del primer paint).
+        // Hay DOS controles sincronizados: el botón 🌙/☀️ de la cabecera del chat
+        // (a la vista — en Configuración nadie lo encontraba) y el switch del
+        // modal de Configuración. Los dos pasan por applyWaDark.
+        function applyWaDark(on) {
+            document.body.classList.toggle('wa-dark', on);
+            try { localStorage.setItem('waDark', on ? '1' : '0'); } catch (e) {}
+            const topBtn = document.getElementById('themeToggleBtn');
+            // El ícono muestra A QUÉ MODO se cambia al tocarlo.
+            if (topBtn) topBtn.textContent = on ? '☀️' : '🌙';
+            const chk = document.getElementById('waDarkToggle');
+            if (chk) chk.checked = on;
+        }
         const waDarkToggle = document.getElementById('waDarkToggle');
         if (waDarkToggle) {
-            waDarkToggle.addEventListener('change', () => {
-                const on = waDarkToggle.checked;
-                document.body.classList.toggle('wa-dark', on);
-                try { localStorage.setItem('waDark', on ? '1' : '0'); } catch (e) {}
-            });
+            waDarkToggle.addEventListener('change', () => applyWaDark(waDarkToggle.checked));
         }
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        if (themeToggleBtn) {
+            themeToggleBtn.addEventListener('click', () =>
+                applyWaDark(!document.body.classList.contains('wa-dark')));
+        }
+        // Sincronizar el ícono del botón con el estado que dejó el boot inline.
+        applyWaDark(document.body.classList.contains('wa-dark'));
 
         // Botón "🔓 Verificar teléfono" dentro del modal de settings: abre el modal de verify-phone.
         const openVerifyPhoneBtn = document.getElementById('openVerifyPhoneBtn');
