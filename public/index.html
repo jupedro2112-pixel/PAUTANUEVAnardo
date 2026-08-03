@@ -487,6 +487,11 @@
             <a id="canalInformativoBtn" href="https://vipcargas.com/canal-proximamente" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite a la Comunidad de Telegram" role="menuitem">
                 <span class="menu-item-icon">📣</span><span class="menu-item-label" style="color:#53bdeb;">Unite a la Comunidad de Telegram</span>
             </a>
+            <!-- Código de bienvenida de la Comunidad: canje del bono sorpresa. -->
+            <button class="menu-item" title="Código de Bienvenida de la Comunidad de Telegram" role="menuitem"
+                onclick="if(window.openWelcomeCodeModal)openWelcomeCodeModal()">
+                <span class="menu-item-icon">🎁</span><span class="menu-item-label">Código de Bienvenida</span>
+            </button>
             <button class="menu-item settings-btn" id="settingsBtn" title="Configuración" role="menuitem">
                 <span class="menu-item-icon">⚙️</span><span class="menu-item-label">Configuración</span>
             </button>
@@ -1017,7 +1022,7 @@
                          "Logo del chat de soporte"); chat.js lo pisa al loguear. -->
                     <img class="chat-topbar-avatar" id="chatTopbarAvatar" src="/icons/icon-96x96.png" alt="VIPCARGAS" width="40" height="40">
                     <div class="chat-topbar-info">
-                        <span class="chat-topbar-name">Soporte VIPCARGAS</span>
+                        <span class="chat-topbar-name">Soporte 1Girox</span>
                         <span class="chat-topbar-status"><i class="chat-topbar-dot"></i>en línea</span>
                     </div>
                     <!-- Modo claro/oscuro A LA VISTA (owner 2026-08-03: en Configuración
@@ -3963,6 +3968,105 @@
     </div>
 
     <!-- Modal de Referidos -->
+    <!-- Código de Bienvenida de la Comunidad de Telegram (bono sorpresa).
+         Estados: sin canjear (input), pendiente (bono esperando la carga), usado. -->
+    <div id="welcomeCodeModal" class="modal hidden" onclick="if(event.target===this)hideModal('welcomeCodeModal')">
+        <div class="modal-content" style="max-width:400px;position:relative;" onclick="event.stopPropagation()">
+            <button onclick="hideModal('welcomeCodeModal')" style="position:absolute;top:15px;right:15px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;">✕</button>
+            <div class="modal-header">
+                <h2>🎁 Código de Bienvenida</h2>
+                <p>El regalo de la Comunidad de Telegram para usuarios nuevos</p>
+            </div>
+            <div id="welcomeCodeBody">
+                <p style="color:#aaa;font-size:13px;">Cargando...</p>
+            </div>
+        </div>
+    </div>
+    <script>
+    // Modal del código de bienvenida. Canje contra /api/community-code/claim;
+    // una sola vez por cuenta (lo garantiza el backend con reserva atómica).
+    (function () {
+        function _body() { return document.getElementById('welcomeCodeBody'); }
+        function _money(n) { return '$' + (Number(n) || 0).toLocaleString('es-AR'); }
+
+        function _renderInput(extraMsg) {
+            _body().innerHTML =
+                '<p style="color:#ccc;font-size:12.5px;line-height:1.55;margin:0 0 12px;">' +
+                    'Al unirte a la <strong style="color:#53bdeb;">Comunidad de Telegram</strong> vas a encontrar un ' +
+                    '<strong>código de bienvenida</strong> para usuarios nuevos (de un solo uso por cuenta). ' +
+                    'Ingresalo acá y destrabá un <strong style="color:#d4af37;">BONO SORPRESA 🎁</strong> para tu próxima carga.' +
+                '</p>' +
+                (extraMsg ? '<p style="color:#ffaa44;font-size:12px;margin:0 0 10px;">' + extraMsg + '</p>' : '') +
+                '<input type="text" id="welcomeCodeUserInput" placeholder="Escribí el código acá" maxlength="40" autocomplete="off" ' +
+                    'style="width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(212,175,55,0.4);' +
+                    'background:rgba(0,0,0,0.4);color:#fff;font-size:16px;text-align:center;letter-spacing:2px;' +
+                    'text-transform:uppercase;margin-bottom:10px;box-sizing:border-box;">' +
+                '<div id="welcomeCodeError" style="color:#ff6b6b;font-size:12px;min-height:16px;margin-bottom:6px;text-align:center;"></div>' +
+                '<button type="button" id="welcomeCodeSubmitBtn" class="btn btn-primary" style="width:100%;" onclick="submitWelcomeCode()">🎁 Canjear mi código</button>';
+        }
+
+        function _renderPending(amount) {
+            _body().innerHTML =
+                '<div style="background:linear-gradient(135deg,#1e5799,#2989d8);border-radius:12px;padding:16px;text-align:center;color:#fff;">' +
+                    '<div style="font-size:34px;margin-bottom:6px;">🎁</div>' +
+                    '<div style="font-size:15px;font-weight:900;margin-bottom:6px;">¡Tenés un bono sorpresa de ' + _money(amount) + '!</div>' +
+                    '<div style="font-size:12.5px;line-height:1.5;opacity:.95;">Te espera en tu <strong>PRÓXIMA CARGA</strong>: ' +
+                    'cuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento.</div>' +
+                '</div>';
+        }
+
+        function _renderUsed(amount) {
+            _body().innerHTML =
+                '<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;text-align:center;color:#999;font-size:12.5px;line-height:1.5;">' +
+                    '✅ Ya usaste tu código de bienvenida' + (amount ? ' (' + _money(amount) + ')' : '') + '.<br>Es una sola vez por cuenta — ¡pero seguí atento a la Comunidad por más sorpresas! 🎉' +
+                '</div>';
+        }
+
+        window.openWelcomeCodeModal = async function () {
+            showModal('welcomeCodeModal');
+            _body().innerHTML = '<p style="color:#aaa;font-size:13px;">Cargando...</p>';
+            try {
+                const r = await fetch(VIP.config.API_URL + '/api/community-code/status', {
+                    headers: { 'Authorization': 'Bearer ' + VIP.state.currentToken }
+                });
+                const d = await r.json();
+                if (!r.ok) { _renderInput(''); return; }
+                if (d.status === 'pending') return _renderPending(d.amount);
+                if (d.status === 'used') return _renderUsed(d.amount);
+                _renderInput(d.available ? '' : 'Todavía no hay un código activo — unite a la Comunidad para no perdértelo cuando salga.');
+            } catch (e) {
+                _renderInput('');
+            }
+        };
+
+        window.submitWelcomeCode = async function () {
+            const input = document.getElementById('welcomeCodeUserInput');
+            const err = document.getElementById('welcomeCodeError');
+            const btn = document.getElementById('welcomeCodeSubmitBtn');
+            const code = input ? input.value.trim() : '';
+            if (!code) { if (err) err.textContent = 'Escribí el código que viste en la Comunidad.'; return; }
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
+            try {
+                const r = await fetch(VIP.config.API_URL + '/api/community-code/claim', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + VIP.state.currentToken },
+                    body: JSON.stringify({ code: code })
+                });
+                const d = await r.json();
+                if (r.ok && d.success) {
+                    _renderPending(d.amount);
+                    if (window.VIP && VIP.ui && VIP.ui.showToast) VIP.ui.showToast('✅ ' + d.message, 'success');
+                } else {
+                    if (err) err.textContent = d.error || 'No se pudo canjear el código.';
+                    if (btn) { btn.disabled = false; btn.textContent = '🎁 Canjear mi código'; }
+                }
+            } catch (e) {
+                if (err) err.textContent = 'Error de conexión. Probá de nuevo.';
+                if (btn) { btn.disabled = false; btn.textContent = '🎁 Canjear mi código'; }
+            }
+        };
+    })();
+    </script>
     <div id="referralModal" class="modal hidden" onclick="if(event.target===this)hideModal('referralModal')">
         <div class="modal-content" style="position:relative;max-width:500px;max-height:90vh;overflow-y:auto;">
             <button onclick="hideModal('referralModal')" style="position:absolute;top:15px;right:15px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;">✕</button>

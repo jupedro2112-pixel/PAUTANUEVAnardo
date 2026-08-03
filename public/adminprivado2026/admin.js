@@ -2538,6 +2538,9 @@ async function loadUserInfo(userId) {
         // `user`, sin pedir nada extra al servidor.
         renderFirstChargeBonusBanner(user);
 
+        // Bono sorpresa del código de bienvenida (Comunidad Telegram) — ídem.
+        renderWelcomeCodeBonusBanner(user);
+
         // Publicista de adquisición: si el cliente llegó por un link de pauta,
         // mostrar el nombre del publicista al lado del nombre en la cabecera.
         // Nivel VIP: medalla + nombre al lado del usuario, para que el agente
@@ -4313,6 +4316,68 @@ async function markFirstChargeBonusUsed(userId) {
     }
 }
 
+// === Bono sorpresa del código de bienvenida (Comunidad Telegram) ===
+// Calco del banner del bono 100%: verde = pendiente (con botón para marcarlo
+// usado tras sumar el monto en la carga), gris = ya usado.
+function renderWelcomeCodeBonusBanner(user) {
+    const banner = document.getElementById('chatWelcomeCodeBanner');
+    if (!banner) return;
+    const status = user && user.welcomeCodeBonusStatus;
+    const monto = '$' + Number(user && user.welcomeCodeBonusAmount || 0).toLocaleString('es-AR');
+
+    if (status === 'pending') {
+        banner.style.display = '';
+        banner.innerHTML =
+            '<div style="background:linear-gradient(135deg,#1e5799,#2989d8);color:#fff;border-radius:10px;' +
+            'padding:10px 12px;margin:6px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                '<span style="font-size:20px;">🎁</span>' +
+                '<div style="flex:1;min-width:180px;">' +
+                    '<strong style="font-size:13px;display:block;">BONO SORPRESA PENDIENTE — ' + monto + '</strong>' +
+                    '<span style="font-size:11.5px;opacity:.92;">Canjeó el código de bienvenida de la Comunidad. ' +
+                    'En su próxima carga, sumale ' + monto + ' y marcalo como usado — es por única vez.</span>' +
+                '</div>' +
+                '<button onclick="markWelcomeCodeBonusUsed(\'' + escapeHtml(user.id) + '\')" ' +
+                    'style="background:#0b2545;color:#8ecdf7;border:1px solid rgba(255,255,255,0.3);' +
+                    'border-radius:8px;padding:8px 14px;font-weight:800;font-size:12px;cursor:pointer;">' +
+                    '✅ Marcar como usado</button>' +
+            '</div>';
+        return;
+    }
+
+    if (status === 'used') {
+        const quien = user.welcomeCodeBonusUsedBy ? (' por ' + escapeHtml(user.welcomeCodeBonusUsedBy)) : '';
+        banner.style.display = '';
+        banner.innerHTML =
+            '<div style="background:rgba(255,255,255,0.05);color:#888;border-radius:10px;' +
+            'padding:7px 12px;margin:6px 0;font-size:11.5px;">' +
+                '✅ Bono sorpresa (' + monto + ') ya utilizado' + quien + '. No le corresponde otro.' +
+            '</div>';
+        return;
+    }
+
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+}
+
+async function markWelcomeCodeBonusUsed(userId) {
+    if (!confirm('¿Ya le sumaste el bono sorpresa en su carga?\n\nAl marcarlo como usado, el bono se consume y NO va a poder canjearlo de nuevo.')) return;
+    try {
+        const resp = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/welcome-code-bonus/use`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}`, 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast('✅ Bono sorpresa marcado como usado', 'success');
+            if (activeConversationId) loadUserInfo(activeConversationId);
+        } else {
+            showToast(data.error || 'No se pudo marcar el bono', 'error');
+        }
+    } catch (e) {
+        showToast('Error de conexión al marcar el bono', 'error');
+    }
+}
+
 // === Alerta de POSIBLE MULTICUENTA en el header del chat ===
 // Consulta el fraud-check del usuario y, si es sospechoso, muestra un banner rojo
 // con el detalle (qué comparte y con qué cuentas) + botón para bloquear en el momento.
@@ -5261,6 +5326,8 @@ async function loadCBUConfig() {
     
     // Cargar la config de la Comunidad / Canal de Telegram (config única del canal)
     loadCommunityConfig();
+    // Cargar la config del código de bienvenida (admin general y depositor)
+    loadWelcomeCodeConfig();
     // Cargar la config del banco automático (hgcash)
     loadHgcashConfig();
     // Cargar los porcentajes de reembolso (solo admin general)
@@ -5751,6 +5818,65 @@ async function saveCommunityConfig() {
     } catch (error) {
         console.error('Error saving community config:', error);
         showToast('Error al guardar comunidad', 'error');
+    }
+}
+
+// ====== Código de bienvenida de la Comunidad (bono sorpresa) ======
+// Código: solo admin general. Monto: admin general y depositor. Para los demás
+// roles la card entera se oculta (el GET devuelve 403).
+async function loadWelcomeCodeConfig() {
+    const form = document.getElementById('welcomeCodeForm');
+    const header = document.getElementById('welcomeCodeHeader');
+    try {
+        const r = await authFetch('/api/admin/community-code');
+        if (!r.ok) {
+            if (form) form.style.display = 'none';
+            if (header) header.style.display = 'none';
+            return;
+        }
+        if (form) form.style.display = '';
+        if (header) header.style.display = '';
+        const j = await r.json();
+        const amountInput = document.getElementById('welcomeCodeAmount');
+        if (amountInput && j.amount != null) amountInput.value = j.amount;
+        const codeGroup = document.getElementById('welcomeCodeCodeGroup');
+        const codeInput = document.getElementById('welcomeCodeInput');
+        if (j.code !== undefined) {
+            // Admin general: ve y edita el código.
+            if (codeInput) codeInput.value = j.code || '';
+        } else if (codeGroup) {
+            // Depositor: el código ni se muestra (solo puede tocar el monto).
+            codeGroup.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Error cargando config del código de bienvenida:', e);
+    }
+}
+
+async function saveWelcomeCodeConfig() {
+    const msg = document.getElementById('welcomeCodeMsg');
+    const amountInput = document.getElementById('welcomeCodeAmount');
+    const codeGroup = document.getElementById('welcomeCodeCodeGroup');
+    const codeInput = document.getElementById('welcomeCodeInput');
+    const body = { amount: amountInput ? amountInput.value : undefined };
+    // El código solo viaja si el campo está visible (admin general).
+    if (codeInput && codeGroup && codeGroup.style.display !== 'none') {
+        body.code = codeInput.value.trim();
+    }
+    try {
+        const r = await authFetch('/api/admin/community-code', {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+            if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = j.error || 'No se pudo guardar.'; }
+            return;
+        }
+        if (msg) { msg.style.color = '#00c853'; msg.textContent = '✅ Guardado.'; }
+        showToast('Código de bienvenida guardado', 'success');
+    } catch (e) {
+        if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = 'Error de conexión.'; }
     }
 }
 

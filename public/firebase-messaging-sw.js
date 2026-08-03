@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v70'; // v70: link de acceso de un solo uso + modal de clave estilo WhatsApp + sin logout
+const CACHE_VERSION = 'v71'; // v71: código de bienvenida de la Comunidad + Soporte 1Girox
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

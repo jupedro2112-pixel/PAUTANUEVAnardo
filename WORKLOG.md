@@ -8,6 +8,39 @@
 
 ## Sesión 2026-08-03
 
+### 112. CÓDIGO DE BIENVENIDA de la Comunidad de Telegram (bono sorpresa) + "Soporte 1Girox"
+- **Pedido del owner:** (a) renombrar la cabecera del chat "Soporte VIPCARGAS" →
+  **"Soporte 1Girox"**; (b) ítem "Código de Bienvenida" en el menú ☰: al entrar a la
+  Comunidad de Telegram hay un código para usuarios nuevos que da un **bono
+  sorpresa**; (c) monto editable en el panel por **admin general y depositor**;
+  (d) código editable **solo por admin general**; (e) al canjear, recuadro para el
+  admin y para el usuario con "$X de bono para la próxima carga" y que el admin lo
+  marque como usado **igual que el bono 100%**.
+- **Modelo (`User`):** `welcomeCodeBonusStatus` (none|pending|used, indexado),
+  `welcomeCodeBonusAmount` (**CONGELADO al canjear** — cambiar la config después no
+  altera bonos ya dados), `welcomeCodeClaimedAt/UsedAt/UsedBy`. **Una vez por cuenta
+  PARA SIEMPRE**, aunque el código cambie (reserva atómica con `$nin`).
+- **Config:** `communityWelcomeCode` + `communityWelcomeBonusAmount`.
+  `GET/POST /api/admin/community-code`: monto → admin general y depositor; código →
+  SOLO admin general (a un depositor el GET ni le devuelve el código y el panel le
+  oculta el campo). Card nueva en Config → "🎁 Código de bienvenida".
+- **Canje:** `POST /api/community-code/claim` (auth + authLimiter). Coincidencia
+  case-insensitive. El monto NO se revela antes de canjear (es sorpresa: el status
+  sólo lo devuelve con pending/used). Al canjear: mensaje de sistema al cliente
+  (**`/sys_welcome_code`** nuevo, editable en COMANDOS) + nota admin-only en el chat
+  ("BONO SORPRESA PENDIENTE ($X)") — calco del flujo #100.
+- **Panel:** banner AZUL en el chat cuando está pendiente (con monto y botón
+  "Marcar como usado" → `POST /api/admin/users/:id/welcome-code-bonus/use`, marca
+  atómica pending→used con quién/cuándo); gris cuando ya se usó. Div propio
+  (`chatWelcomeCodeBanner`) para no pisar el banner del bono 100%.
+- **PWA:** menú ☰ → "🎁 Código de Bienvenida" abre un modal con la explicación +
+  input de canje; si ya canjeó muestra el recuadro "tenés $X esperando tu próxima
+  carga"; si ya lo usó, el estado gris.
+- **Validado:** `node --check` OK (server.js, User.js, admin.js) + parse del script
+  inline. SW a **v71**. Back necesita redeploy. PROBAR: configurar código y monto en
+  el panel, canjearlo desde la app (recuadro azul en el chat del panel), sumar el
+  bono en una carga y marcarlo usado; reintentar canje → rechazado.
+
 ### 111. Link de acceso de UN SOLO USO + modal de clave estilo WhatsApp + sin logout
 - **Pedido del owner:** (a) sin botón de cerrar sesión; (b) crear usuarios desde el
   panel con un link de un solo uso que loguee automáticamente al abrirlo (y no sirva

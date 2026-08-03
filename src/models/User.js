@@ -507,6 +507,38 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
+  // ============================================
+  // CÓDIGO DE BIENVENIDA de la Comunidad de Telegram (2026-08-03)
+  // ============================================
+  // El owner publica un código en la comunidad; el usuario lo canjea UNA sola
+  // vez en la vida y queda con un "bono sorpresa" pendiente que el agente aplica
+  // a mano en su próxima carga. Mismo mecanismo que el bono 100% de arriba:
+  // pending → (el agente carga y aplica) → used.
+  welcomeCodeBonusStatus: {
+    type: String,
+    enum: ['none', 'pending', 'used'],
+    default: 'none',
+    index: true
+  },
+  // Monto CONGELADO al canjear: si el admin cambia el monto en la config después,
+  // los bonos ya otorgados no cambian.
+  welcomeCodeBonusAmount: {
+    type: Number,
+    default: 0
+  },
+  welcomeCodeClaimedAt: {
+    type: Date,
+    default: null
+  },
+  welcomeCodeBonusUsedAt: {
+    type: Date,
+    default: null
+  },
+  welcomeCodeBonusUsedBy: {
+    type: String,
+    default: null
+  },
+
   // Plan de notificaciones elegido en la encuesta inicial (app instalada).
   // Define el volumen de notificaciones push que el usuario quiere recibir.
   // null = todavía no respondió la encuesta.

@@ -9117,6 +9117,12 @@ async function initializeData() {
       description: 'Mensaje automático cuando el cliente alcanza un nivel VIP (por apostado acumulado) y se le acredita el bono del nivel. Variables: {username}, {level} (nombre del nivel), {emoji}, ${bonus}. Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '🎉 ¡FELICITACIONES {username}!\n\nAlcanzaste el nivel VIP {emoji} {level} por todo lo que jugaste.\n\n💰 Ya te acreditamos tu bono de ${bonus} en la plataforma.\n\nCuanto más jugás, más alto llegás: cada nivel te da un bono mayor y más rakeback semanal. Tocá tu perfil en la app para ver cuánto te falta para el próximo nivel. 🚀'
+    },
+    {
+      name: '/sys_welcome_code',
+      description: 'Mensaje automático cuando el cliente canjea el código de bienvenida de la Comunidad de Telegram (bono sorpresa para su próxima carga). Variables: {username}, ${amount}. Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '🎉 ¡Código de bienvenida canjeado, {username}!\n\n🎁 Tenés un BONO SORPRESA de ${amount} para tu PRÓXIMA CARGA.\n\nCuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento. 🥳\n\n⚠️ Es por única vez.',
     }
   ];
   for (const cmd of systemCmds) {
@@ -9733,6 +9739,216 @@ app.post('/api/admin/users/:userId/first-charge-bonus/use', authMiddleware, admi
     res.json({ success: true, status: 'used', usedBy: req.user.username, usedAt: updated.firstChargeBonusUsedAt });
   } catch (error) {
     logger.error(`Error marcando bono 100% como usado: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================
+// CÓDIGO DE BIENVENIDA — Comunidad de Telegram (2026-08-03)
+// ============================================
+// El owner publica un código en la comunidad de Telegram; el usuario lo mete en
+// la app y desbloquea un BONO SORPRESA para su próxima carga (el monto no se
+// muestra hasta canjear — es sorpresa). Es UNA sola vez por cuenta, para siempre,
+// aunque el código cambie. Mismo mecanismo que el bono 100%: pending → el agente
+// aplica el monto en la carga → lo marca como used desde el chat del panel.
+// Config: código = SOLO admin general; monto = admin general y depositor.
+
+// Estado para la PWA. No revela el monto antes de canjear (es sorpresa) ni el código.
+app.get('/api/community-code/status', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findOne({ id: req.user.userId })
+      .select('welcomeCodeBonusStatus welcomeCodeBonusAmount').lean();
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const code = String((await getConfig('communityWelcomeCode', '')) || '').trim();
+    res.json({
+      status: user.welcomeCodeBonusStatus || 'none',
+      // El monto sólo se devuelve cuando YA lo canjeó (pending/used).
+      amount: (user.welcomeCodeBonusStatus === 'pending' || user.welcomeCodeBonusStatus === 'used')
+        ? (user.welcomeCodeBonusAmount || 0) : null,
+      available: !!code
+    });
+  } catch (error) {
+    console.error('Error obteniendo estado del código de bienvenida:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, res) => {
+  try {
+    const attempt = String((req.body && req.body.code) || '').trim();
+    if (!attempt || attempt.length > 60) {
+      return res.status(400).json({ error: 'Ingresá el código que viste en la Comunidad de Telegram.' });
+    }
+
+    const code = String((await getConfig('communityWelcomeCode', '')) || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Por ahora no hay ningún código activo. Estate atento a la Comunidad de Telegram.' });
+    }
+    if (attempt.toLowerCase() !== code.toLowerCase()) {
+      logger.warn(`[welcome-code] intento incorrecto de ${req.user.username}`);
+      return res.status(400).json({ error: 'El código no es válido. Fijate bien cómo aparece en la Comunidad.' });
+    }
+
+    const amount = Math.max(0, Math.round(Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0));
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'El código todavía no tiene un bono configurado. Probá más tarde.' });
+    }
+
+    // Reserva atómica: UNA vez por cuenta PARA SIEMPRE (aunque el código cambie).
+    // $nin cubre docs viejos sin el campo. Si dos requests concurrentes entran,
+    // sólo uno gana el doc — el otro recibe null.
+    const user = await User.findOneAndUpdate(
+      { id: req.user.userId, role: 'user', welcomeCodeBonusStatus: { $nin: ['pending', 'used'] } },
+      { $set: {
+        welcomeCodeBonusStatus: 'pending',
+        welcomeCodeBonusAmount: amount,   // congelado: cambios de config no lo tocan
+        welcomeCodeClaimedAt: new Date()
+      } },
+      { new: true }
+    ).select('id username').lean();
+
+    if (!user) {
+      return res.status(400).json({ error: 'Ya usaste tu código de bienvenida. Es una sola vez por cuenta.', code: 'ALREADY_CLAIMED' });
+    }
+
+    // Mensaje al cliente en el chat (editable desde COMANDOS /sys_welcome_code).
+    const content = await renderSystemCommand(
+      '/sys_welcome_code',
+      '🎉 ¡Código de bienvenida canjeado, {username}!\n\n' +
+      '🎁 Tenés un BONO SORPRESA de ${amount} para tu PRÓXIMA CARGA.\n\n' +
+      'Cuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento. 🥳\n\n' +
+      '⚠️ Es por única vez.',
+      { username: user.username, amount: amount.toLocaleString('es-AR') }
+    );
+    if (content) await Message.create({
+      id: uuidv4(),
+      senderId: 'system',
+      senderUsername: 'Sistema',
+      senderRole: 'admin',
+      receiverId: user.id,
+      receiverRole: 'user',
+      content,
+      type: 'system',
+      timestamp: new Date(),
+      read: false
+    });
+
+    // AVISO AL AGENTE (nota interna, sólo la ve el panel) — mismo motivo que el
+    // bono 100%: sin esto el bono queda colgado o se aplica dos veces.
+    await _emitAdminOnlyChatNote(
+      user.id,
+      user.username,
+      `🎁 BONO SORPRESA PENDIENTE ($${amount.toLocaleString('es-AR')}) — este cliente canjeó el código de bienvenida de la Comunidad de Telegram.\n` +
+      `👉 En su PRÓXIMA CARGA, sumale $${amount.toLocaleString('es-AR')} y después marcalo como usado desde el botón del chat. Es por única vez.`
+    ).catch(() => {});
+
+    logger.info(`[welcome-code] ${user.username} canjeó el código — bono $${amount} pendiente`);
+    res.json({
+      success: true,
+      status: 'pending',
+      amount,
+      message: `¡Código válido! Tenés un bono sorpresa de $${amount.toLocaleString('es-AR')} para tu próxima carga.`
+    });
+  } catch (error) {
+    logger.error(`Error canjeando código de bienvenida: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// El agente lo marca como usado DESPUÉS de sumarle el bono en la carga.
+// Calco exacto del flujo del bono 100% (marca atómica pending → used).
+app.post('/api/admin/users/:userId/welcome-code-bonus/use', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId);
+
+    const updated = await User.findOneAndUpdate(
+      { id: userId, welcomeCodeBonusStatus: 'pending' },
+      { $set: {
+        welcomeCodeBonusStatus: 'used',
+        welcomeCodeBonusUsedAt: new Date(),
+        welcomeCodeBonusUsedBy: req.user.username
+      } },
+      { new: true }
+    ).select('id username welcomeCodeBonusAmount welcomeCodeBonusUsedAt').lean();
+
+    if (!updated) {
+      const actual = await User.findOne({ id: userId })
+        .select('username welcomeCodeBonusStatus welcomeCodeBonusUsedAt welcomeCodeBonusUsedBy').lean();
+      if (!actual) return res.status(404).json({ error: 'Usuario no encontrado' });
+      if (actual.welcomeCodeBonusStatus === 'used') {
+        return res.status(400).json({
+          error: `Este bono YA fue usado${actual.welcomeCodeBonusUsedBy ? ' por ' + actual.welcomeCodeBonusUsedBy : ''}.`,
+          code: 'ALREADY_USED'
+        });
+      }
+      return res.status(400).json({ error: 'Este cliente no tiene ningún bono de bienvenida pendiente.', code: 'NOT_PENDING' });
+    }
+
+    logger.info(`[welcome-code] bono de ${updated.username} marcado como USADO por ${req.user.username}`);
+    await _emitAdminOnlyChatNote(
+      updated.id,
+      updated.username,
+      `✅ BONO SORPRESA USADO ($${(updated.welcomeCodeBonusAmount || 0).toLocaleString('es-AR')}) — aplicado por ${req.user.username}. Este cliente ya no tiene bono de bienvenida pendiente.`
+    ).catch(() => {});
+
+    res.json({ success: true, status: 'used', usedBy: req.user.username, usedAt: updated.welcomeCodeBonusUsedAt });
+  } catch (error) {
+    logger.error(`Error marcando bono de bienvenida como usado: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Config del código y del monto. Código = SOLO admin general (es la llave del
+// bono); monto = admin general y depositor (decisión del owner).
+app.get('/api/admin/community-code', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (!['admin', 'depositor'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Sin permiso para ver esta configuración.' });
+    }
+    const code = String((await getConfig('communityWelcomeCode', '')) || '');
+    const amount = Math.max(0, Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0);
+    res.json({
+      amount,
+      hasCode: !!code.trim(),
+      // El código en claro sólo lo ve el admin general.
+      ...(req.user.role === 'admin' ? { code } : {})
+    });
+  } catch (error) {
+    console.error('Error obteniendo config del código de bienvenida:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (!['admin', 'depositor'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Sin permiso para modificar esta configuración.' });
+    }
+    const b = req.body || {};
+
+    // Monto: admin general y depositor.
+    if (b.amount !== undefined) {
+      const amount = Number(b.amount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 10000000) {
+        return res.status(400).json({ error: 'El monto debe ser un número entre 0 y 10.000.000.' });
+      }
+      await setConfig('communityWelcomeBonusAmount', Math.round(amount));
+      logger.info(`[welcome-code] monto del bono sorpresa → $${Math.round(amount)} (por ${req.user.username})`);
+    }
+
+    // Código: SOLO admin general. Vacío = desactivar el canje.
+    if (b.code !== undefined) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo el admin general puede cambiar el código.' });
+      }
+      const code = String(b.code || '').trim().slice(0, 40);
+      await setConfig('communityWelcomeCode', code);
+      logger.info(`[welcome-code] código ${code ? 'actualizado' : 'DESACTIVADO'} por ${req.user.username}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error guardando config del código de bienvenida:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
