@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v67'; // v67: tildes de leído, oscuro por default, toggle a la vista, CBU con etiqueta
+const CACHE_VERSION = 'v68'; // v68: fix "Instalar App" del menú + layout sin recortes en pantallas bajas
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

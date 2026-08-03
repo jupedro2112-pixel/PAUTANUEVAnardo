@@ -583,3 +583,42 @@
         margin-top: calc(92px + env(safe-area-inset-top, 0px));
     }
 }
+
+/* ================================================
+   COMPACTACIÓN POR ALTURA (2026-08-03)
+   La página NUNCA scrollea (body overflow:hidden): en pantallas bajas
+   (celulares chicos, notebooks) se achican las medidas del dashboard para
+   que entre todo; si aún así no entra, #homePanel scrollea ADENTRO y el
+   chat conserva su piso (min-height en .chat-container). Nada se recorta.
+   ================================================ */
+@media (max-height: 760px) {
+    .home-dash { margin: 6px auto 3px; gap: 7px; }
+    .dash-top { padding: 6px; gap: 6px; }
+    .dash-user, #rouletteHomeCard { flex: 0 0 76px; }
+    .dash-user { padding: 6px 4px; gap: 2px; }
+    .dash-user-avatar { width: 26px; height: 26px; font-size: 15px; }
+    .dash-refunds { padding: 5px 6px 6px; }
+    .dash-refunds-title { font-size: 10px; margin-bottom: 4px; }
+    .dash-play-btn { padding: 7px 9px; font-size: 11px; }
+    .dash-balance { padding: 5px 10px; }
+    .dash-balance-amount { font-size: 13px; }
+    .dash-tg-btn { padding: 6px 9px; }
+    .dash-tg-emoji { font-size: 17px; }
+    #homePanelToggle { padding: 4px 10px; margin-top: 2px; font-size: 10px; }
+    .chat-topbar { padding: 6px 11px; gap: 9px; }
+    .chat-topbar-avatar { width: 34px; height: 34px; }
+    .chat-topbar-name { font-size: 14.5px; }
+    .theme-topbar-btn { width: 34px; height: 34px; font-size: 15px; }
+    .fire-topbar-btn { width: 37px; height: 37px; font-size: 18px; }
+}
+
+@media (max-height: 640px) {
+    .chat-container { min-height: 140px; }
+    .home-dash { gap: 5px; margin-top: 4px; }
+    .dash-refunds-row .refund-label-full { font-size: 8.5px; }
+    .dash-user-cta { font-size: 6px; }
+    .chat-input-container { padding-top: 5px; }
+    .wa-icon-btn { height: 42px; }
+    #messageInput { min-height: 40px; padding: 9px 14px; }
+    .send-btn { width: 40px; height: 40px; }
+}

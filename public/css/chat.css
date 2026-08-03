@@ -17,6 +17,10 @@
 
 .chat-container {
     flex: 1;
+    /* Piso de altura: aunque el dashboard esté todo desplegado en un celular
+       bajito, el chat SIEMPRE queda visible (el panel del home cede y scrollea
+       adentro — ver #homePanel en index.html). */
+    min-height: 170px;
     /* Fondo estilo WhatsApp: el patrón de garabatos, en mosaico.
        La imagen viene casi blanca; el `background-color` beige + `multiply` la
        tiñe al tono de WhatsApp sin necesitar una segunda imagen. Así el mismo

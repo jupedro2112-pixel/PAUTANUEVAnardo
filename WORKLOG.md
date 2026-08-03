@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-03
 
+### 109. FIX "Instalar App" roto en el menú + layout adaptable sin scroll ni recortes
+- **Síntoma (captura del owner):** el ítem "Instalar App" del menú ☰ se veía diminuto
+  y con otro estilo. **Causa:** conserva su clase histórica `.app-install-btn`, que
+  tiene CSS propio en header.css (fondo verde con glow animado) y en responsive.css
+  (`font-size: 7-9px !important` en mobile) → pisaba al estilo del menú.
+  **Fix:** blindaje de `.main-menu .menu-item` con `!important` en todo (fondo,
+  padding, font, animación) — cubre también .notification-btn/.settings-btn/
+  .logout-btn que tienen overrides similares.
+- **Scroll:** la página YA no scrollea nunca (body overflow:hidden de siempre). El
+  riesgo real era el inverso: en pantallas bajas el contenido se RECORTABA invisible
+  (homePanel no cedía espacio y chat-section corta con overflow:hidden). Ahora:
+  - `#homePanel` con `flex:0 1 auto + min-height:0 + overflow-y:auto` → cede espacio
+    y, si aun compactado no entra, scrollea ADENTRO (nunca se pierde contenido).
+  - `.chat-container` con `min-height:170px` (140px en pantallas muy bajas) → el
+    chat siempre queda visible aunque el dashboard esté desplegado.
+- **Adaptación por tamaño:** media queries nuevas por ALTURA en responsive.css
+  (`max-height:760px` y `max-height:640px`) que compactan dashboard, cabecera del
+  chat y barra de escribir en celulares bajitos y notebooks. En monitores grandes
+  no cambia nada (el dash ya estaba limitado a 680px centrado).
+- **Validado:** SW del cliente a **v68**. PROBAR: el menú ☰ con "Instalar App" ahora
+  uniforme; en un celular chico, desplegar todo el dashboard → el chat sigue visible
+  y el panel scrollea internamente; en desktop todo igual.
+
 ### 108. PWA: tildes de leído estilo WhatsApp, oscuro por default, toggle a la vista, CBU con etiqueta, soporte Telegram y logo del chat configurables
 - **Pedido del owner (6 puntos):**
   1. **"CBU" abajo de la tarjeta** de la barra del chat (`.wa-btn-label`, 8px) — para
