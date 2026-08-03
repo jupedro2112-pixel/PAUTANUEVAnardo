@@ -2540,11 +2540,18 @@ async function loadUserInfo(userId) {
 
         // Publicista de adquisición: si el cliente llegó por un link de pauta,
         // mostrar el nombre del publicista al lado del nombre en la cabecera.
+        // Nivel VIP: medalla + nombre al lado del usuario, para que el agente
+        // sepa con quién habla (rol "host VIP") sin abrir el detalle.
+        const vipTag = user.vipLevelInfo
+            ? ' <span class="chat-vip" title="Nivel VIP ' + escapeHtml(user.vipLevelInfo.name) +
+              '" style="font-size:12px;font-weight:800;color:' + (user.vipLevelInfo.color || '#ffd700') + ';">' +
+              user.vipLevelInfo.emoji + ' ' + escapeHtml(user.vipLevelInfo.name) + '</span>'
+            : '';
         if (user.acquisitionPublisher) {
-            elements.chatUsername.innerHTML = escapeHtml(user.username) +
+            elements.chatUsername.innerHTML = escapeHtml(user.username) + vipTag +
                 ' <span class="chat-publisher">(📣 ' + escapeHtml(user.acquisitionPublisher) + ')</span>';
         } else {
-            elements.chatUsername.textContent = user.username;
+            elements.chatUsername.innerHTML = escapeHtml(user.username) + vipTag;
         }
 
         // Mostrar estado de la app de notificaciones
@@ -3988,9 +3995,15 @@ function renderUsers(users) {
               '</div>'
             : '';
 
+        // Medalla del nivel VIP (apostado acumulado). El backend manda
+        // vipLevelInfo ya resuelto (nombre/emoji) — acá no se duplica la escalera.
+        const vipBadge = user.vipLevelInfo
+            ? ` <span title="Nivel VIP ${escapeHtml(user.vipLevelInfo.name)} — apostado acumulado ${formatMoney(user.lifetimeWagered || 0)}" style="cursor:default;">${user.vipLevelInfo.emoji}</span>`
+            : '';
+
         return `
         <tr class="${isAdminUser ? 'admin-row' : ''}">
-            <td>${escapeHtml(user.username)}${tagsHtml}</td>
+            <td>${escapeHtml(user.username)}${vipBadge}${tagsHtml}</td>
             <td>${escapeHtml(user.accountNumber || user.accountId || '-')}</td>
             <td>${escapeHtml(user.email || '-')}</td>
             <td>${escapeHtml(user.phone || '-')}</td>

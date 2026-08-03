@@ -5,9 +5,12 @@
 > verdad y este doc puede quedar viejo. Si encontrás algo desactualizado acá, corregilo
 > (regla permanente en CLAUDE.md: este doc se actualiza junto con WORKLOG.md).
 >
-> Última actualización: **2026-07-31** — migración de la plataforma de juego externa de
-> **JUGAYGANA** a **1girox**. Se reescribieron §4 (integración), los flujos de plata de
-> §5, y las trampas de §8/§9 que hablaban de centavos, sesiones y Cloudflare.
+> Última actualización: **2026-08-03** — niveles VIP por apostado acumulado (réplica de
+> Stake): §2 (VipWagerMonth + campos User), §4.4 (references vip-lvl/vip-rake), §4.6
+> reescrita (el scraping del panel se ELIMINÓ en la v1.9 — ahora stats por username con
+> la Partner API), §4.8 (envs VIP_*, se fueron las GIROX_ADMIN_*), §5 (flujo VIP +
+> reembolsos corregido), §7 (crons VIP).
+> Antes: 2026-07-31 — migración JUGAYGANA → 1girox (§4, flujos de plata de §5, trampas).
 > Lectura integral previa: 2026-07-09 (server.js completo, 28 modelos, servicios, PWA y
 > panel). Los números de línea derivan con cada cambio — usalos como referencia
 > aproximada y confirmá con grep.
@@ -67,9 +70,9 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   **`phoneKey`** (clave normalizada para unicidad — quita país/0/9 AR), `phoneVerified`,
   `phoneVerificationPending` (bloquea SOLO retiros), `mustChangePassword` (bloquea casi
   todo vía authMiddleware), `tokenVersion` (revocación de sesiones), `isBlocked`/
-  `blockReason`. **1girox:** `giroxUserId` (ID numérico del jugador — NO lo devuelve la
-  Partner API, se resuelve contra el panel y se cachea; **sin él no se puede calcular el
-  reembolso ni la comisión de referidos** de ese usuario), `giroxSyncStatus`
+  `blockReason`. **1girox:** `giroxUserId` (ID numérico del jugador — desde la v1.9 lo
+  devuelve el propio `stats` y se persiste "gratis"; ya no bloquea nada, todo va por
+  username), `giroxSyncStatus`
   (`pending|synced|linked|error|invalid_username|not_applicable`), `giroxSyncError`,
   `giroxPasswordSynced` (la clave local es bcrypt irrecuperable: los migrados se crearon
   con clave random y la real se replica en el próximo login). Campos `jugaygana*`
@@ -79,12 +82,21 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   `acquisitionCampaign/Source/Influencer/Utm`, `createdByEmployeeId`. Referidos:
   `referralCode`, `referredByUserId`. Meta: `metaFbc/metaFbp/landingUrl`.
   Anti-multicuenta: `registrationIp/UserAgent`. Panel: `tags[]`, `adminNotes`,
-  `tagHistory`. Otros: `installBonusClaimed`, `notificationPlan`, `notifMonthlyCounts`,
+  `tagHistory`. **VIP:** `lifetimeWagered` (cache de la suma de VipWagerMonth, sólo se
+  actualiza con `$max`), `vipLevel` (0 = sin nivel; NUNCA baja; se avanza recién
+  DESPUÉS de acreditar el bono del nivel), `vipLevelUpdatedAt`. Otros:
+  `installBonusClaimed`, `notificationPlan`, `notifMonthlyCounts`,
   `loginWithoutPassword`, `withdrawalAccount`, `pendingAccessCode`.
 - **Transaction** — registro PERMANENTE (sin TTL). `type`: deposit|withdrawal|bonus|
-  refund|transfer|referral_commission|fire_reward. `metadata.source` distingue regalos
-  ('install_bonus','welcome_gift') y devoluciones ('payout_refund') que se EXCLUYEN de
-  los reportes de carga real. **Fuente de toda la analítica.**
+  refund|transfer|referral_commission|fire_reward|rakeback|vip_levelup.
+  `metadata.source` distingue regalos ('install_bonus','welcome_gift') y devoluciones
+  ('payout_refund') que se EXCLUYEN de los reportes de carga real. **Fuente de toda la
+  analítica.**
+- **VipWagerMonth** — apostado de casino de un usuario en un mes calendario (ART).
+  Base del acumulado VIP (`User.lifetimeWagered` = suma de estos buckets). Único por
+  `userId+monthKey`; el motor SIEMPRE escribe con `$set` (nunca `$inc`) → recalcular
+  es idempotente y multi-instancia-safe. `closed:true` = mes terminado y recalculado
+  completo (no se vuelve a consultar a la plataforma).
 - **Message** — chat. **TTL 3 días** (índice sobre `timestamp`, autorreparado en
   connectDB). `senderRole` define el lado; `adminOnly:true` = solo lo ven admins;
   `metadata.kind:'welcome'` = throttle de bienvenida.
@@ -263,6 +275,8 @@ Prefijos en uso hoy:
 | `vip-payout-<payoutId>` | Débito al confirmar un retiro | PendingPayout.id |
 | `vip-payoutref-<payoutId>` (+ `-chips-` / `-bonus-`) | Devolución de retiro rechazado | PendingPayout.id |
 | `vip-refcom-<payoutId>` | Comisión de referidos | ReferralPayout.id (uuid persistido en Mongo ANTES de llamar; si un intento anterior quedó pending/failed se REUSA el documento ⇒ misma reference) |
+| `vip-lvl-<userId>-<idx>` | Bono por alcanzar un nivel VIP | userId + índice del nivel (cada nivel se paga UNA vez en la vida; por eso NO se pueden reordenar los idx de vipLevels.js) |
+| `vip-rake-<fromDateStr>-<userId>` | Rakeback semanal VIP | lunes de la semana reclamada + userId (derivada del PERÍODO, igual que los reembolsos y por el mismo motivo) |
 
 ⚠️ **Por qué la del reembolso sale del período y no del id del claim** (`_refundReference`,
 server.js ~L6086): si la acreditación falla, el handler BORRA el RefundClaim para que el
@@ -297,54 +311,39 @@ reintento manda la misma reference y la plataforma responde `duplicate:true`.
   loguea en ERROR. **No reintentar el depósito completo** (la reference devolvería
   duplicate): escalar a soporte de 1girox.
 
-### 4.6 Reportes / netwin — el punto más frágil
+### 4.6 Stats por jugador — netwin y apostado (Partner API v1.8/v1.9)
 
-`giroxReportsService.js` **NO habla con la Partner API**: la Partner API no expone
-netwin, ni GGR, ni historial de apuestas. Este servicio reproduce el request que hace
-la pantalla "Reportes Globales → Reporte por Jugador" del panel `admin.1girox.com`:
+**Actualizado 2026-08-03.** Desde la v1.8/v1.9 (2026-07-31, WORKLOG #101) los stats
+salen de la MISMA Partner API, con la misma `X-Api-Key` y por **username**:
 
-- `GET {panel}/api/config/reports/global?from&to&user_id&player_id` con
-  `Authorization: Bearer <token de sesión del panel>`.
-  ⚠️ En `reports/global` el `user_id` es el **AGENTE** (nosotros) y el jugador va en
-  `player_id`. En `reports/player-games` el `user_id` es el JUGADOR. No mezclar.
-- **Sesión auto-renovable:** `POST {panel}/api/auth/login` con `GIROX_ADMIN_USER` /
-  `GIROX_ADMIN_PASS` responde `{ data: "<base64>" }` donde el base64 es un **raw
-  deflate**; al descomprimirlo salen `{ token, user:{ id, name } }`. De ahí sale
-  también el `user_id` del agente (no hay que configurarlo aparte). Ante 401/403 se
-  relogea UNA vez y reintenta; si vuelve a fallar es problema de credenciales.
-- **Montos en PESOS** (verificado: `bets_amount − payout = netwin` coincide con el
-  panel). Acá tampoco se divide por 100.
-- **Chequeo de cordura:** si el reporte vuelve con un `scope.id` distinto al de nuestro
-  agente, se DESCARTA — esos números no son nuestros y se pagaría de más.
-- Sin `player_id` el reporte devolvería el agregado del AGENTE (toda la sala): se
-  aborta antes de llamar.
+- `GET /players/{username}/stats?from&to` → `girox.getPlayerStats()`.
+- `POST /players/stats/batch` (hasta **100 usuarios** por request) →
+  `girox.getPlayersStatsBatch()`. Es lo que hace viables los referidos y el motor
+  VIP sin comerse el cupo de 60 req/min.
+- Devuelven `totals` + `categories.casino/sports`, cada uno con `bets_count`,
+  **`wagered` (apostado)**, `payout` y `netwin` — todo en **PESOS**.
+- ⚠️ `netwin` POSITIVO = el jugador PERDIÓ (base del reembolso); negativo = ganó.
+- Rango **máximo 92 días** por consulta, evaluado en **hora argentina** del lado de
+  la plataforma (`formatStatsDate` ancla a -03:00).
+- **Sólo CASINO** por decisión del owner (2026-07-31): reembolsos y comisiones usan
+  `casinoNetwin` (`GIROX_NETWIN_SCOPE=total` incluiría sports); el motor VIP usa
+  `categories.casino.wagered` (`VIP_WAGER_SCOPE=total` ídem).
+- El `not_found` del batch mezcla "no existe" y "no es tuyo" a propósito (lo aclara
+  el manual): se trata igual — sin stats.
 
-⚠️ **Es el acoplamiento más frágil de toda la integración**, y de él dependen los
-**reembolsos** y las **comisiones de referidos**. Si 1girox cambia su panel, esto se
-rompe sin aviso. La solución definitiva es que 1girox agregue el netwin a la Partner
-API (está pedido); cuando lo hagan, este archivo se reemplaza por una llamada con
-`X-Api-Key` y se borra.
+**La comisión de referidos no viene del proveedor:** 1girox devuelve todos los campos
+`commission` en 0, así que la tasa es NUESTRA: `GIROX_REFERRAL_COMMISSION_PCT`
+(default **8%** del netwin = owner-revenue), y sobre eso va la tasa del referidor.
 
-**El netwin es SÓLO de CASINO** — decisión del owner (2026-07-31). El reporte trae
-`casino` y `sports` separados; sports queda afuera. `GIROX_NETWIN_SCOPE=total` lo
-incluiría (y ahí `totalBets`/`totalPayout` pasan a sumar ambas categorías).
+**`giroxUserId`** — el propio `stats` devuelve el ID numérico del jugador y los flujos
+lo persisten "gratis" (update condicional sólo si estaba vacío). Ya NO bloquea nada:
+todo va por username.
 
-**La comisión de referidos ya no viene del proveedor.** En JUGAYGANA la tasa la ponía
-el proveedor (`providers[].owner_commission`). En 1girox **todos los campos
-`commission` del reporte vuelven en 0**, así que la tasa es NUESTRA:
-`GIROX_REFERRAL_COMMISSION_PCT` (default **8%** del netwin = owner-revenue). Sobre ese
-owner-revenue se aplica después la tasa del referidor (7% por defecto) — el
-encadenamiento de dos tasas es idéntico al de antes, sólo cambió de dónde sale la
-primera.
-
-**`giroxUserId`** — la Partner API no expone el ID numérico del jugador, pero el
-reporte lo EXIGE. `giroxUserLinkService.resolveGiroxUserId` lo resuelve contra el panel
-(`POST /users/fetch`) y lo cachea en `User.giroxUserId`. ⚠️ **El buscador del panel hace
-LIKE**: buscar "prueba1" trae prueba1, prueba100, prueba12… Por eso se exige
-coincidencia EXACTA (case-insensitive) en el servicio de reportes Y se revalida en el
-de link, y ante ambigüedad se aborta: un ID equivocado = reembolso pagado a otra
-persona. Se persiste con update condicional (sólo si el campo sigue vacío → sin races).
-**Sin ese ID, ese usuario no puede cobrar reembolso ni generar comisión.**
+🪦 **Lo que había acá antes:** `giroxReportsService.js` scrapeaba el panel
+`admin.1girox.com` con un Bearer de sesión auto-renovable (base64+deflate) y el ID se
+buscaba con `POST /users/fetch` (LIKE ambiguo). Era el punto más frágil de toda la
+integración. **ELIMINADO el 2026-07-31** junto con `GIROX_ADMIN_USER/PASS/TOKEN`,
+`GIROX_ADMIN_BASE_URL` y `GIROX_AGENT_USER_ID`.
 
 ### 4.7 Migración de la base (`scripts/migrate-users-to-girox.js`)
 
@@ -378,20 +377,20 @@ tenían los 4 clientes viejos.
 | `GIROX_API_URL` | — | Base de la Partner API, sin barra final (ej. `https://api.1girox.com/api/v1`) |
 | `GIROX_API_KEY` | — | Header `X-Api-Key` de la cuenta MASTER (`pk_...`). **SSM, nunca en el repo** |
 | `GIROX_PLAY_URL` | `https://1girox.com` | Sitio del jugador (fallback si el SSO falla) |
-| `GIROX_ADMIN_BASE_URL` | `https://admin.1girox.com` | Panel de reportes |
-| `GIROX_ADMIN_USER` | — | Usuario del panel. **SSM** |
-| `GIROX_ADMIN_PASS` | — | Contraseña del panel. **SSM** |
-| `GIROX_NETWIN_SCOPE` | `casino` | `casino` \| `total` (incluiría sports) |
+| `GIROX_NETWIN_SCOPE` | `casino` | `casino` \| `total` (incluiría sports) en reembolsos/comisiones |
 | `GIROX_MAX_RPM` | `55` | Techo local de requests/min **por instancia** |
 | `GIROX_REFERRAL_COMMISSION_PCT` | `8` | % de netwin que es owner-revenue (el proveedor ya no la informa) |
+| `VIP_LEVELS_DISABLED` | — | `1` = apaga el motor VIP y sus endpoints (kill switch sin deploy) |
+| `VIP_USD_ARS_RATE` | `1500` | Tasa USD→ARS de los umbrales VIP (los umbrales de Stake están en USD) |
+| `VIP_WAGER_SCOPE` | `casino` | Qué apostado suma para el nivel (`casino` \| `total`) |
+| `VIP_WAGER_EPOCH` | `2026-07` | Primer mes que se acumula (cuando arrancó 1girox) |
+| `VIP_ACTIVE_DAYS` | `3` | Días de `lastLogin` que definen "activo" para el tick de 30 min |
 
-Opcionales/afinado: `GIROX_TIMEOUT_MS` (20000), `GIROX_REPORTS_TIMEOUT_MS` (30000),
-`GIROX_ADMIN_TOKEN` (Bearer fijo, saltea el login), `GIROX_AGENT_USER_ID` (override del
-id del agente), `GIROX_ADMIN_API_URL`, `GIROX_ADMIN_LOGIN_FIELD`, y las
-`GIROX_MIGRATION_*` del script.
+Opcionales/afinado: `GIROX_TIMEOUT_MS` (20000) y las `GIROX_MIGRATION_*` del script.
+🪦 `GIROX_ADMIN_*` y `GIROX_AGENT_USER_ID` se fueron con el scraping del panel (#101).
 
-Si falta la config, el arranque lo grita por consola (~L8422): `girox.isEnabled()` y
-`giroxReports.isEnabled()` se chequean en el bootstrap.
+Si falta la config, el arranque lo grita por consola: `girox.isEnabled()` se chequea
+en el bootstrap (y `GET /api/admin/girox/health` es el diagnóstico completo).
 
 ### 4.9 Login único (SSO) — el botón CASINO
 
@@ -482,13 +481,28 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
 - **Reembolsos**: `POST /api/refunds/claim/{daily|weekly|monthly}` — lock Redis,
   ventanas de `models/refunds.js` (semanal: lunes/martes; mensual: desde día 7),
   rangos en hora ART de `src/utils/periodRanges.js`, NETWIN real de
-  `giroxReports.getPlayerNetwinForDateRange(giroxUserId, …)` (**sólo casino**, ver §4.6;
-  el `giroxUserId` se resuelve/backfillea con `resolveGiroxUserId` y **sin él no se
-  puede reclamar**), % de Config['refundPercents'] (defaults 20/10/5). **El RefundClaim
-  se CREA antes de acreditar** (el índice único `userId+type+periodKey` es el candado
-  atómico contra doble cobro; si el crédito falla se borra la reserva). El crédito va
-  por `creditUserBalance` = **depósito libre** (no `/bonus`: quedaría a reclamar) con la
-  reference derivada del período. Ver #96 y §4.4.
+  `girox.getPlayerStats(username, …)` (**sólo casino**, ver §4.6; por username, sin
+  gate de ID). El % sale del RANGO por pérdida del período
+  (`src/utils/refundTiers.js`: 3/6/10% — los viejos Config['refundPercents'] quedaron
+  `enUso:false`). **El RefundClaim se CREA antes de acreditar** (el índice único
+  `userId+type+periodKey` es el candado atómico contra doble cobro; si el crédito
+  falla se borra la reserva). El crédito va por `creditUserBalance` = **depósito
+  libre** (no `/bonus`: quedaría a reclamar) con la reference derivada del período.
+  Ver #96 y §4.4. ⚠️ En la UI los reembolsos muestran SOLO el % — los nombres
+  Bronce/Plata/Oro son del nivel VIP (abajo).
+- **Niveles VIP** (2026-08-03, réplica de Stake): se sube por APOSTADO acumulado de
+  por vida (buckets `VipWagerMonth`, ver §2 y el motor en
+  `src/services/vipLevelService.js`). Escalera en `src/utils/vipLevels.js`: umbrales
+  de Stake en USD × `VIP_USD_ARS_RATE` (1500) — Bronce $15M ARS … Diamante V $750.000M.
+  Cada nivel destraba: (a) **bono one-time** al alcanzarlo (lo acredita el motor con
+  depósito libre, reference `vip-lvl-<userId>-<idx>`, aviso por chat+push vía
+  `/sys_vip_levelup`; `duplicate:true` = otra instancia ya pagó → no re-notificar) y
+  (b) **rakeback semanal**: `POST /api/vip/rakeback/claim` paga `rakebackPct` del
+  APOSTADO de casino de la semana pasada (gane o pierda) — mismo patrón de reserva
+  atómica que los reembolsos (RefundClaim type `rakeback`, periodKey
+  `rake:<lunes>`, reference `vip-rake-<lunes>-<userId>`). Estado:
+  `GET /api/vip/status` (nivel, progreso, escalera, rakeback). El nivel NUNCA baja;
+  `lifetimeWagered` sólo se escribe con `$max`.
 - **Referidos**: preview/calculate (delta incremental sobre ledger de payouts) /
   payout (acredita con `giroxService.creditUserBalance`, reference
   `vip-refcom-<payoutId>` reusando el documento de intentos fallidos). El revenue sale
@@ -537,6 +551,10 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   `VIP.config.PLATFORM_URL` = `https://1girox.com` (respaldo del SSO; también aparece
   hardcodeada en los mensajes `/sys_deposit*`, `/sys_bonus` y `/sys_welcome` sembrados
   en `initializeData()`), defaults de % de reembolso.
+- **Perfil del jugador** (recuadro USUARIO → `VIP.refunds.showProfileModal`): nivel
+  VIP con barra de progreso + botón de rakeback semanal + reembolsos por período
+  (solo %) + escalera completa (viene de `GET /api/vip/status`, no se duplica). El
+  rótulo del recuadro muestra la medalla del nivel (`updateDashVipBadge`).
 
 ### Panel admin (`public/adminprivado2026/`)
 - `admin.js` (~12k líneas), auth mixta: login → Bearer en memoria + cookies httpOnly;
@@ -548,7 +566,9 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   `selectConversation` → `loadUserInfo` → banners (bloqueo, fraude/multicuenta,
   fueguito 30%, tags/notas, payout pendiente con botones pay/other-bank/cancel/
   dismiss/sync, promo bonus). Races protegidas por `activeConversationId` +
-  AbortController — **no romper ese patrón**.
+  AbortController — **no romper ese patrón**. La cabecera muestra el nivel VIP del
+  cliente (`user.vipLevelInfo`, resuelto por el backend) y la tabla de Usuarios la
+  medalla junto al nombre.
 - **Nombres legacy en la API de campañas** (deuda a propósito para no romper el panel):
   el body sigue mandando `jugayganaPassword` y el endpoint se llama
   `POST /api/admin/campaigns/:code/test-jugaygana-creds`, pero adentro se guarda y se
@@ -572,6 +592,8 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
 | `_runBonusStrategy` | 10 min | **APAGADO** (`BONUS_STRATEGY_DISABLED=true`) | step en StrategyEnrollment |
 | `_runDueSchedules` (ScheduledNotif) | 60 s | activo | lastRunAt |
 | `_pollPayingPayouts` | 45 s | activo (confirma pagos si el webhook no llegó) | handlePayoutStatusWebhook idempotente |
+| `_runVipTick` (niveles VIP) | 30 min | activo (`VIP_LEVELS_DISABLED=1` lo apaga) | buckets con `$set` idempotente + bono con reference `vip-lvl-*` (la plataforma dedupe) |
+| `_runVipSweepCheck` (sweep VIP) | 1 h (corre a las 05 ART) | activo | claim atómico por día en Config (`vip_sweep_day`) → instancia única |
 | `_runFcmPrune` | 24 h | activo | flag anti-overlap en memoria |
 | `fbAdsWebhook.startWorker` | 5 min | activo | nextRetryAt |
 | Limpieza mensajes >3d | 6 h | activo (red de seguridad del TTL) | deleteMany |
@@ -588,8 +610,9 @@ El backfill de `usernameLower` corre en CADA arranque (idempotente) y setea
   reemplaza `{amount}` (el `$` queda como signo); texto como `{username}` sin `$`.
 - **Identidad**: `user.id` (uuid), no `_id`. Username case-insensitive →
   `findUserByUsernameCI` (indexado + fallback), NUNCA regex nuevo.
-- **periodKey**: `YYYY-MM` (referidos); RefundClaim usa `daily:YYYY-MM-DD` /
-  `weekly:YYYY-MM-DD` / `monthly:YYYY-MM`.
+- **periodKey**: `YYYY-MM` (referidos y VipWagerMonth); RefundClaim usa
+  `daily:YYYY-MM-DD` / `weekly:YYYY-MM-DD` / `monthly:YYYY-MM` /
+  `rake:YYYY-MM-DD` (lunes de la semana del rakeback VIP).
 - **Montos 1girox: PESOS.** Se envían tal cual (2 decimales), y los balances y el netwin
   del panel vuelven en pesos. **NO multiplicar ni dividir por 100** — el ×100 de
   centavos era de JUGAYGANA y ya no existe.

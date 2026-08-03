@@ -12,6 +12,7 @@ const ChatStatus = require('./ChatStatus');
 const Transaction = require('./Transaction');
 const RefundClaim = require('./RefundClaim');
 const FireStreak = require('./FireStreak');
+const VipWagerMonth = require('./VipWagerMonth');
 const Command = require('./Command');
 const Config = require('./Config');
 const ReferralCommission = require('./ReferralCommission');
@@ -406,6 +407,7 @@ module.exports = {
   Transaction,
   RefundClaim,
   FireStreak,
+  VipWagerMonth,
   Command,
   Config,
   ReferralCommission,

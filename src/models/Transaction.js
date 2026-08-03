@@ -14,7 +14,10 @@ const transactionSchema = new mongoose.Schema({
   },
   type: { 
     type: String, 
-    enum: ['deposit', 'withdrawal', 'bonus', 'refund', 'transfer', 'referral_commission', 'fire_reward'], 
+    // 'rakeback' = rakeback semanal VIP (% del apostado); 'vip_levelup' = bono
+    // one-time por alcanzar un nivel VIP. Ninguno de los dos es 'deposit' a
+    // propósito: la analítica de publicistas/clientes cuenta cargas reales.
+    enum: ['deposit', 'withdrawal', 'bonus', 'refund', 'transfer', 'referral_commission', 'fire_reward', 'rakeback', 'vip_levelup'],
     required: true,
     index: true
   },

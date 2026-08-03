@@ -4,7 +4,82 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-07-31**
+> **Última actualización: 2026-08-03**
+
+## Sesión 2026-08-03
+
+### 102. NIVELES VIP por apostado acumulado (réplica del programa de Stake) + rakeback semanal
+- **Pedido del owner:** replicar el sistema de niveles de Stake ("fuera del cashback",
+  o sea ADEMÁS de los reembolsos que ya existen). Decisiones tomadas por el owner:
+  umbrales de Stake **convertidos a pesos a $1.500/USD** (configurable), bono de
+  subida de nivel **automático**, **rakeback semanal desde la v1** y los reembolsos
+  pasan a mostrar **solo el %** (los nombres Bronce/Plata/Oro quedan exclusivos del
+  nivel VIP).
+- **Cómo funciona (espejo de Stake):** se progresa por el **APOSTADO acumulado de por
+  vida** (no pérdidas ni depósitos — cada apuesta suma, gane o pierda; el nivel NUNCA
+  baja). Escalera en `src/utils/vipLevels.js` (14 niveles): Bronce $15M ARS, Plata
+  $75M, Oro $150M, Platino I–VI $375M→$15.000M, Diamante I–V $37.500M→$750.000M.
+  Cada nivel destraba: **bono one-time** al alcanzarlo (~0,07% del umbral, el ratio
+  de Stake: Bronce $10.000 … Platino VI $10M) y **rakeback semanal** creciente
+  (0,10% Bronce → 0,65% Diamante V, sobre el apostado de casino de la semana pasada).
+  Todo editable en la tabla del archivo; la tasa USD→ARS con `VIP_USD_ARS_RATE`.
+- **⚠️ Advertencia dada al owner (decisión suya igual):** con ×1500 el primer nivel
+  pide $15M ARS apostados y 1girox arrancó hace días con todos en ~cero → va a pasar
+  tiempo hasta la primera medalla. Si el enganche resulta lento, se bajan los números
+  de la tabla y listo.
+- **El acumulado (diseño anti-doble-conteo):** la Partner API no tiene "apostado
+  histórico" (stats por rango, máx 92 días) → buckets mensuales **`VipWagerMonth`**
+  (único por userId+monthKey) que el motor escribe SIEMPRE con `$set` (nunca `$inc`):
+  recalcular es idempotente y multi-instancia-safe sin locks. `User.lifetimeWagered`
+  es cache de la suma y sólo se actualiza con `$max` (un recálculo parcial no pisa un
+  total mayor). `User.vipLevel` nunca baja (guard `$lt` al avanzar).
+- **Motor (`src/services/vipLevelService.js` + cron en server.js):**
+  - **tick cada 30 min**: refresca el mes corriente de los activos recientes
+    (`VIP_ACTIVE_DAYS`=3) con el batch de stats (100 usuarios por request).
+  - **sweep diario a las 05 ART**: TODOS los usuarios + cierra meses pasados
+    faltantes desde `VIP_WAGER_EPOCH` (2026-07) → **el backfill es automático, no
+    hay script aparte**. Instancia única por día vía claim atómico en Config
+    (`vip_sweep_day`, el índice único de key es la barrera).
+  - **Bono de nivel:** reference `vip-lvl-{userId}-{idx}` → idempotente PARA SIEMPRE.
+    Orden: primero acreditar, después avanzar vipLevel — si el crédito falla se
+    reintenta en el próximo sync con LA MISMA reference; `duplicate:true` = otra
+    instancia ya pagó → no se re-notifica. Aviso al cliente por chat+push, editable
+    en COMANDOS (**`/sys_vip_levelup`** nuevo, sembrado en initializeData).
+  - Kill switch sin deploy: `VIP_LEVELS_DISABLED=1`. De paso el batch persiste
+    `giroxUserId` gratis (mismo hábito que los reembolsos).
+- **Rakeback semanal:** `GET /api/vip/status` + `POST /api/vip/rakeback/claim`.
+  Mismo candado que los reembolsos (#96): reserva atómica con RefundClaim type
+  **`rakeback`** (enum ampliado; periodKey `rake:{lunes}`) ANTES de acreditar,
+  reference `vip-rake-{lunes}-{userId}`, si el crédito falla se borra la reserva.
+  Semana = lunes-domingo pasado en hora ART (mismo `periodRanges` del reembolso
+  semanal). Transaction types nuevos: `rakeback` y `vip_levelup` (NO son 'deposit'
+  a propósito — la analítica de cargas reales no se contamina).
+- **PWA (refunds.js + index.html, SW → v61):** el modal de perfil ahora muestra el
+  nivel con barra de progreso, cuánto falta para el próximo (y su bono), el botón de
+  reclamo del rakeback y la escalera completa (viene del backend, no se duplica).
+  El recuadro USUARIO muestra la medalla del nivel. Las medallitas de los reembolsos
+  pasaron de 🥉/🥈/🥇 a un pill con el % — pedido explícito para que las dos escalas
+  no se confundan.
+- **Panel:** medalla + nombre del nivel en la cabecera del chat y medalla en la tabla
+  de Usuarios (`vipLevel lifetimeWagered` sumados a USERS_LIST_FIELDS; el backend
+  manda `vipLevelInfo` resuelto para no duplicar la escalera en el front).
+- **Docs:** ARCHITECTURE actualizado — además de lo nuevo, se corrigieron secciones
+  que habían quedado STALE de la v1.9 (#101): §4.6 todavía describía el scraping del
+  panel eliminado, §4.8 listaba las `GIROX_ADMIN_*` muertas y §5 decía que sin
+  `giroxUserId` no había reembolso.
+- **Validado:** `node --check` OK en los 10 archivos tocados. Cortes de la escalera
+  verificados en frío ($14.999.999→sin nivel, $15.000.000→Bronce, tope Diamante V,
+  override de tasa por env). **PROBAR tras deploy:** `GET /api/vip/status` con un
+  usuario real, esperar un tick (30 min) y ver `lifetimeWagered` moverse, el sweep a
+  las 05 ART en logs (`[vip] sweep`), y reclamar un rakeback el lunes.
+
+## Sesión 2026-08-01 (sin entrada en su momento — reconstruida del git log)
+
+- Commits `418cd88`/`ea8b942`/`bc5ee1f`/`fda8c0f`: look de WhatsApp en el chat del
+  cliente (cabecera "Soporte en línea", botón enviar, modo oscuro, fondo con patrón
+  de garabatos claro/oscuro + fix del fondo que se colaba entre el chat y la barra).
+  SW del cliente quedó en **v60**. Commit `4fd0c49` ("test auth", 2026-08-03) es un
+  commit VACÍO — prueba de autenticación de git, sin cambios.
 
 ## Sesión 2026-07-31
 

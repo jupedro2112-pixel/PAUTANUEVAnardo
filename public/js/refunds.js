@@ -18,6 +18,75 @@ VIP.refunds = (function () {
         } catch (error) {
             console.error('Error cargando reembolsos:', error);
         }
+        // Nivel VIP en background (no bloquea los reembolsos si la plataforma demora).
+        loadVipStatus().catch(() => {});
+    }
+
+    // ============================================
+    // NIVEL VIP (apostado acumulado — NO confundir con los rangos de reembolso)
+    // ============================================
+
+    async function loadVipStatus() {
+        try {
+            const response = await fetch(`${VIP.config.API_URL}/api/vip/status`, {
+                headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+            });
+            if (response.ok) {
+                VIP.state.vipStatus = await response.json();
+                updateDashVipBadge();
+            }
+        } catch (error) {
+            console.error('Error cargando nivel VIP:', error);
+        }
+    }
+
+    // El recuadro USUARIO del dashboard muestra la medalla del nivel en lugar del
+    // rótulo genérico. Sin nivel todavía, queda "USUARIO" como siempre.
+    function updateDashVipBadge() {
+        const v = VIP.state.vipStatus;
+        const label = document.querySelector('.dash-user-label');
+        if (!label || !v || !v.enabled) return;
+        if (v.level) {
+            label.textContent = `${v.level.emoji} ${v.level.name.toUpperCase()}`;
+            label.title = `Nivel VIP ${v.level.name}`;
+        } else {
+            label.textContent = 'USUARIO';
+        }
+    }
+
+    async function claimRakeback() {
+        const btn = document.getElementById('vipRakebackBtn');
+        if (btn) {
+            if (btn.disabled) return;
+            btn.disabled = true;
+            btn.textContent = '⏳ Procesando...';
+        }
+        try {
+            const response = await fetch(`${VIP.config.API_URL}/api/vip/rakeback/claim`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${VIP.state.currentToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+            if (data.success) {
+                VIP.ui.showToast(`✅ ${data.message}`, 'success');
+                if (VIP.ui.syncBalance) VIP.ui.syncBalance();
+                // Deja constancia en el chat (mismo patrón que los reembolsos).
+                if (VIP.chat && VIP.chat.sendSystemMessage) {
+                    VIP.chat.sendSystemMessage(`💸 Rakeback semanal reclamado: $${(data.amount || 0).toLocaleString()}`);
+                }
+            } else {
+                VIP.ui.showToast(`ℹ️ ${data.message}`, 'info');
+            }
+        } catch (error) {
+            VIP.ui.showToast('Error de conexión', 'error');
+        }
+        // Refrescar y re-dibujar el perfil con el estado nuevo (reclamado o no).
+        await loadVipStatus().catch(() => {});
+        const overlay = document.getElementById('profileModal');
+        if (overlay && overlay.style.display !== 'none') showProfileModal();
     }
 
     function updateRefundButtons() {
@@ -56,9 +125,10 @@ VIP.refunds = (function () {
 
         amount.textContent = `$${data.potentialAmount.toLocaleString()}`;
 
-        // Medallita del rango (🥉/🥈/🥇) arriba a la derecha del botón. El rango sale
-        // de la pérdida DE ESE período, así que cada reembolso puede tener el suyo:
-        // el mismo jugador puede ser Oro en el mensual y Bronce en el diario.
+        // Etiqueta del % arriba a la derecha del botón. Sale de la pérdida DE ESE
+        // período, así que cada reembolso puede tener el suyo. Desde los niveles
+        // VIP (2026-08-03) se muestra SOLO el % — los nombres/medallas
+        // Bronce/Plata/Oro quedaron exclusivos del nivel VIP para no confundir.
         if (btn && data.tier) {
             let badge = btn.querySelector('.refund-tier');
             if (!badge) {
@@ -66,9 +136,10 @@ VIP.refunds = (function () {
                 badge.className = 'refund-tier';
                 btn.appendChild(badge);
             }
-            badge.textContent = data.tier.emoji;
-            badge.title = `${data.tier.name} — ${data.tier.pct}% de reembolso`;
+            badge.textContent = `${data.tier.pct}%`;
+            badge.title = `${data.tier.pct}% de reembolso según tu pérdida del período`;
             badge.style.borderColor = data.tier.color;
+            badge.style.color = data.tier.color;
         }
 
         btn.disabled = false;
@@ -324,27 +395,120 @@ VIP.refunds = (function () {
     }
 
     // ============================================
-    // PERFIL DEL JUGADOR + RANGOS
+    // PERFIL DEL JUGADOR: NIVEL VIP + REEMBOLSOS
     // ============================================
 
     /**
-     * Modal que se abre al tocar el recuadro USUARIO. Muestra los datos de la cuenta,
-     * el rango de cada reembolso y cuánto le falta para subir al siguiente.
+     * Modal que se abre al tocar el recuadro USUARIO. Muestra el NIVEL VIP (por
+     * apostado acumulado, con barra de progreso y rakeback semanal) y los
+     * reembolsos por período.
      *
-     * ⚠️ El rango NO es del usuario: es DE CADA REEMBOLSO. Se calcula sobre lo que
-     * perdió en ese período puntual, así que el mismo jugador puede ser Oro en el
-     * mensual y Bronce en el diario. La UI lo dice explícitamente para que nadie
-     * crea que "bajó de categoría".
+     * ⚠️ Son DOS escalas distintas a propósito:
+     *  - Nivel VIP: permanente, sube por apostado de por vida (Bronce…Diamante).
+     *  - % de reembolso: POR PERÍODO, sale de la pérdida de ese período puntual y
+     *    puede variar entre el diario y el mensual. Se muestra SOLO el % (sin
+     *    nombres de rango) para que no se confunda con el nivel VIP.
      */
     async function showProfileModal() {
         if (!VIP.state.refundStatus) {
             await loadRefundStatus();
         }
+        if (!VIP.state.vipStatus) {
+            await loadVipStatus();
+        }
         const s = VIP.state.refundStatus;
+        const v = VIP.state.vipStatus;
         const user = VIP.state.currentUser || {};
         const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR');
 
-        // Tabla de rangos: viene del backend para no duplicar los umbrales acá.
+        // ==========================================================
+        // Sección NIVEL VIP (apostado acumulado de por vida)
+        // ==========================================================
+        let vipHtml = '';
+        let vipLaddersHtml = '';
+        if (v && v.enabled) {
+            const lvl = v.level;
+            const next = v.next;
+            const titulo = lvl
+                ? `<span style="font-size:15px;font-weight:900;color:${lvl.color};">${lvl.emoji} Nivel ${lvl.name}</span>`
+                : `<span style="font-size:14px;font-weight:900;color:#aaa;">Todavía sin nivel VIP</span>`;
+            const barra = next
+                ? `<div style="margin-top:8px;">
+                     <div style="height:10px;background:rgba(255,255,255,0.09);border-radius:6px;overflow:hidden;">
+                       <div style="height:100%;width:${Math.max(1, Math.round(v.progressPct || 0))}%;
+                                   background:linear-gradient(90deg,#d4af37,#ffd700);border-radius:6px;"></div>
+                     </div>
+                     <div style="font-size:10.5px;color:#ffd479;margin-top:5px;line-height:1.4;">
+                       Te faltan <strong>${money(v.faltaParaSubir)}</strong> de apuestas para
+                       ${next.emoji} <strong>${next.name}</strong> (bono de ${money(next.levelUpBonusArs)} al llegar)
+                     </div>
+                   </div>`
+                : `<div style="font-size:11px;color:#7fe07f;margin-top:5px;">¡Estás en el nivel máximo! 👑</div>`;
+
+            // Rakeback semanal: % de lo APOSTADO la semana pasada, gane o pierda.
+            let rakeHtml = '';
+            const rk = v.rakeback || {};
+            if (rk.eligible && rk.claimed) {
+                rakeHtml = `<div style="font-size:11px;color:#7fe07f;margin-top:9px;">
+                              ✅ Rakeback de esta semana ya reclamado: <strong>${money(rk.amount)}</strong>
+                            </div>`;
+            } else if (rk.eligible && rk.canClaim) {
+                rakeHtml = `<button type="button" id="vipRakebackBtn" onclick="VIP.refunds.claimRakeback()"
+                              style="width:100%;margin-top:10px;background:linear-gradient(135deg,#0f4c00,#1a8200);
+                                     color:#fff;border:1px solid #00ff88;padding:10px;border-radius:12px;
+                                     font-weight:900;font-size:13px;cursor:pointer;">
+                              💸 Reclamar rakeback semanal: ${money(rk.amount)}
+                            </button>
+                            <div style="font-size:10px;color:#999;margin-top:4px;text-align:center;">
+                              ${rk.pct}% de lo que apostaste la semana pasada, ganes o pierdas
+                            </div>`;
+            } else if (rk.eligible) {
+                rakeHtml = `<div style="font-size:11px;color:#999;margin-top:9px;">
+                              💸 Rakeback semanal: ${rk.pct}% de lo que apostás (lun a dom), ganes o pierdas.
+                              La semana pasada no registrás apuestas.
+                            </div>`;
+            } else {
+                rakeHtml = `<div style="font-size:11px;color:#999;margin-top:9px;">
+                              💸 El <strong>rakeback semanal</strong> (te devolvemos un % de TODO lo que
+                              apostás, ganes o pierdas) se destraba al llegar a 🥉 Bronce.
+                            </div>`;
+            }
+
+            vipHtml = `
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">👑 Tu nivel VIP</div>
+                <div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:14px;
+                            border:1px solid rgba(212,175,55,0.25);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                        ${titulo}
+                        <span style="font-size:10.5px;color:#aaa;text-align:right;">Apostado total<br>
+                            <strong style="color:#fff;font-size:12px;">${money(v.lifetimeWagered)}</strong></span>
+                    </div>
+                    ${barra}
+                    ${rakeHtml}
+                </div>`;
+
+            // Escalera completa de niveles (viene del backend, no se duplica acá).
+            const curIdx = v.levelIndex || 0;
+            vipLaddersHtml = (v.levels || []).map((l) => {
+                const alcanzado = l.idx <= curIdx;
+                return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+                            padding:7px 10px;background:rgba(255,255,255,${alcanzado ? '0.08' : '0.03'});
+                            border-radius:8px;border-left:3px solid ${l.color};
+                            ${alcanzado ? '' : 'opacity:0.75;'}">
+                            <span style="font-size:11.5px;font-weight:800;color:#fff;white-space:nowrap;">
+                                ${l.emoji} ${l.name}${alcanzado ? ' ✓' : ''}</span>
+                            <span style="font-size:9.5px;color:#aaa;flex:1;text-align:center;">
+                                ${money(l.thresholdArs)} apostados</span>
+                            <span style="font-size:10px;font-weight:900;color:${l.color};white-space:nowrap;">
+                                +${money(l.levelUpBonusArs)} · ${l.rakebackPct}%</span>
+                        </div>`;
+            }).join('');
+        }
+
+        // ==========================================================
+        // Reembolsos por período (muestran SOLO el %: los nombres de
+        // rango quedaron exclusivos del nivel VIP)
+        // ==========================================================
         const tiers = (s && s.tiers) || [];
         const tiersHtml = tiers.map((t) => {
             const rango = t.max === null
@@ -353,25 +517,24 @@ VIP.refunds = (function () {
             return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;
                         padding:9px 12px;background:rgba(255,255,255,0.04);border-radius:9px;
                         border-left:3px solid ${t.color};">
-                        <span style="font-size:13px;font-weight:800;color:#fff;">${t.emoji} ${t.name}</span>
-                        <span style="font-size:11px;color:#aaa;flex:1;text-align:center;">${rango}</span>
+                        <span style="font-size:11px;color:#aaa;flex:1;">Si perdés ${rango}</span>
                         <span style="font-size:14px;font-weight:900;color:${t.color};">${t.pct}%</span>
                     </div>`;
         }).join('');
 
-        // Estado por período: rango actual + cuánto falta para el siguiente.
+        // Estado por período: % actual + cuánto falta para el % siguiente.
         const periodo = (label, d) => {
             if (!d || !d.tier) return '';
             const t = d.tier;
             const falta = t.faltaParaSubir != null && t.next
                 ? `<div style="font-size:11px;color:#ffd479;margin-top:3px;">
-                     Te faltan <strong>${money(t.faltaParaSubir)}</strong> de pérdida para ${t.next.emoji} ${t.next.name} (${t.next.pct}%)
+                     Te faltan <strong>${money(t.faltaParaSubir)}</strong> de pérdida para el ${t.next.pct}%
                    </div>`
-                : `<div style="font-size:11px;color:#7fe07f;margin-top:3px;">¡Estás en el rango máximo! 🎉</div>`;
+                : `<div style="font-size:11px;color:#7fe07f;margin-top:3px;">¡Estás en el porcentaje máximo! 🎉</div>`;
             return `<div style="padding:10px 12px;background:rgba(0,0,0,0.25);border-radius:10px;margin-bottom:8px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
                             <span style="font-size:12px;font-weight:800;color:#d4af37;">${label}</span>
-                            <span style="font-size:12px;font-weight:900;color:${t.color};">${t.emoji} ${t.name} · ${t.pct}%</span>
+                            <span style="font-size:12px;font-weight:900;color:${t.color};">${t.pct}%</span>
                         </div>
                         <div style="font-size:11px;color:#aaa;margin-top:3px;">
                             Perdiste ${money(d.netAmount)} · te corresponden <strong style="color:#7fe07f;">${money(d.potentialAmount)}</strong>
@@ -413,17 +576,27 @@ VIP.refunds = (function () {
                     </div>
                 </div>
 
-                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">🏆 Tus rangos</div>
+                ${vipHtml}
+
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">🎁 Tus reembolsos</div>
                 <div style="font-size:11px;color:#999;margin-bottom:10px;line-height:1.45;">
                     Cuanto más perdés en un período, mayor es el porcentaje que te devolvemos.
-                    El rango se calcula por separado en cada reembolso.
+                    El porcentaje se calcula por separado en cada reembolso.
                 </div>
                 ${periodo('📅 Diario', s && s.daily)}
                 ${periodo('🗓️ Semanal', s && s.weekly)}
                 ${periodo('📆 Mensual', s && s.monthly)}
 
-                <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 8px;">Escala de rangos</div>
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 8px;">Escala de reembolsos</div>
                 <div style="display:flex;flex-direction:column;gap:6px;">${tiersHtml}</div>
+
+                ${vipLaddersHtml ? `
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 4px;">Escalera de niveles VIP</div>
+                <div style="font-size:10.5px;color:#999;margin-bottom:8px;line-height:1.4;">
+                    Subís por TODO lo que apostás (de por vida, nunca baja). Cada nivel te da un
+                    bono al llegar y un % de rakeback semanal.
+                </div>
+                <div style="display:flex;flex-direction:column;gap:5px;">${vipLaddersHtml}</div>` : ''}
 
                 <button type="button" onclick="VIP.refunds.closeProfileModal()"
                     style="width:100%;margin-top:16px;background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;
@@ -440,6 +613,8 @@ VIP.refunds = (function () {
 
     return {
         loadRefundStatus,
+        loadVipStatus,
+        claimRakeback,
         updateRefundButtons,
         updateRefundButton,
         startCountdown,

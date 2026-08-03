@@ -23,9 +23,12 @@ const refundClaimSchema = new mongoose.Schema({
     index: true,
     trim: true
   },
-  type: { 
-    type: String, 
-    enum: ['daily', 'weekly', 'monthly'], 
+  type: {
+    type: String,
+    // 'rakeback' = rakeback semanal del nivel VIP (% del APOSTADO de la semana
+    // pasada, gane o pierda — no de la pérdida). Reusa este modelo porque el
+    // candado anti doble-cobro es el mismo: índice único userId+type+periodKey.
+    enum: ['daily', 'weekly', 'monthly', 'rakeback'],
     required: true,
     index: true
   },

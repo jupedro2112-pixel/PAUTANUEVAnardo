@@ -208,6 +208,31 @@ const userSchema = new mongoose.Schema({
     default: false
   },
 
+  // ============================================
+  // NIVELES VIP (por apostado acumulado — ver src/utils/vipLevels.js)
+  // ============================================
+  // Apostado de casino ACUMULADO de por vida, en pesos. Es un CACHE de la suma de
+  // los buckets VipWagerMonth (la fuente de verdad); lo mantiene el motor de sync.
+  // ⚠️ Sólo se actualiza con $max (nunca baja): un recálculo parcial (con meses
+  // todavía sin backfillear) no puede pisar un total mayor ya calculado.
+  lifetimeWagered: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  // Índice del nivel alcanzado (0 = ninguno, 1 = Bronce ... ver vipLevels.js).
+  // NUNCA baja. Se avanza recién DESPUÉS de acreditar el bono del nivel (la
+  // reference idempotente vip-lvl-{userId}-{idx} hace que reintentarlo sea gratis).
+  vipLevel: {
+    type: Number,
+    default: 0,
+    index: true
+  },
+  vipLevelUpdatedAt: {
+    type: Date,
+    default: null
+  },
+
 
   // Token FCM para notificaciones push (último registrado – se mantiene para compatibilidad y vista admin)
   fcmToken: { 

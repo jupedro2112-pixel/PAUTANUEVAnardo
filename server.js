@@ -432,6 +432,10 @@ const giroxPublisherKeys = require('./src/services/giroxPublisherKeys');
 const periodRanges = require('./src/utils/periodRanges');
 // Rangos de reembolso Bronce/Plata/Oro según la pérdida del período.
 const refundTiers = require('./src/utils/refundTiers');
+// Niveles VIP por apostado acumulado (réplica de Stake) + su motor de sync.
+const vipLevels = require('./src/utils/vipLevels');
+const vipLevelService = require('./src/services/vipLevelService');
+const VipWagerMonth = require('./src/models/VipWagerMonth');
 
 // NOTA: acá vivían los requires de los 4 clientes de JUGAYGANA (jugaygana.js,
 // jugaygana-movements.js, jugayganaService.js, jugayganaPublisherSessions.js) y de
@@ -6895,11 +6899,191 @@ app.get('/api/refunds/history', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
     const userRefunds = await RefundClaim.find({ userId }).sort({ claimedAt: -1 }).lean();
-    
+
     res.json({ refunds: userRefunds });
   } catch (error) {
     console.error('Error obteniendo historial de reembolsos:', error);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================
+// NIVELES VIP — estado del jugador y rakeback semanal
+// ============================================
+// El nivel sube por APOSTADO ACUMULADO (lo mantiene el motor de sync, ver
+// vipLevelService). El rakeback es % del apostado de la SEMANA PASADA (lunes a
+// domingo ART), gane o pierda — no confundir con el reembolso semanal, que es
+// sobre la PÉRDIDA. Ambos conviven a propósito.
+
+// Apostado que cuenta para el VIP (misma decisión que reembolsos: sólo casino;
+// VIP_WAGER_SCOPE=total incluye sports). Espejo del criterio de vipLevelService.
+function _vipScopedWagered(statsRes) {
+  if (!statsRes || !statsRes.success) return 0;
+  if (process.env.VIP_WAGER_SCOPE === 'total') return Math.max(0, Number(statsRes.wagered) || 0);
+  const casino = statsRes.categories && statsRes.categories.casino;
+  return Math.max(0, Number(casino && casino.wagered) || 0);
+}
+
+// La reference del rakeback se deriva del PERÍODO (semana), igual que la de los
+// reembolsos y por el mismo motivo: si el crédito falla se borra la reserva y el
+// reintento tiene que mandar LA MISMA reference (ver _refundReference).
+function _rakebackReference(fromDateStr, userId) {
+  return `vip-rake-${fromDateStr}-${userId}`.slice(0, 100);
+}
+
+// Forma pública de la escalera (sin el umbral en USD interno, que sólo confunde).
+function _vipLevelsPublic() {
+  return vipLevels.listLevels().map((l) => ({
+    idx: l.idx, key: l.key, name: l.name, emoji: l.emoji, color: l.color,
+    thresholdArs: l.thresholdArs, levelUpBonusArs: l.levelUpBonusArs, rakebackPct: l.rakebackPct
+  }));
+}
+
+app.get('/api/vip/status', authMiddleware, async (req, res) => {
+  try {
+    if (vipLevelService.isDisabled()) return res.json({ enabled: false });
+    const userId = req.user.userId;
+
+    const user = await User.findOne({ id: userId }).select('vipLevel lifetimeWagered username').lean();
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const info = vipLevels.getVipLevel(user.lifetimeWagered || 0);
+    // El nivel PERSISTIDO manda (nunca baja): si el acumulado todavía no se
+    // sincronizó, el jugador no tiene que ver su medalla desaparecer.
+    const levelIndex = Math.max(user.vipLevel || 0, info.levelIndex);
+    const level = vipLevels.getLevel(levelIndex);
+    const next = vipLevels.getLevel(levelIndex + 1);
+
+    // Rakeback de la semana pasada (sólo si ya tiene nivel).
+    let rakeback = { eligible: false };
+    if (levelIndex >= 1 && girox.isEnabled()) {
+      const week = periodRanges.getLastWeekRangeArgentinaEpoch();
+      const periodKey = 'rake:' + week.fromDateStr;
+      const pct = vipLevels.getRakebackPct(levelIndex);
+      const already = await RefundClaim.findOne({ userId, type: 'rakeback', periodKey })
+        .select('amount claimedAt').lean();
+      if (already) {
+        rakeback = {
+          eligible: true, pct, claimed: true, canClaim: false,
+          amount: already.amount, claimedAt: already.claimedAt,
+          period: `${week.fromDateStr} a ${week.toDateStr}`
+        };
+      } else {
+        const statsRes = await girox.getPlayerStats(user.username,
+          new Date(week.fromEpoch * 1000), new Date(week.toEpoch * 1000), 'vip-rakeback');
+        const wagered = _vipScopedWagered(statsRes);
+        const amount = Math.round(wagered * (pct / 100));
+        rakeback = {
+          eligible: true, pct, claimed: false, canClaim: amount >= 1,
+          wagered, amount, period: `${week.fromDateStr} a ${week.toDateStr}`
+        };
+      }
+    }
+
+    res.json({
+      enabled: true,
+      lifetimeWagered: user.lifetimeWagered || 0,
+      levelIndex,
+      level: level ? { idx: level.idx, key: level.key, name: level.name, emoji: level.emoji, color: level.color, rakebackPct: level.rakebackPct } : null,
+      next: next ? { idx: next.idx, key: next.key, name: next.name, emoji: next.emoji, color: next.color, thresholdArs: next.thresholdArs, levelUpBonusArs: next.levelUpBonusArs, rakebackPct: next.rakebackPct } : null,
+      faltaParaSubir: next ? Math.max(0, next.thresholdArs - (user.lifetimeWagered || 0)) : null,
+      progressPct: info.progressPct,
+      levels: _vipLevelsPublic(),
+      rakeback
+    });
+  } catch (error) {
+    console.error('Error obteniendo estado VIP:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.post('/api/vip/rakeback/claim', authMiddleware, async (req, res) => {
+  try {
+    if (vipLevelService.isDisabled()) return res.json({ success: false, message: 'Los niveles VIP no están disponibles.' });
+    const userId = req.user.userId;
+    const username = req.user.username;
+
+    if (!await acquireRefundLock(userId, 'rakeback')) {
+      return res.json({ success: false, message: '⏳ Ya estás procesando un rakeback. Por favor espera...', processing: true });
+    }
+
+    try {
+      const user = await User.findOne({ id: userId }).select('vipLevel').lean();
+      const levelIndex = (user && user.vipLevel) || 0;
+      if (levelIndex < 1) {
+        return res.json({ success: false, message: 'El rakeback se destraba al alcanzar el nivel 🥉 Bronce. ¡Seguí jugando para subir!' });
+      }
+      const pct = vipLevels.getRakebackPct(levelIndex);
+
+      const week = periodRanges.getLastWeekRangeArgentinaEpoch();
+      const periodKey = 'rake:' + week.fromDateStr;
+
+      const statsRes = await girox.getPlayerStats(username,
+        new Date(week.fromEpoch * 1000), new Date(week.toEpoch * 1000), 'vip-rakeback');
+      if (!statsRes.success) {
+        return res.json({ success: false, message: 'No pudimos calcular tu apostado en este momento (la plataforma está demorada). Probá en unos minutos.' });
+      }
+      const wagered = _vipScopedWagered(statsRes);
+      const amount = Math.round(wagered * (pct / 100));
+      if (amount < 1) {
+        return res.json({ success: false, message: 'No registrás apuestas la semana pasada. El rakeback es un % de lo que apostás, ganes o pierdas.' });
+      }
+
+      // CANDADO REAL contra doble cobro (mismo patrón que los reembolsos, #96):
+      // reservar el reclamo (índice único userId+type+periodKey) ANTES de acreditar.
+      const claimId = uuidv4();
+      try {
+        await RefundClaim.create({
+          id: claimId, userId, username, type: 'rakeback',
+          amount, netAmount: wagered, percentage: pct,
+          period: `${week.fromDateStr} a ${week.toDateStr}`, periodKey, claimedAt: new Date()
+        });
+      } catch (e) {
+        if (e && e.code === 11000) {
+          return res.json({ success: false, message: 'Ya reclamaste el rakeback de esta semana. El próximo se habilita el lunes.' });
+        }
+        throw e;
+      }
+
+      const depositResult = await girox.creditUserBalance(username, amount, _rakebackReference(week.fromDateStr, userId), {
+        description: `Rakeback semanal VIP (${week.fromDateStr} a ${week.toDateStr})`
+      });
+
+      if (!depositResult.success) {
+        // No se pudo acreditar → liberar la reserva para permitir reintentar.
+        await RefundClaim.deleteOne({ id: claimId }).catch(() => {});
+        return res.json({ success: false, message: 'Error al acreditar el rakeback: ' + depositResult.error });
+      }
+
+      const txId = depositResult.data?.transfer_id || depositResult.data?.transferId;
+      if (txId) await RefundClaim.updateOne({ id: claimId }, { $set: { transactionId: txId } }).catch(() => {});
+
+      await Transaction.create({
+        id: uuidv4(),
+        type: 'rakeback',
+        userId,
+        username,
+        amount,
+        description: `Rakeback semanal VIP (${week.fromDateStr} a ${week.toDateStr})`,
+        transactionId: txId,
+        timestamp: new Date()
+      }).catch(() => {});
+
+      logger.info(`[VIP] rakeback — ${username} nivel ${levelIndex} apostado:${wagered} pct:${pct} monto:${amount}`);
+
+      res.json({
+        success: true,
+        message: `¡Rakeback semanal de $${amount.toLocaleString('es-AR')} acreditado! (${pct}% de lo que apostaste)`,
+        amount,
+        pct,
+        wagered
+      });
+    } finally {
+      setTimeout(() => releaseRefundLock(userId, 'rakeback'), 3000);
+    }
+  } catch (error) {
+    console.error('Error reclamando rakeback:', error);
+    res.json({ success: false, message: 'Error del servidor' });
   }
 });
 
@@ -8892,6 +9076,12 @@ async function initializeData() {
       description: 'Mensaje automático al cliente cuando, al confirmar el pago, NO alcanza el saldo para descontar el retiro (se jugó las fichas en el mientras). El chat se cierra. Variables: ${amount} (lo que pidió), ${balance} (saldo actual). Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '⚠️ No pudimos completar tu retiro de ${amount} porque tu saldo cambió y ya no alcanza. Tu saldo actual es ${balance}. 💡 Si querés retirar, solicitá un nuevo retiro con el monto correcto disponible. ¡Gracias!'
+    },
+    {
+      name: '/sys_vip_levelup',
+      description: 'Mensaje automático cuando el cliente alcanza un nivel VIP (por apostado acumulado) y se le acredita el bono del nivel. Variables: {username}, {level} (nombre del nivel), {emoji}, ${bonus}. Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '🎉 ¡FELICITACIONES {username}!\n\nAlcanzaste el nivel VIP {emoji} {level} por todo lo que jugaste.\n\n💰 Ya te acreditamos tu bono de ${bonus} en la plataforma.\n\nCuanto más jugás, más alto llegás: cada nivel te da un bono mayor y más rakeback semanal. Tocá tu perfil en la app para ver cuánto te falta para el próximo nivel. 🚀'
     }
   ];
   for (const cmd of systemCmds) {
@@ -12975,6 +13165,12 @@ app.get('/api/users/:userId', authMiddleware, async (req, res) => {
       } catch (e) { /* no bloquear el perfil por esto */ }
     }
 
+    // Nivel VIP resuelto (nombre/emoji) para el header del chat del panel.
+    if (user.vipLevel > 0) {
+      const l = vipLevels.getLevel(user.vipLevel);
+      if (l) user.vipLevelInfo = { name: l.name, emoji: l.emoji, color: l.color };
+    }
+
     res.json({ user });
   } catch (error) {
     console.error('Error obteniendo usuario:', error);
@@ -13767,13 +13963,22 @@ app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =>
     // GET /api/users/:userId (viewUser/loadUserInfo). Antes viajaba el doc entero
     // (fcmTokens, tagHistory, withdrawalAccount, acquisitionUtm, adminNotes…).
     // ⚠️ Si se agrega una columna nueva a la tabla del panel: sumar el campo acá.
-    const USERS_LIST_FIELDS = 'id username tags accountNumber email phone role balance isActive isBlocked blockReason lastLogin createdAt notificationPlan notifMonthlyCounts phoneVerified loginWithoutPassword';
+    const USERS_LIST_FIELDS = 'id username tags accountNumber email phone role balance isActive isBlocked blockReason lastLogin createdAt notificationPlan notifMonthlyCounts phoneVerified loginWithoutPassword vipLevel lifetimeWagered';
     const users = await User.find(query)
       .select(USERS_LIST_FIELDS)
       .sort({ role: 1, username: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
+
+    // Nivel VIP resuelto acá (nombre/emoji) para que el panel no duplique la
+    // escalera de src/utils/vipLevels.js.
+    for (const u of users) {
+      if (u.vipLevel > 0) {
+        const l = vipLevels.getLevel(u.vipLevel);
+        if (l) u.vipLevelInfo = { name: l.name, emoji: l.emoji, color: l.color };
+      }
+    }
 
     res.json({ users, total, page, totalPages, perPage: limit });
   } catch (error) {
@@ -14880,6 +15085,117 @@ async function _pollPayingPayouts() {
 }
 setTimeout(function () { _pollPayingPayouts(); }, 90 * 1000);
 setInterval(function () { _pollPayingPayouts(); }, 45 * 1000);
+
+
+// ============================================================
+// MOTOR DE NIVELES VIP (apostado acumulado, réplica de Stake)
+// ----------------------------------------------------------------
+// Dos cadencias (ver vipLevelService por el diseño completo):
+//   - tick cada 30 min: refresca el mes corriente de los usuarios activos
+//     recientes y aplica subas de nivel (con bono idempotente vip-lvl-*).
+//   - sweep 1 vez por día a la madrugada (05 ART): TODOS los usuarios + cierra
+//     los meses pasados que falten (= el backfill). Instancia única por día vía
+//     claim atómico en Config — en multi-instancia sólo una lo corre.
+// Apagar sin deploy: VIP_LEVELS_DISABLED=1.
+// ============================================================
+
+// Aviso al cliente cuando sube de nivel: mensaje de sistema en el chat + push.
+// Texto editable desde COMANDOS (/sys_vip_levelup); si se vacía, no se envía.
+async function _notifyVipLevelUp(userLean, level) {
+  const content = await renderSystemCommand(
+    '/sys_vip_levelup',
+    `🎉 ¡FELICITACIONES {username}!\n\nAlcanzaste el nivel VIP {emoji} {level} por todo lo que jugaste.\n\n💰 Ya te acreditamos tu bono de $\{bonus\} en la plataforma.\n\nCuanto más jugás, más alto llegás: cada nivel te da un bono mayor y más rakeback semanal. Tocá tu perfil en la app para ver cuánto te falta para el próximo nivel. 🚀`,
+    {
+      username: userLean.username,
+      level: level.name,
+      emoji: level.emoji,
+      bonus: level.levelUpBonusArs.toLocaleString('es-AR')
+    }
+  );
+  if (!content) return; // comando vaciado a propósito desde el panel
+
+  const message = await Message.create({
+    id: uuidv4(),
+    senderId: 'admin',
+    senderUsername: 'Sistema',
+    senderRole: 'admin',
+    receiverId: userLean.id,
+    receiverRole: 'user',
+    content,
+    type: 'system',
+    timestamp: new Date(),
+    read: false
+  });
+  const data = {
+    id: message.id,
+    senderId: 'admin',
+    senderUsername: 'Sistema',
+    senderRole: 'admin',
+    receiverId: userLean.id,
+    receiverRole: 'user',
+    content,
+    timestamp: new Date(),
+    type: 'system'
+  };
+  io.to(`user_${userLean.id}`).emit('new_message', data);
+  io.to(`chat_${userLean.id}`).emit('new_message', data);
+  notifyAdmins('new_message', { message: data, userId: userLean.id, username: userLean.username });
+
+  // Push si está offline (el doc lean del motor no trae los tokens FCM).
+  try {
+    const full = await User.findOne({ id: userLean.id })
+      .select('id username fcmToken fcmTokens').lean();
+    if (full) {
+      await sendPushIfOffline(full, `${level.emoji} ¡Subiste a ${level.name}!`,
+        `Tu bono de $${level.levelUpBonusArs.toLocaleString('es-AR')} ya está acreditado. Entrá a verlo.`,
+        { tag: 'vip-levelup' });
+    }
+  } catch (e) {
+    logger.warn(`[vip] push de nivel a ${userLean.username} falló: ${e.message}`);
+  }
+}
+
+const _vipSyncDeps = {
+  girox,
+  vipLevels,
+  logger,
+  notifyLevelUp: _notifyVipLevelUp,
+  models: { User, VipWagerMonth, Transaction }
+};
+
+let _vipTickRunning = false; // no encimar ticks si la plataforma viene lenta
+async function _runVipTick() {
+  if (_vipTickRunning) return;
+  _vipTickRunning = true;
+  try {
+    const r = await vipLevelService.runSync({ ..._vipSyncDeps, mode: 'tick' });
+    if (r && !r.skipped && (r.levelUps > 0 || r.errors > 0)) {
+      logger.info(`[vip] tick: users=${r.users} buckets=${r.buckets} levelUps=${r.levelUps} errors=${r.errors}`);
+    }
+  } catch (err) {
+    logger.error('[vip] tick error: ' + err.message);
+  } finally {
+    _vipTickRunning = false;
+  }
+}
+
+async function _runVipSweepCheck() {
+  try {
+    if (vipLevelService.isDisabled() || !girox.isEnabled()) return;
+    const now = new Date();
+    if (vipLevelService.hourAR(now) !== 5) return; // madrugada ART (poco juego, cupo libre)
+    if (!await vipLevelService.claimDailySweep(Config, vipLevelService.todayStrAR(now))) return;
+    logger.info('[vip] sweep diario: esta instancia ganó el claim, barriendo toda la base...');
+    const r = await vipLevelService.runSync({ ..._vipSyncDeps, mode: 'sweep' });
+    logger.info(`[vip] sweep: users=${r.users} buckets=${r.buckets} cerrados=${r.closed} levelUps=${r.levelUps} errors=${r.errors}`);
+  } catch (err) {
+    logger.error('[vip] sweep error: ' + err.message);
+  }
+}
+
+setTimeout(function () { _runVipTick(); }, 5 * 60 * 1000);
+setInterval(function () { _runVipTick(); }, 30 * 60 * 1000);
+setInterval(function () { _runVipSweepCheck(); }, 60 * 60 * 1000);
 
 
 // ============================================================
