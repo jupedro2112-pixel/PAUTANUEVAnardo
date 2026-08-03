@@ -380,7 +380,6 @@ tenían los 4 clientes viejos.
 | `GIROX_NETWIN_SCOPE` | `casino` | `casino` \| `total` (incluiría sports) en reembolsos/comisiones |
 | `GIROX_MAX_RPM` | `55` | Techo local de requests/min **por instancia** |
 | `GIROX_REFERRAL_COMMISSION_PCT` | `8` | % de netwin que es owner-revenue (el proveedor ya no la informa) |
-| `VIP_LEVELS_DISABLED` | — | `1` = apaga el motor VIP y sus endpoints (kill switch sin deploy) |
 | `VIP_USD_ARS_RATE` | `1500` | Tasa USD→ARS de los umbrales VIP (los umbrales de Stake están en USD) |
 | `VIP_WAGER_SCOPE` | `casino` | Qué apostado suma para el nivel (`casino` \| `total`) |
 | `VIP_WAGER_EPOCH` | `2026-07` | Primer mes que se acumula (cuando arrancó 1girox) |
@@ -502,7 +501,10 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   atómica que los reembolsos (RefundClaim type `rakeback`, periodKey
   `rake:<lunes>`, reference `vip-rake-<lunes>-<userId>`). Estado:
   `GET /api/vip/status` (nivel, progreso, escalera, rakeback). El nivel NUNCA baja;
-  `lifetimeWagered` sólo se escribe con `$max`.
+  `lifetimeWagered` sólo se escribe con `$max`. **On/off desde el panel** (SOLO admin
+  general, `GET/POST /api/admin/vip-levels` → flag `vip_levels_disabled` en Config;
+  apagado = no acumula, no paga, la PWA oculta la sección; reactivar recupera todo
+  solo porque los buckets se recalculan con `$set`).
 - **Referidos**: preview/calculate (delta incremental sobre ledger de payouts) /
   payout (acredita con `giroxService.creditUserBalance`, reference
   `vip-refcom-<payoutId>` reusando el documento de intentos fallidos). El revenue sale
@@ -592,7 +594,7 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
 | `_runBonusStrategy` | 10 min | **APAGADO** (`BONUS_STRATEGY_DISABLED=true`) | step en StrategyEnrollment |
 | `_runDueSchedules` (ScheduledNotif) | 60 s | activo | lastRunAt |
 | `_pollPayingPayouts` | 45 s | activo (confirma pagos si el webhook no llegó) | handlePayoutStatusWebhook idempotente |
-| `_runVipTick` (niveles VIP) | 30 min | activo (`VIP_LEVELS_DISABLED=1` lo apaga) | buckets con `$set` idempotente + bono con reference `vip-lvl-*` (la plataforma dedupe) |
+| `_runVipTick` (niveles VIP) | 30 min | activo (se apaga desde el panel: Config → "Niveles VIP", flag `vip_levels_disabled` en Config, SOLO admin general — sin cache a propósito para que aplique al instante en todas las instancias) | buckets con `$set` idempotente + bono con reference `vip-lvl-*` (la plataforma dedupe) |
 | `_runVipSweepCheck` (sweep VIP) | 1 h (corre a las 05 ART) | activo | claim atómico por día en Config (`vip_sweep_day`) → instancia única |
 | `_runFcmPrune` | 24 h | activo | flag anti-overlap en memoria |
 | `fbAdsWebhook.startWorker` | 5 min | activo | nextRetryAt |

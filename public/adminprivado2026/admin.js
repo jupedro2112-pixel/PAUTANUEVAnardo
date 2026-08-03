@@ -5192,8 +5192,83 @@ async function loadCBUConfig() {
     loadHgcashConfig();
     // Cargar los porcentajes de reembolso (solo admin general)
     loadRefundPercents();
+    // Cargar el estado de los niveles VIP (solo admin general)
+    loadVipLevelsConfig();
     // Cargar los premios del fueguito (solo admin general)
     loadFireMilestones();
+}
+
+// ====== Niveles VIP: encendido/apagado (solo admin general) ======
+let _vipLevelsDisabled = null; // null = todavía no se cargó
+
+function _renderVipLevelsState() {
+    const line = document.getElementById('vipLevelsStatusLine');
+    const btn = document.getElementById('vipLevelsToggleBtn');
+    if (!line || !btn) return;
+    if (_vipLevelsDisabled === null) return;
+    if (_vipLevelsDisabled) {
+        line.textContent = '🔴 APAGADOS — no se acumula apostado ni se pagan bonos';
+        line.style.color = '#ff6b6b';
+        btn.innerHTML = '<span class="icon icon-save"></span> Encender niveles VIP';
+    } else {
+        line.textContent = '🟢 ACTIVADOS — acumulando apostado y pagando bonos de nivel';
+        line.style.color = '#00c853';
+        btn.innerHTML = '<span class="icon icon-save"></span> Apagar niveles VIP';
+    }
+    btn.disabled = false;
+}
+
+async function loadVipLevelsConfig() {
+    const form = document.getElementById('vipLevelsForm');
+    const header = document.getElementById('vipLevelsHeader');
+    try {
+        const r = await authFetch('/api/admin/vip-levels');
+        if (!r.ok) {
+            // Sólo admin general puede verlo: si no, ocultamos la card.
+            if (form) form.style.display = 'none';
+            if (header) header.style.display = 'none';
+            return;
+        }
+        if (form) form.style.display = '';
+        if (header) header.style.display = '';
+        const j = await r.json();
+        _vipLevelsDisabled = !!j.disabled;
+        _renderVipLevelsState();
+    } catch (e) {
+        console.error('Error cargando estado de niveles VIP:', e);
+    }
+}
+
+async function toggleVipLevels() {
+    if (_vipLevelsDisabled === null) return;
+    const apagar = !_vipLevelsDisabled; // lo que va a pasar si confirma
+    const aviso = apagar
+        ? '¿Apagar los niveles VIP?\n\n• Deja de acumularse el apostado\n• No se pagan más bonos de nivel ni rakeback\n• Los clientes dejan de ver la sección en su perfil\n\nNo se pierde ningún dato: al reactivar, todo se pone al día solo.'
+        : '¿Encender los niveles VIP?\n\n• El motor vuelve a acumular apostado (y recupera lo del período apagado)\n• Se pagan los bonos de los niveles que se alcancen\n• Los clientes vuelven a ver la sección en su perfil';
+    if (!confirm(aviso)) return;
+
+    const btn = document.getElementById('vipLevelsToggleBtn');
+    const msg = document.getElementById('vipLevelsMsg');
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando…'; }
+    try {
+        const r = await authFetch('/api/admin/vip-levels', {
+            method: 'POST',
+            body: JSON.stringify({ disabled: apagar })
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+            if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = j.error || 'No se pudo guardar.'; }
+            _renderVipLevelsState(); // re-habilita el botón con el estado real
+            return;
+        }
+        _vipLevelsDisabled = !!j.disabled;
+        _renderVipLevelsState();
+        if (msg) { msg.style.color = '#00c853'; msg.textContent = _vipLevelsDisabled ? '✅ Niveles VIP apagados.' : '✅ Niveles VIP encendidos.'; }
+        showToast(_vipLevelsDisabled ? 'Niveles VIP apagados' : 'Niveles VIP encendidos', 'success');
+    } catch (e) {
+        if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = 'Error de conexión.'; }
+        _renderVipLevelsState();
+    }
 }
 
 // ====== Porcentajes de reembolso (solo admin general) ======

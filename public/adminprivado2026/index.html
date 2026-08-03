@@ -620,6 +620,23 @@
                             </button>
                             <div id="refundPctMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
                         </div>
+                        <!-- Niveles VIP: encendido/apagado (solo admin general) -->
+                        <div class="panel-subheader" style="margin-top: 24px;" id="vipLevelsHeader">
+                            <h3>👑 Niveles VIP</h3>
+                        </div>
+                        <div class="cbu-form" id="vipLevelsForm">
+                            <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
+                                Sistema de niveles por <b>apostado acumulado</b> (Bronce → Diamante): bono automático al
+                                subir de nivel + rakeback semanal. Apagado: no se acumula, no se pagan bonos y el cliente
+                                no ve la sección en su perfil. <b>No se pierde nada al apagar</b>: al reactivarlo, el
+                                acumulado se pone al día solo. Solo el admin general puede cambiarlo.
+                            </p>
+                            <div id="vipLevelsStatusLine" style="font-size:13px;font-weight:bold;margin-bottom:10px;color:#aaa;">Cargando…</div>
+                            <button class="btn-primary" id="vipLevelsToggleBtn" onclick="toggleVipLevels()" disabled>
+                                <span class="icon icon-save"></span> Cargando…
+                            </button>
+                            <div id="vipLevelsMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
+                        </div>
                         <!-- Premios del Fueguito (solo admin general) -->
                         <div class="panel-subheader" style="margin-top: 24px;" id="fireMilestonesHeader">
                             <h3>🔥 Premios del Fueguito</h3>

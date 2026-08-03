@@ -24,7 +24,12 @@
  * reintenta CON LA MISMA reference (jamás paga dos veces; `duplicate:true`
  * indica que otra instancia ya lo pagó → no se re-notifica).
  *
- * Kill switch sin deploy: VIP_LEVELS_DISABLED=1.
+ * Kill switch: flag `vip_levels_disabled` en Config, editable desde el panel
+ * (sección Config, SOLO admin general — POST /api/admin/vip-levels). Se lee de la
+ * base en cada tick/request a propósito (sin cache): con multi-instancia en EB, un
+ * cache haría que el apagado tarde el TTL en llegar a las otras instancias — misma
+ * razón por la que getConfig no cachea (ver WORKLOG #91). Apagarlo NO pierde datos:
+ * al reactivar, el sweep recalcula los meses con $set y el acumulado se pone al día.
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -33,9 +38,20 @@ const { getPeriodRange } = require('../utils/periodKey');
 const AR_TZ = 'America/Argentina/Buenos_Aires';
 const DEFAULT_EPOCH = '2026-07'; // primer mes con datos en 1girox (migración 2026-07-31)
 const BATCH_SIZE = 100; // límite del POST /players/stats/batch
+const DISABLED_KEY = 'vip_levels_disabled';
 
-function isDisabled() {
-  return process.env.VIP_LEVELS_DISABLED === '1';
+/**
+ * ¿Los niveles VIP están apagados? Lee el flag de la base (default: ENCENDIDOS).
+ * Ante error de DB devuelve false: mejor un tick de más que congelar los niveles
+ * por un hipo de conexión.
+ */
+async function isDisabled(Config) {
+  try {
+    const doc = await Config.findOne({ key: DISABLED_KEY }).select('value').lean();
+    return !!(doc && doc.value === true);
+  } catch (e) {
+    return false;
+  }
 }
 
 function _epochMonthKey() {
@@ -117,7 +133,7 @@ async function claimDailySweep(Config, todayStr) {
  * @param {object} deps
  *   mode: 'tick' | 'sweep'
  *   girox, vipLevels, logger
- *   models: { User, VipWagerMonth, Transaction }
+ *   models: { User, VipWagerMonth, Transaction, Config }
  *   notifyLevelUp: async (userLean, level) => void  — avisa al cliente (chat+push).
  *     Sólo se llama cuando ESTA instancia pagó el bono (no en duplicate).
  * @returns resumen para logs
@@ -126,7 +142,7 @@ async function runSync(deps) {
   const { mode, girox, models, logger } = deps;
   const { User } = models;
 
-  if (isDisabled()) return { skipped: 'disabled' };
+  if (await isDisabled(models.Config)) return { skipped: 'disabled' };
   if (!girox.isEnabled()) return { skipped: 'girox-off' };
 
   const now = new Date();
@@ -321,6 +337,7 @@ module.exports = {
   runSync,
   claimDailySweep,
   isDisabled,
+  DISABLED_KEY,
   monthKeyAR,
   todayStrAR,
   hourAR,

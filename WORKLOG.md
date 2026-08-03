@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-03
 
+### 103. On/off de los niveles VIP desde el panel (solo admin general) — reemplaza la env
+- **Pedido del owner:** que los niveles se apaguen desde el administrador (solo admin
+  general), en vez de la env `VIP_LEVELS_DISABLED` (que se eliminó).
+- **Backend:** flag **`vip_levels_disabled` en Config** + `GET/POST /api/admin/vip-levels`
+  (adminMiddleware + re-chequeo `role==='admin'` explícito, mismo patrón que
+  refund-percents). Se guarda con `Config.set(..., req.user.username)` para que quede
+  registrado QUIÉN lo cambió. `vipLevelService.isDisabled(Config)` ahora lee de la base
+  **sin cache a propósito**: con multi-instancia en EB, un cache haría que el apagado
+  tarde en llegar a las otras instancias (misma razón por la que getConfig no cachea,
+  ver #91). Ante error de DB → se asume ENCENDIDO (mejor un tick de más que congelar
+  los niveles por un hipo de conexión). Lo chequean el tick, el sweep,
+  `/api/vip/status` y el claim de rakeback.
+- **Panel:** card "👑 Niveles VIP" en la sección Config (junto a % de reembolso y
+  fueguito), oculta para roles que no son admin general (mismo patrón: si el GET da
+  403, se esconde). Muestra el estado (🟢 ACTIVADOS / 🔴 APAGADOS) y un botón con
+  `confirm()` que explica las consecuencias antes de cambiar.
+- **Qué pasa al apagar:** el motor no acumula ni paga, y la PWA oculta la sección
+  (status responde `enabled:false`). **No se pierde nada**: al reactivar, el sweep
+  recalcula los meses con $set y el acumulado se pone al día solo.
+- **Validado:** `node --check` OK (server.js, vipLevelService.js, admin.js).
+  PROBAR tras deploy: la card aparece SOLO al admin general, apagar → el perfil de la
+  PWA deja de mostrar la sección VIP, encender → vuelve.
+
 ### 102. NIVELES VIP por apostado acumulado (réplica del programa de Stake) + rakeback semanal
 - **Pedido del owner:** replicar el sistema de niveles de Stake ("fuera del cashback",
   o sea ADEMÁS de los reembolsos que ya existen). Decisiones tomadas por el owner:

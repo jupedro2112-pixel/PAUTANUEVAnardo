@@ -6941,7 +6941,7 @@ function _vipLevelsPublic() {
 
 app.get('/api/vip/status', authMiddleware, async (req, res) => {
   try {
-    if (vipLevelService.isDisabled()) return res.json({ enabled: false });
+    if (await vipLevelService.isDisabled(Config)) return res.json({ enabled: false });
     const userId = req.user.userId;
 
     const user = await User.findOne({ id: userId }).select('vipLevel lifetimeWagered username').lean();
@@ -6999,7 +6999,7 @@ app.get('/api/vip/status', authMiddleware, async (req, res) => {
 
 app.post('/api/vip/rakeback/claim', authMiddleware, async (req, res) => {
   try {
-    if (vipLevelService.isDisabled()) return res.json({ success: false, message: 'Los niveles VIP no están disponibles.' });
+    if (await vipLevelService.isDisabled(Config)) return res.json({ success: false, message: 'Los niveles VIP no están disponibles.' });
     const userId = req.user.userId;
     const username = req.user.username;
 
@@ -7174,6 +7174,44 @@ app.post('/api/admin/refund-percents', authMiddleware, adminMiddleware, async (r
     res.json({ success: true, percents: next });
   } catch (error) {
     console.error('Error guardando porcentajes de reembolso:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================
+// NIVELES VIP — encendido/apagado (solo admin general)
+// ============================================
+// Flag `vip_levels_disabled` en Config (owner 2026-08-03: desde el panel, no por
+// env). Aplica a TODAS las instancias porque el motor y los endpoints lo leen de
+// la base en cada tick/request (sin cache — misma razón que getConfig, ver #91).
+// Apagado: el motor no acumula ni paga bonos, y la PWA oculta la sección VIP
+// (/api/vip/status responde enabled:false). NO se pierde nada: al reactivar, el
+// sweep recalcula los meses con $set y el acumulado se pone al día solo.
+app.get('/api/admin/vip-levels', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el admin general puede ver el estado de los niveles VIP.' });
+    }
+    const disabled = await vipLevelService.isDisabled(Config);
+    res.json({ disabled });
+  } catch (error) {
+    console.error('Error obteniendo estado de niveles VIP:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.post('/api/admin/vip-levels', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el admin general puede encender/apagar los niveles VIP.' });
+    }
+    const disabled = req.body && req.body.disabled === true;
+    // Config.set (no setConfig) para dejar registrado QUIÉN lo cambió (updatedBy).
+    await Config.set(vipLevelService.DISABLED_KEY, disabled, req.user.username);
+    logger.info(`[vip] niveles ${disabled ? 'APAGADOS' : 'ENCENDIDOS'} por ${req.user.username}`);
+    res.json({ success: true, disabled });
+  } catch (error) {
+    console.error('Error cambiando estado de niveles VIP:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
@@ -15096,7 +15134,8 @@ setInterval(function () { _pollPayingPayouts(); }, 45 * 1000);
 //   - sweep 1 vez por día a la madrugada (05 ART): TODOS los usuarios + cierra
 //     los meses pasados que falten (= el backfill). Instancia única por día vía
 //     claim atómico en Config — en multi-instancia sólo una lo corre.
-// Apagar sin deploy: VIP_LEVELS_DISABLED=1.
+// Apagar/encender SIN deploy: desde el panel (Config → "Niveles VIP", SOLO admin
+// general) — flag `vip_levels_disabled` en Config, aplica a todas las instancias.
 // ============================================================
 
 // Aviso al cliente cuando sube de nivel: mensaje de sistema en el chat + push.
@@ -15160,7 +15199,7 @@ const _vipSyncDeps = {
   vipLevels,
   logger,
   notifyLevelUp: _notifyVipLevelUp,
-  models: { User, VipWagerMonth, Transaction }
+  models: { User, VipWagerMonth, Transaction, Config }
 };
 
 let _vipTickRunning = false; // no encimar ticks si la plataforma viene lenta
@@ -15181,7 +15220,7 @@ async function _runVipTick() {
 
 async function _runVipSweepCheck() {
   try {
-    if (vipLevelService.isDisabled() || !girox.isEnabled()) return;
+    if (!girox.isEnabled() || await vipLevelService.isDisabled(Config)) return;
     const now = new Date();
     if (vipLevelService.hourAR(now) !== 5) return; // madrugada ART (poco juego, cupo libre)
     if (!await vipLevelService.claimDailySweep(Config, vipLevelService.todayStrAR(now))) return;
