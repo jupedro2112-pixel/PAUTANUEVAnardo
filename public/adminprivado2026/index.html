@@ -35,6 +35,34 @@
     <script src="/lib/firebase/9.1.2/firebase-messaging-compat.js"></script>
 </head>
 <body>
+<script>
+// Avisos de formulario en ESPAÑOL: el navegador los muestra en el idioma del
+// sistema (inglés en muchos equipos) ignorando el lang de la página. Mismo
+// interceptor que la PWA (ver public/index.html).
+document.addEventListener('invalid', function (ev) {
+    var el = ev.target;
+    if (!el || !el.validity || typeof el.setCustomValidity !== 'function') return;
+    var v = el.validity;
+    if (v.customError) return;
+    var msg = 'Revisá este campo.';
+    if (v.valueMissing) msg = 'Completá este campo.';
+    else if (v.tooShort) msg = 'Muy corto: mínimo ' + el.minLength + ' caracteres.';
+    else if (v.tooLong) msg = 'Muy largo: máximo ' + el.maxLength + ' caracteres.';
+    else if (v.typeMismatch && el.type === 'email') msg = 'Ingresá un email válido.';
+    else if (v.typeMismatch && el.type === 'url') msg = 'Ingresá una dirección válida (empieza con https://).';
+    else if (v.patternMismatch) msg = 'El formato no es válido.';
+    else if (v.rangeUnderflow) msg = 'El valor mínimo es ' + el.min + '.';
+    else if (v.rangeOverflow) msg = 'El valor máximo es ' + el.max + '.';
+    else if (v.badInput) msg = 'Ingresá solo números.';
+    el.setCustomValidity(msg);
+}, true);
+document.addEventListener('input', function (ev) {
+    if (ev.target && typeof ev.target.setCustomValidity === 'function') ev.target.setCustomValidity('');
+}, true);
+document.addEventListener('change', function (ev) {
+    if (ev.target && typeof ev.target.setCustomValidity === 'function') ev.target.setCustomValidity('');
+}, true);
+</script>
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">
         <div class="login-box">

@@ -296,6 +296,54 @@
     // DEFAULT = OSCURO (owner 2026-08-03): solo queda claro si el usuario eligió
     // claro explícitamente (waDark === '0').
     try { if (localStorage.getItem('waDark') !== '0') document.body.classList.add('wa-dark'); } catch (e) { document.body.classList.add('wa-dark'); }
+
+    // ============================================================
+    // AVISOS DE FORMULARIO EN ESPAÑOL (owner 2026-08-04)
+    // ============================================================
+    // Los globos de "Please fill out this field" / "Please lengthen this text..."
+    // los pone el NAVEGADOR en el idioma del sistema (inglés en muchos celulares),
+    // ignorando el lang="es" de la página. Acá se interceptan TODOS los campos de
+    // TODOS los formularios y se reemplaza el texto por uno en español. El custom
+    // validity se limpia al tipear para que el campo se revalide normal.
+    document.addEventListener('invalid', function (ev) {
+        var el = ev.target;
+        if (!el || !el.validity || typeof el.setCustomValidity !== 'function') return;
+        var v = el.validity;
+        var msg = '';
+        if (v.customError) return; // ya tiene un mensaje nuestro
+        if (v.valueMissing) {
+            msg = 'Completá este campo.';
+        } else if (v.tooShort) {
+            msg = (el.type === 'password')
+                ? 'La contraseña debe tener al menos ' + el.minLength + ' caracteres.'
+                : 'Muy corto: mínimo ' + el.minLength + ' caracteres.';
+        } else if (v.tooLong) {
+            msg = 'Muy largo: máximo ' + el.maxLength + ' caracteres.';
+        } else if (v.typeMismatch && el.type === 'email') {
+            msg = 'Ingresá un email válido (ej: nombre@correo.com).';
+        } else if (v.typeMismatch && el.type === 'url') {
+            msg = 'Ingresá una dirección válida (empieza con https://).';
+        } else if (v.patternMismatch) {
+            msg = 'El formato no es válido.';
+        } else if (v.rangeUnderflow) {
+            msg = 'El valor mínimo es ' + el.min + '.';
+        } else if (v.rangeOverflow) {
+            msg = 'El valor máximo es ' + el.max + '.';
+        } else if (v.badInput) {
+            msg = 'Ingresá solo números.';
+        } else {
+            msg = 'Revisá este campo.';
+        }
+        el.setCustomValidity(msg);
+    }, true);
+    document.addEventListener('input', function (ev) {
+        var el = ev.target;
+        if (el && typeof el.setCustomValidity === 'function') el.setCustomValidity('');
+    }, true);
+    document.addEventListener('change', function (ev) {
+        var el = ev.target;
+        if (el && typeof el.setCustomValidity === 'function') el.setCustomValidity('');
+    }, true);
 </script>
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">

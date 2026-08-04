@@ -8,6 +8,18 @@
 
 ## Sesión 2026-08-04
 
+### 116. Avisos de formulario del navegador en ESPAÑOL (PWA + panel)
+- **Síntoma (owner):** con contraseña corta o el número sin completar, el globo de
+  aviso salía EN INGLÉS ("Please fill out this field"). Son los mensajes NATIVOS
+  del navegador: salen en el idioma del SISTEMA e ignoran el `lang="es"`.
+- **Fix:** interceptor global del evento `invalid` (captura, aplica a TODOS los
+  formularios presentes y futuros) que reemplaza el texto vía `setCustomValidity`
+  con mensajes en español según el tipo de error (vacío, muy corto — con variante
+  para contraseñas —, email/URL inválidos, mín/máx, formato). Se limpia al tipear
+  (`input`/`change`) para que el campo se revalide normal. Mismo snippet en la PWA
+  (boot inline de index.html) y en el panel admin.
+- **Validado:** parse OK de ambos interceptores. SW a **v75**. Solo front.
+
 ### 115. El teléfono del cambio de clave obligatorio se puede OMITIR temporalmente
 - **Pedido del owner:** al entrar por el link del admin, el cambio de contraseña
   obligatorio está OK, pero el teléfono — que sigue siendo obligatorio a la larga —

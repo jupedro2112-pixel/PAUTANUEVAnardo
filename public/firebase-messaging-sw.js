@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v74'; // v74: teléfono omitible temporalmente en el cambio de clave obligatorio
+const CACHE_VERSION = 'v75'; // v75: avisos de formulario del navegador en español
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
