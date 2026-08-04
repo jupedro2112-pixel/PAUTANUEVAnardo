@@ -5978,6 +5978,27 @@ app.post('/api/messages/read/:userId', authMiddleware, adminMiddleware, async (r
   }
 });
 
+// El CLIENTE marca como leídos los mensajes que LE llegaron (los del agente).
+// Lo llama la PWA cuando muestra el chat → los ✓✓ del ADMIN en el panel se
+// pintan de celeste ('user_read_messages'). No toca los adminOnly (el cliente
+// nunca los ve, así que no puede "leerlos").
+app.post('/api/messages/read-received', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const r = await Message.updateMany(
+      { receiverId: userId, receiverRole: 'user', adminOnly: { $ne: true }, read: { $ne: true } },
+      { read: true }
+    );
+    if (r.modifiedCount > 0) {
+      notifyAdmins('user_read_messages', { userId, at: Date.now() });
+    }
+    res.json({ success: true, updated: r.modifiedCount || 0 });
+  } catch (error) {
+    console.error('Error marcando mensajes recibidos como leídos:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 // Guard anti "bienvenida-fantasma": versiones VIEJAS cacheadas de la PWA mandaban el
 // mensaje de bienvenida como si fuera el propio cliente (senderRole:'user'), con texto
 // hardcodeado y porcentajes viejos → aparecía "enviado por el cliente" con datos viejos.

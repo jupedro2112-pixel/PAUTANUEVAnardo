@@ -4,9 +4,31 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-03**
+> **Última actualización: 2026-08-04**
 
-## Sesión 2026-08-03
+## Sesión 2026-08-04
+
+### 114. Visto para el ADMIN, nivel VIP simplificado con T&C, "Página CASINO" en el menú y "Volver a Chat de cargas"
+- **Visto del admin (espejo del #108):** ahora también el AGENTE ve ✓✓ en sus
+  mensajes del panel — gris = enviado, celeste #53bdeb = el cliente lo vio en su
+  app. Backend: `POST /api/messages/read-received` (lo llama la PWA al mostrar el
+  chat — en loadMessages y al recibir un mensaje del agente con la app a la vista,
+  con throttle CON COLA de 4s para que el último visto nunca quede colgado; NO toca
+  los adminOnly) → marca `read:true` en los mensajes agente→cliente y emite
+  `user_read_messages` a los admins; el panel pinta los ticks del chat activo en
+  vivo. Ticks en `createMessageElement` del panel usando `message.read`.
+- **Nivel VIP simplificado (perfil):** afuera el "apostado total" y el "te faltan
+  $X de apuestas" — ahora es "🎁 Progreso de tu nivel para ganar $BONO" con barra y
+  % solamente. El detalle (cómo suma, rakeback, escalera completa con umbrales) se
+  movió a un desplegable "📄 Términos y condiciones" abajo (elemento <details>).
+- **"Página CASINO" en el menú ☰** (mismo SSO de `VIP.ui.enterCasino`) + card nueva
+  en Información del Servicio explicando que entra directo con la sesión iniciada.
+- **Casino embebido:** el botón "✕ Cerrar" del recuadro pasó a decir
+  "← Volver a Chat de cargas" (captura del owner).
+- **Validado:** `node --check` OK (server, chat, socket, refunds, ui, admin). SW a
+  **v73**. Back necesita redeploy (endpoint nuevo). PROBAR: mandar mensaje desde el
+  panel con el cliente mirando la app → ✓✓ celeste en vivo; perfil → progreso simple
+  + T&C desplegable; menú ☰ → Página CASINO entra logueado.
 
 ### 113. Bono de bienvenida con DOS tipos: monto sorpresa automático o bono en la próxima carga
 - **Pedido del owner:** que el bono del código pueda ser (a) un **monto sorpresa que

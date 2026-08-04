@@ -457,6 +457,11 @@
                 onclick="if(window.VIP&&VIP.refunds)VIP.refunds.showProfileModal()">
                 <span class="menu-item-icon">👤</span><span class="menu-item-label">Mi Perfil <span style="font-weight:600;color:#d4af37;font-size:11px;">(nivel y reembolsos)</span></span>
             </button>
+            <!-- Página CASINO: mismo SSO que el botón del dashboard (entra logueado). -->
+            <button class="menu-item" title="Entrar al casino con tu sesión iniciada" role="menuitem"
+                onclick="if(window.VIP&&VIP.ui&&VIP.ui.enterCasino)VIP.ui.enterCasino()">
+                <span class="menu-item-icon">🎰</span><span class="menu-item-label">Página CASINO <span style="font-weight:600;color:#00ff88;font-size:11px;">(entrás logueado)</span></span>
+            </button>
             <button class="menu-item referral-btn" id="referralBtn" title="Mis Referidos" role="menuitem">
                 <span class="menu-item-icon">🤝</span><span class="menu-item-label">Mis Referidos</span>
             </button>
@@ -1659,6 +1664,11 @@
                  RANGOS 3/6/10 (no los 20/10/5 viejos), niveles VIP con rakeback,
                  bono de instalación = 100% en la próxima carga (no $5.000). -->
             <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-card-icon">🎰</div>
+                    <div class="info-card-title">Página CASINO</div>
+                    <div class="info-card-desc">Tocá "Página CASINO" (en el menú ☰ o el botón del inicio) y entrás al casino directo, con tu sesión YA INICIADA — sin usuario ni contraseña.</div>
+                </div>
                 <div class="info-card">
                     <div class="info-card-icon">💰</div>
                     <div class="info-card-title">Reembolsos hasta 10%</div>

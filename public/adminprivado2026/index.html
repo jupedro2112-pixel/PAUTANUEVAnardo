@@ -316,6 +316,12 @@
                             <span id="chatBlockedReason" style="display:block;margin-top:3px;font-weight:400;opacity:.95"></span>
                         </div>
                         <!-- Alerta de POSIBLE MULTICUENTA — la llena renderFraudBanner() al abrir el chat -->
+                        <style>
+                            /* Visto estilo WhatsApp en los mensajes del agente. */
+                            .msg-ticks { display:inline-flex; align-items:center; vertical-align:middle; margin-left:4px; color:#8696a0; }
+                            .msg-ticks svg { display:block; }
+                            .msg-ticks.msg-read { color:#53bdeb; }
+                        </style>
                         <div id="chatFraudBanner" style="display:none;"></div>
                         <!-- Bono 100% pendiente — lo llena renderFirstChargeBonusBanner() al abrir el chat -->
                         <div id="chatBonusBanner" style="display:none;"></div>

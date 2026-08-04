@@ -906,8 +906,8 @@ VIP.ui._showCasinoFrame = function() {
             '↗ Abrir aparte</button>' +
           '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
             'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
-            'border-radius:20px;padding:6px 16px;font-size:14px;font-weight:700;cursor:pointer;">' +
-            '✕ Cerrar</button>' +
+            'border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;">' +
+            '← Volver a Chat de cargas</button>' +
         '</div>' +
       '</div>' +
       '<div id="casinoFrameStatus" style="flex:1;display:flex;flex-direction:column;gap:14px;' +

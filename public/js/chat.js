@@ -229,6 +229,10 @@ VIP.chat = (function () {
                     VIP.state.lastMessagesHash = messagesHash;
                     renderMessages(messages);
                 }
+
+                // El cliente acaba de VER el chat → avisar para que los ✓✓ del
+                // agente en el panel se pinten de celeste (visto).
+                markReceivedAsRead();
             } else {
                 console.error('[loadMessages] Error en respuesta:', response.status);
             }
@@ -239,6 +243,28 @@ VIP.chat = (function () {
         } finally {
             VIP.state.isLoadingMessages = false;
         }
+    }
+
+    // Marca como LEÍDOS los mensajes que el agente le mandó al cliente (visto de
+    // WhatsApp del lado del ADMIN). Throttle CON COLA: una ráfaga de llamadas =
+    // 1 request ahora + 1 al final — así el último mensaje nunca queda sin visto.
+    let _lastReadReceiptAt = 0;
+    let _readReceiptTimer = null;
+    function markReceivedAsRead() {
+        if (!VIP.state.currentToken) return;
+        const now = Date.now();
+        const wait = 4000 - (now - _lastReadReceiptAt);
+        if (wait > 0) {
+            if (!_readReceiptTimer) {
+                _readReceiptTimer = setTimeout(() => { _readReceiptTimer = null; markReceivedAsRead(); }, wait);
+            }
+            return;
+        }
+        _lastReadReceiptAt = now;
+        fetch(`${VIP.config.API_URL}/api/messages/read-received`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+        }).catch(() => {});
     }
 
     async function sendMessage() {
@@ -672,6 +698,7 @@ VIP.chat = (function () {
         scrollToBottom,
         openLightbox,
         closeLightbox,
+        markReceivedAsRead,
         createMessageElement,
         addMessageToChat,
         renderMessages,

@@ -1097,6 +1097,17 @@ function initSocket() {
     });
     
     // CHAT CLOSED - Mantener chat abierto para seguir respondiendo
+    // El CLIENTE vio los mensajes del agente en su app → pintar los ✓✓ del
+    // chat activo de celeste (visto), en vivo.
+    socket.on('user_read_messages', (data) => {
+        if (!data || data.userId !== activeConversationId) return;
+        if (!elements.chatMessages) return;
+        elements.chatMessages.querySelectorAll('.message.outgoing .msg-ticks').forEach((el) => {
+            el.classList.add('msg-read');
+            el.title = 'Visto por el cliente';
+        });
+    });
+
     socket.on('chat_closed', (data) => {
         if (data.userId === selectedUserId) {
             showToast('Chat movido a Cerrados. Puedes seguir respondiendo.', 'info');
@@ -6254,13 +6265,22 @@ function createMessageElement(message) {
     }
     
     const isOutgoing = getMessageType(message) === 'outgoing';
-    
+
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${isOutgoing ? 'outgoing' : 'incoming'}`;
     msgDiv.dataset.messageid = message.id;
-    
+
     const time = formatChatTime(message.timestamp || new Date());
     const content = formatMessageContent(message);
+
+    // Visto estilo WhatsApp en los mensajes DEL AGENTE: ✓✓ gris = enviado,
+    // ✓✓ celeste (#53bdeb) = el cliente lo vio en su app (evento
+    // user_read_messages lo pinta en vivo).
+    const ticks = isOutgoing
+        ? ` <span class="msg-ticks${message.read ? ' msg-read' : ''}" title="${message.read ? 'Visto por el cliente' : 'Enviado'}">` +
+          `<svg viewBox="0 0 18 12" width="16" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+          `<path d="M1.3 6.8l3.1 3.1L10.9 3.2"/><path d="M7.6 9.6l1.3 1.3L16.7 3.2"/></svg></span>`
+        : '';
 
     msgDiv.innerHTML = `
         <div class="message-header">
@@ -6268,7 +6288,7 @@ function createMessageElement(message) {
             <span>${escapeHtml(message.senderUsername || 'Usuario')}</span>
         </div>
         <div class="message-content">${content}</div>
-        <div class="message-time">${time}</div>
+        <div class="message-time">${time}${ticks}</div>
     `;
 
     const lightboxImg = msgDiv.querySelector('[data-lightbox-src]');

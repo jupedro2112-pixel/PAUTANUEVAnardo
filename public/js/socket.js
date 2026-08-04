@@ -148,6 +148,11 @@ VIP.socket = (function () {
                         '/favicon.ico'
                     );
                 }
+                // Mensaje del agente con la app A LA VISTA = el cliente lo vio →
+                // avisar para que el ✓✓ del admin en el panel se pinte celeste.
+                if (message.senderRole !== 'user' && tabVisible && VIP.chat.markReceivedAsRead) {
+                    VIP.chat.markReceivedAsRead();
+                }
             }
 
             requestAnimationFrame(() => {

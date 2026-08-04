@@ -422,7 +422,10 @@ VIP.refunds = (function () {
         const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR');
 
         // ==========================================================
-        // Sección NIVEL VIP (apostado acumulado de por vida)
+        // Sección NIVEL VIP — versión SIMPLE (owner 2026-08-04): sin números
+        // de apuestas ni umbrales a la vista, solo "progreso para ganar $X"
+        // (el bono del próximo nivel). El detalle fino de cómo funciona vive
+        // en el desplegable de Términos y condiciones, abajo.
         // ==========================================================
         let vipHtml = '';
         let vipLaddersHtml = '';
@@ -431,16 +434,22 @@ VIP.refunds = (function () {
             const next = v.next;
             const titulo = lvl
                 ? `<span style="font-size:15px;font-weight:900;color:${lvl.color};">${lvl.emoji} Nivel ${lvl.name}</span>`
-                : `<span style="font-size:14px;font-weight:900;color:#aaa;">Todavía sin nivel VIP</span>`;
+                : `<span style="font-size:14px;font-weight:900;color:#fff;">⭐ Tu camino VIP</span>`;
+            const pct = Math.min(100, Math.max(1, Math.round(v.progressPct || 0)));
             const barra = next
                 ? `<div style="margin-top:8px;">
-                     <div style="height:10px;background:rgba(255,255,255,0.09);border-radius:6px;overflow:hidden;">
-                       <div style="height:100%;width:${Math.max(1, Math.round(v.progressPct || 0))}%;
-                                   background:linear-gradient(90deg,#d4af37,#ffd700);border-radius:6px;"></div>
+                     <div style="font-size:12px;color:#ffd479;font-weight:800;margin-bottom:6px;line-height:1.4;">
+                       🎁 Progreso de tu nivel para ganar <span style="color:#ffd700;">${money(next.levelUpBonusArs)}</span>
                      </div>
-                     <div style="font-size:10.5px;color:#ffd479;margin-top:5px;line-height:1.4;">
-                       Te faltan <strong>${money(v.faltaParaSubir)}</strong> de apuestas para
-                       ${next.emoji} <strong>${next.name}</strong> (bono de ${money(next.levelUpBonusArs)} al llegar)
+                     <div style="display:flex;align-items:center;gap:8px;">
+                       <div style="flex:1;height:12px;background:rgba(255,255,255,0.09);border-radius:7px;overflow:hidden;">
+                         <div style="height:100%;width:${pct}%;
+                                     background:linear-gradient(90deg,#d4af37,#ffd700);border-radius:7px;"></div>
+                       </div>
+                       <span style="font-size:11px;font-weight:900;color:#ffd700;flex-shrink:0;">${pct}%</span>
+                     </div>
+                     <div style="font-size:10.5px;color:#999;margin-top:5px;">
+                       Jugá y tu progreso sube solo. Al llegar a ${next.emoji} ${next.name}, el bono se acredita automáticamente.
                      </div>
                    </div>`
                 : `<div style="font-size:11px;color:#7fe07f;margin-top:5px;">¡Estás en el nivel máximo! 👑</div>`;
@@ -474,20 +483,8 @@ VIP.refunds = (function () {
                             </div>`;
             }
 
-            vipHtml = `
-                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">👑 Tu nivel VIP</div>
-                <div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:14px;
-                            border:1px solid rgba(212,175,55,0.25);">
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                        ${titulo}
-                        <span style="font-size:10.5px;color:#aaa;text-align:right;">Apostado total<br>
-                            <strong style="color:#fff;font-size:12px;">${money(v.lifetimeWagered)}</strong></span>
-                    </div>
-                    ${barra}
-                    ${rakeHtml}
-                </div>`;
-
-            // Escalera completa de niveles (viene del backend, no se duplica acá).
+            // Escalera completa (viene del backend, no se duplica acá). Vive DENTRO
+            // de los Términos y condiciones — no a la vista (pedido del owner).
             const curIdx = v.levelIndex || 0;
             vipLaddersHtml = (v.levels || []).map((l) => {
                 const alcanzado = l.idx <= curIdx;
@@ -503,6 +500,41 @@ VIP.refunds = (function () {
                                 +${money(l.levelUpBonusArs)} · ${l.rakebackPct}%</span>
                         </div>`;
             }).join('');
+
+            const terminos = `
+                <details style="margin-top:10px;">
+                    <summary style="cursor:pointer;font-size:11px;color:#999;font-weight:700;
+                                    -webkit-tap-highlight-color:rgba(212,175,55,.2);">
+                        📄 Términos y condiciones — cómo funciona el nivel VIP
+                    </summary>
+                    <div style="margin-top:8px;font-size:11px;color:#bbb;line-height:1.55;">
+                        <p style="margin:0 0 8px;">
+                            • Tu progreso sube con <strong>todo lo que apostás en el casino</strong>,
+                            ganes o pierdas. Se acumula de por vida y <strong>nunca baja</strong>.</p>
+                        <p style="margin:0 0 8px;">
+                            • Al completar el progreso subís de nivel y el <strong>bono se acredita
+                            automáticamente</strong> en tu cuenta. Cada nivel paga más que el anterior.</p>
+                        <p style="margin:0 0 8px;">
+                            • Desde 🥉 Bronce destrabás el <strong>rakeback semanal</strong>: todas las
+                            semanas te devolvemos un % de lo que apostaste la semana anterior (lunes a
+                            domingo), ganes o pierdas. El % crece con tu nivel.</p>
+                        <p style="margin:0 0 10px;">
+                            • Cuenta solo el juego de casino. El apostado se actualiza
+                            periódicamente, puede demorar unos minutos en reflejarse.</p>
+                        <div style="font-size:11.5px;font-weight:800;color:#d4af37;margin-bottom:6px;">Escalera completa</div>
+                        <div style="display:flex;flex-direction:column;gap:5px;">${vipLaddersHtml}</div>
+                    </div>
+                </details>`;
+
+            vipHtml = `
+                <div style="font-size:13px;font-weight:800;color:#d4af37;margin-bottom:8px;">👑 Tu nivel VIP</div>
+                <div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:14px;
+                            border:1px solid rgba(212,175,55,0.25);">
+                    ${titulo}
+                    ${barra}
+                    ${rakeHtml}
+                    ${terminos}
+                </div>`;
         }
 
         // ==========================================================
@@ -589,14 +621,6 @@ VIP.refunds = (function () {
 
                 <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 8px;">Escala de reembolsos</div>
                 <div style="display:flex;flex-direction:column;gap:6px;">${tiersHtml}</div>
-
-                ${vipLaddersHtml ? `
-                <div style="font-size:13px;font-weight:800;color:#d4af37;margin:14px 0 4px;">Escalera de niveles VIP</div>
-                <div style="font-size:10.5px;color:#999;margin-bottom:8px;line-height:1.4;">
-                    Subís por TODO lo que apostás (de por vida, nunca baja). Cada nivel te da un
-                    bono al llegar y un % de rakeback semanal.
-                </div>
-                <div style="display:flex;flex-direction:column;gap:5px;">${vipLaddersHtml}</div>` : ''}
 
                 <button type="button" onclick="VIP.refunds.closeProfileModal()"
                     style="width:100%;margin-top:16px;background:linear-gradient(135deg,#6a0dad,#9b30ff);color:#fff;
