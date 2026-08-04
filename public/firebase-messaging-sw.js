@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v73'; // v73: visto del admin, nivel VIP simple con T&C, Página CASINO en menú
+const CACHE_VERSION = 'v74'; // v74: teléfono omitible temporalmente en el cambio de clave obligatorio
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

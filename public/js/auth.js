@@ -594,6 +594,14 @@ VIP.auth = (function () {
             whatsappInfo.textContent = verifiedPhone ? `✅ Teléfono verificado: ${verifiedPhone}` : '';
         }
 
+        // "Omitir por ahora": SOLO en el cambio obligatorio (primer ingreso, link
+        // de acceso) y solo si no tiene teléfono verificado. Deja entrar a conocer
+        // la página; el retiro va a exigir la verificación por SMS igual.
+        const skipPhoneBtn = document.getElementById('changePasswordSkipPhoneBtn');
+        if (skipPhoneBtn) {
+            skipPhoneBtn.style.display = (!verifiedPhone && VIP.state.passwordChangePending) ? '' : 'none';
+        }
+
         // Campo "contraseña actual": se pide solo en el cambio voluntario con
         // teléfono ya verificado (caso sin OTP). En el cambio obligatorio de
         // primer ingreso o en el alta de teléfono (con OTP) no se pide.
@@ -676,8 +684,32 @@ VIP.auth = (function () {
         }, 1000);
     }
 
+    // Flag de UN uso: lo prende el botón "Omitir por ahora" justo antes de llamar
+    // a handleChangePassword — permite guardar la clave sin teléfono UNA vez.
+    let _skipPhoneOnce = false;
+
+    function skipPhoneAndContinue() {
+        const ok = confirm(
+            '¿Omitir la verificación del teléfono POR AHORA?\n\n' +
+            'Podés entrar y conocer la página igual, pero más adelante vas a tener que verificar tu número por SMS sí o sí:\n\n' +
+            '• Es OBLIGATORIO para poder RETIRAR tus premios.\n' +
+            '• Sirve para evitar cuentas duplicadas.\n\n' +
+            '¿Continuar sin verificar ahora?'
+        );
+        if (!ok) return;
+        const input = document.getElementById('changePasswordWhatsApp');
+        if (input) input.value = '';   // por si tipeó algo a medias
+        _skipPhoneOnce = true;
+        handleChangePassword();
+    }
+
     async function handleChangePassword(e) {
         if (e) e.preventDefault();
+
+        // Capturar y resetear el flag de "omitir" SIEMPRE (aunque falle la
+        // validación de contraseña, el próximo submit normal no lo hereda).
+        const skipPhone = _skipPhoneOnce;
+        _skipPhoneOnce = false;
 
         const newPassword = document.getElementById('newPasswordInput').value;
         const confirmPassword = document.getElementById('confirmPasswordInput').value;
@@ -736,6 +768,24 @@ VIP.auth = (function () {
 
         // CASO B: se está agregando o cambiando teléfono → OTP obligatorio.
         if (!whatsappFull) {
+            // OMITIR TEMPORAL (solo cambio obligatorio): guarda la clave sin
+            // teléfono. Queda sin verificar → el banner "Verificá tu teléfono"
+            // sigue visible y el RETIRO lo exige sí o sí (flujo existente).
+            if (skipPhone && VIP.state.passwordChangePending) {
+                await _commitPasswordChange({
+                    newPassword,
+                    closeAllSessions,
+                    phone: null,
+                    otpCode: null,
+                    currentPassword,
+                    errorDiv
+                });
+                // Sólo si el cambio salió bien (el commit apaga el pending).
+                if (!VIP.state.passwordChangePending) {
+                    VIP.ui.showToast('📱 Recordá: para RETIRAR vas a tener que verificar tu teléfono por SMS.', 'info');
+                }
+                return;
+            }
             errorDiv.textContent = 'El número de WhatsApp es obligatorio (más de 10 dígitos con prefijo internacional)';
             errorDiv.classList.add('show');
             return;
@@ -1405,6 +1455,7 @@ VIP.auth = (function () {
         ensureUserLoaded,
         initializeSession,
         handleChangePassword,
+        skipPhoneAndContinue,
         handleChangePasswordOtpVerify,
         handleChangePasswordOtpResend,
         handleChangePasswordOtpBack,

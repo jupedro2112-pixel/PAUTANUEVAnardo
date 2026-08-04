@@ -458,6 +458,10 @@ function setupEventListeners() {
         }
 
         // Cambio de contraseña — entrada temporal (fallback cuando el SMS no llega)
+        // "Omitir por ahora" el teléfono en el cambio obligatorio de contraseña.
+        const cpSkipPhoneBtn = document.getElementById('changePasswordSkipPhoneBtn');
+        if (cpSkipPhoneBtn) cpSkipPhoneBtn.addEventListener('click', VIP.auth.skipPhoneAndContinue);
+
         const cpTemporalBtn = document.getElementById('changePasswordTemporalBtn');
         if (cpTemporalBtn) cpTemporalBtn.addEventListener('click', VIP.auth.handleChangePasswordTemporalEntry);
         const cpTemporalOkBtn = document.getElementById('changePasswordTemporalOkBtn');

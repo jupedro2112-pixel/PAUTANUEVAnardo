@@ -8,6 +8,28 @@
 
 ## Sesión 2026-08-04
 
+### 115. El teléfono del cambio de clave obligatorio se puede OMITIR temporalmente
+- **Pedido del owner:** al entrar por el link del admin, el cambio de contraseña
+  obligatorio está OK, pero el teléfono — que sigue siendo obligatorio a la larga —
+  tiene que poder omitirse temporalmente para que el cliente conozca la página; al
+  RETIRAR sí o sí debe verificar; y al omitir, avisarle que más adelante va a tener
+  que verificar por SMS para evitar cuentas duplicadas.
+- **Front only** (el backend YA soportaba cambiar la clave sin teléfono y el retiro
+  YA exige teléfono verificado en 3 gates del server — verificado):
+  - Botón **"⏭ Omitir por ahora (lo verificás más adelante)"** bajo el campo de
+    WhatsApp — visible SOLO en el cambio obligatorio y sin teléfono verificado.
+  - Al tocarlo: `confirm()` con el aviso ("podés entrar igual, pero verificar por
+    SMS va a ser OBLIGATORIO para retirar y evita cuentas duplicadas") → guarda la
+    clave sin teléfono (flag de un solo uso `_skipPhoneOnce`, se resetea siempre
+    para que un submit normal no lo herede) + toast recordatorio al éxito.
+  - Después de omitir: el banner "Verificá tu teléfono" (existente) queda visible
+    empujando la verificación, y el retiro la exige (flujo existente).
+  - Hint del campo actualizado: "Obligatorio para RETIRAR y recuperar tu cuenta".
+- **Validado:** `node --check` OK (auth.js, app.js). SW a **v74**. Solo front — no
+  necesita redeploy del back (pero conviene ir junto con lo pendiente). PROBAR:
+  entrar con link de acceso → crear clave → "Omitir por ahora" → entra y ve el
+  banner de verificación; intentar retirar → exige SMS.
+
 ### 114. Visto para el ADMIN, nivel VIP simplificado con T&C, "Página CASINO" en el menú y "Volver a Chat de cargas"
 - **Visto del admin (espejo del #108):** ahora también el AGENTE ve ✓✓ en sus
   mensajes del panel — gris = enviado, celeste #53bdeb = el cliente lo vio en su
