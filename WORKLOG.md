@@ -8,6 +8,24 @@
 
 ## Sesión 2026-08-05
 
+### 130. FIX links con vipcargas.com en AWS: PUBLIC_BASE_URL pasó a getter LAZY
+- **Síntoma (owner):** en el entorno de AWS, los links de acceso salían con
+  `vipcargas.com` aunque `/1girox/prod/PUBLIC_BASE_URL` estaba PERFECTO
+  (verificado por CloudShell) y se reiniciara el server.
+- **Causa raíz:** `const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || ...)`
+  se evaluaba AL REQUIRE, pero en EB esa env llega desde SSM en el bootstrap
+  ASYNC (después) → la const quedaba clavada en el default. La trampa exacta
+  contra la que avisa CLAUDE.md (lazy getters de JWT_SECRET). En Render no se
+  notaba porque las env llegan directas al proceso.
+- **Fix:** la const es ahora **`getPublicBaseUrl()`** (lee process.env en cada
+  llamada; comentario "No volver a const"). Actualizados los 4 usos: link de
+  acceso (`issueAccessLinkFor`), link del comprobante de pago, y los 2 renders
+  de HTML con placeholder (index + admin). Default del fallback actualizado a
+  `https://cargas1girox.com` (el dominio canónico nuevo).
+- **Validado:** `node --check` OK. **Back necesita redeploy** (es cambio de
+  código: en AWS subir zip nuevo, no alcanza el restart). PROBAR: generar link
+  → sale `https://cargas1girox.com/?acceso=...`.
+
 ### 129. Visto del agente en el panel: verde brillante + etiqueta "Visto" (chau confusión gris/celeste)
 - **Síntoma (owner, captura):** en la burbuja violeta del panel, los ✓✓ celestes
   (#53bdeb, leído) casi no se distinguían de los grises (enviado).

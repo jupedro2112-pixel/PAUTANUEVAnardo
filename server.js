@@ -880,9 +880,8 @@ app.get(['/adminprivado2026', '/adminprivado2026/'], adminHostCheck, (req, res) 
     if (!content) return res.status(500).send('Error loading admin page');
     // Inyectar la URL pública canónica (vipcargas.com) para que el admin
     // genere los links de pauta con el dominio correcto y no con el de AWS.
-    // El PUBLIC_BASE_URL viene de env var; ver constante más abajo en este archivo.
-    const publicBaseUrl = (process.env.PUBLIC_BASE_URL || 'https://vipcargas.com').replace(/\/$/, '');
-    _adminHtmlRendered = content.replace(/__VIP_PUBLIC_BASE_URL_PLACEHOLDER__/g, publicBaseUrl);
+    // El PUBLIC_BASE_URL viene de env var; getter lazy más abajo en este archivo.
+    _adminHtmlRendered = content.replace(/__VIP_PUBLIC_BASE_URL_PLACEHOLDER__/g, getPublicBaseUrl());
   }
   const rendered = _adminHtmlRendered;
   res.setHeader('Content-Type', 'text/html');
@@ -1875,7 +1874,7 @@ async function maybeSendPayoutReceipt(payout) {
     }
 
     // 2) Link al PDF oficial (siempre). Si no se pudo mandar la foto, este es el comprobante principal.
-    const link = `${PUBLIC_BASE_URL}/api/payout-receipt/${payout.id}`;
+    const link = `${getPublicBaseUrl()}/api/payout-receipt/${payout.id}`;
     const linkMsg = photoSent
       ? `🧾 Comprobante oficial (PDF): ${link}`
       : `🧾✅ Comprobante de tu pago de $${Number(payout.amount).toLocaleString('es-AR')}:\n${link}`;
@@ -8749,9 +8748,15 @@ app.post('/api/admin/send-notification', authMiddleware, adminMiddleware, async 
 // NOTE: readFileSafe() is defined above, in the ADMIN PAGE SECURITY section.
 
 // Dominio público canónico (el que ven los clientes). Se usa para generar
-// los links de pauta en el admin y para cualquier referencia absoluta a la
-// home. Default: vipcargas.com (configurable por env var).
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://vipcargas.com').replace(/\/$/, '');
+// los links de acceso/comprobantes y cualquier referencia absoluta a la home.
+// ⚠️ GETTER LAZY A PROPÓSITO (fix 2026-08-05): en AWS EB esta env var llega
+// desde SSM en el bootstrap ASYNC, DESPUÉS del require. La const que había acá
+// se evaluaba antes y quedaba clavada en el default aunque el parámetro
+// estuviera perfecto (los links de acceso salían con vipcargas.com). Misma
+// regla que los lazy getters de JWT_SECRET (ver CLAUDE.md). No volver a const.
+function getPublicBaseUrl() {
+  return (process.env.PUBLIC_BASE_URL || 'https://cargas1girox.com').replace(/\/$/, '');
+}
 
 // ── Cookie de campaña (pauta) ──────────────────────────────────────────────
 // Cuando un visitante entra por una vanity URL de pauta (ej: /santinopauta) el
@@ -8813,7 +8818,7 @@ function renderIndexHtml(extras = {}) {
     const pixelId = (process.env.META_PIXEL_ID || '').trim();
     _indexHtmlBase = content
       .replace(/__META_PIXEL_ID_PLACEHOLDER__/g, pixelId)
-      .replace(/__VIP_PUBLIC_BASE_URL_PLACEHOLDER__/g, PUBLIC_BASE_URL);
+      .replace(/__VIP_PUBLIC_BASE_URL_PLACEHOLDER__/g, getPublicBaseUrl());
   }
   return _indexHtmlBase.replace(/__VIP_CAMPAIGN_CODE_PLACEHOLDER__/g, extras.campaignCode || '');
 }
@@ -13959,7 +13964,7 @@ async function issueAccessLinkFor(userId) {
   const token = crypto.randomBytes(24).toString('base64url');
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   await User.updateOne({ id: userId }, { $set: { accessLinkHash: hash, accessLinkCreatedAt: new Date() } });
-  return `${PUBLIC_BASE_URL}/?acceso=${token}`;
+  return `${getPublicBaseUrl()}/?acceso=${token}`;
 }
 app.post('/api/admin/users/:userId/access-link', authMiddleware, adminMiddleware, async (req, res) => {
   try {
