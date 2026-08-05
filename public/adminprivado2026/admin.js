@@ -6475,10 +6475,13 @@ function createMessageElement(message) {
     // Visto estilo WhatsApp en los mensajes DEL AGENTE: ✓✓ gris = enviado,
     // ✓✓ celeste (#53bdeb) = el cliente lo vio en su app (evento
     // user_read_messages lo pinta en vivo).
+    // La etiqueta "Visto" va SIEMPRE en el markup y la muestra el CSS solo con
+    // .msg-read → el pintado en vivo (user_read_messages) la enciende sin JS extra.
     const ticks = isOutgoing
         ? ` <span class="msg-ticks${message.read ? ' msg-read' : ''}" title="${message.read ? 'Visto por el cliente' : 'Enviado'}">` +
           `<svg viewBox="0 0 18 12" width="16" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
-          `<path d="M1.3 6.8l3.1 3.1L10.9 3.2"/><path d="M7.6 9.6l1.3 1.3L16.7 3.2"/></svg></span>`
+          `<path d="M1.3 6.8l3.1 3.1L10.9 3.2"/><path d="M7.6 9.6l1.3 1.3L16.7 3.2"/></svg>` +
+          `<span class="msg-read-label">Visto</span></span>`
         : '';
 
     msgDiv.innerHTML = `

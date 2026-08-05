@@ -346,9 +346,16 @@ document.addEventListener('change', function (ev) {
                         <!-- Alerta de POSIBLE MULTICUENTA — la llena renderFraudBanner() al abrir el chat -->
                         <style>
                             /* Visto estilo WhatsApp en los mensajes del agente. */
-                            .msg-ticks { display:inline-flex; align-items:center; vertical-align:middle; margin-left:4px; color:#8696a0; }
+                            /* Visto de los mensajes del agente. El celeste #53bdeb original se
+                               confundía con el gris sobre la burbuja violeta (owner 2026-08-05):
+                               ahora NO leído = blanco translúcido bien apagado, LEÍDO = verde
+                               brillante + la palabra "Visto" (aparece sola por CSS al sumarse
+                               la clase .msg-read — el flip en vivo no cambia). */
+                            .msg-ticks { display:inline-flex; align-items:center; vertical-align:middle; margin-left:4px; color:rgba(255,255,255,0.4); }
                             .msg-ticks svg { display:block; }
-                            .msg-ticks.msg-read { color:#53bdeb; }
+                            .msg-ticks.msg-read { color:#00e676; filter:drop-shadow(0 0 3px rgba(0,230,118,0.55)); }
+                            .msg-read-label { display:none; font-size:9.5px; font-weight:800; letter-spacing:.3px; margin-left:3px; }
+                            .msg-ticks.msg-read .msg-read-label { display:inline; }
                         </style>
                         <div id="chatFraudBanner" style="display:none;"></div>
                         <!-- Bono 100% pendiente — lo llena renderFirstChargeBonusBanner() al abrir el chat -->

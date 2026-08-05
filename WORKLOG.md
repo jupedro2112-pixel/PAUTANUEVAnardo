@@ -8,6 +8,15 @@
 
 ## Sesión 2026-08-05
 
+### 129. Visto del agente en el panel: verde brillante + etiqueta "Visto" (chau confusión gris/celeste)
+- **Síntoma (owner, captura):** en la burbuja violeta del panel, los ✓✓ celestes
+  (#53bdeb, leído) casi no se distinguían de los grises (enviado).
+- **Fix (solo CSS + markup):** NO leído = ✓✓ blanco translúcido bien apagado;
+  LEÍDO = ✓✓ **verde #00e676 con glow** + la palabra **"Visto"** al lado. La
+  etiqueta va siempre en el markup y la muestra el CSS con `.msg-read` → el
+  pintado en vivo (`user_read_messages` agrega la clase) la enciende sin tocar
+  JS. Panel: recargar. Los ✓✓ del CLIENTE en la PWA no se tocaron.
+
 ### 128. Cabecera del chat: "Soporte 1Girox" → "Cargas 1Girox"
 - Pedido del owner. Cambiado el nombre de la cabecera del chat de la PWA (y el
   alt del avatar). SW a **v84**. Solo texto/front.
