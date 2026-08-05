@@ -1325,9 +1325,10 @@ VIP.auth = (function () {
         sendBtn.textContent = '📝 Crear Cuenta';
         sendBtn.onclick = handleRegisterDirect;
 
-        // El usuario de registro arranca siempre con "VIP"; el cliente completa.
+        // El usuario de registro arranca con "girox" (antes "VIP"); el cliente
+        // completa — y lo puede BORRAR si quiere otro nombre, igual que antes.
         const ru = document.getElementById('registerUsername');
-        if (ru && !ru.value.trim()) ru.value = 'VIP';
+        if (ru && !ru.value.trim()) ru.value = 'girox';
     }
 
     // ============================================

@@ -8,6 +8,13 @@
 
 ## Sesión 2026-08-05
 
+### 127. Prefijo default del registro: "VIP" → "girox"
+- **Pedido del owner:** en el registro manual de la PWA, el campo de usuario
+  venía pre-cargado con "VIP" — ahora arranca con **"girox"** (placeholder
+  "giroxtuusuario"). Sigue siendo BORRABLE como antes (es solo un default, no un
+  prefijo forzado). Cambiado en index.html (value/placeholder) y auth.js (el
+  re-fill al mostrar el form). SW a **v83**. Solo front.
+
 ### 126. Los publisher_admin ahora generan LINKS DE ACCESO (al crear y regenerable)
 - **Pedido del owner:** el alta de usuarios del publicista no entregaba el link
   de acceso de un solo uso (#111 era exclusivo de admin general/depositor) y
