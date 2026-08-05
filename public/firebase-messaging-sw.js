@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v83'; // v83: prefijo default del registro "VIP" → "girox"
+const CACHE_VERSION = 'v84'; // v84: cabecera del chat "Soporte 1Girox" → "Cargas 1Girox"
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

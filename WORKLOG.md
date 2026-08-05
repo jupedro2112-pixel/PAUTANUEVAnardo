@@ -8,6 +8,10 @@
 
 ## Sesión 2026-08-05
 
+### 128. Cabecera del chat: "Soporte 1Girox" → "Cargas 1Girox"
+- Pedido del owner. Cambiado el nombre de la cabecera del chat de la PWA (y el
+  alt del avatar). SW a **v84**. Solo texto/front.
+
 ### 127. Prefijo default del registro: "VIP" → "girox"
 - **Pedido del owner:** en el registro manual de la PWA, el campo de usuario
   venía pre-cargado con "VIP" — ahora arranca con **"girox"** (placeholder
