@@ -14,16 +14,18 @@
  *
  * Resultado: una key por campaña (Campaign.giroxApiKey, select:false) y un POST.
  *
- * QUÉ SIGUE IGUAL QUE ANTES:
- *   - Sólo el ALTA de usuarios se rutea por la key del publicista. Cargas, retiros
- *     y bonos siguen yendo por la key MASTER del env (GIROX_API_KEY, giroxService.js),
- *     que opera sobre toda su jerarquía.
- *     ⚠️ OJO con esto en 1girox: el manual dice que los depósitos salen del SALDO
- *     del agente dueño de la key. Los depósitos que hacemos nosotros salen del saldo
- *     de la cuenta master, no del publicista — que es el comportamiento que ya
- *     teníamos y el que queremos.
+ * QUÉ HACE CADA PIEZA (actualizado 2026-08-05):
+ *   - Este módulo hace SOLO el ALTA con la key del publicista. El resto de las
+ *     operaciones (cargas, retiros, saldo, stats, SSO, clave) las rutea
+ *     giroxService con su keyResolver: los jugadores creados bajo un sub-agente
+ *     NO son visibles para la key master por Partner API (comprobado: deposit
+ *     devolvía player_not_found), así que TODO lo de ese jugador se firma con la
+ *     key de su campaña dueña (User.giroxOwnerCampaign, seteado en el alta).
+ *     ⚠️ Consecuencia del manual: los depósitos a esos jugadores salen del SALDO
+ *     del sub-agente en 1girox — el principal tiene que mantenerlos fondeados.
  *   - Si la campaña no tiene key, se devuelve NO_CREDS y el caller hace fallback a
- *     la master (giroxService.syncUserToPlatform).
+ *     la master (giroxService.syncUserToPlatform) — y el jugador queda bajo la
+ *     master (sin giroxOwnerCampaign).
  *
  * ⚠️ NO se usa `giroxService.js` para crear el jugador porque ese cliente firma
  * SIEMPRE con la key global. Acá hace falta firmar con OTRA key, así que se duplica

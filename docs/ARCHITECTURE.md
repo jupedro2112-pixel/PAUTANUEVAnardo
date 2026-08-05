@@ -131,6 +131,13 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   mantenerlo en sincronía en TODOS los caminos que escriben o limpian la key. Los campos
   `jugayganaUsername/jugayganaPassword` quedan para revertir. También `influencers[]`
   (lista fija para sub-atribución analítica).
+  **⚠️ RUTEO POR DUEÑO (2026-08-05):** la key MASTER NO ve por Partner API a los
+  jugadores creados bajo un sub-agente. `User.giroxOwnerCampaign` marca la campaña
+  dueña (se setea en el alta del publisher_admin con key OK) y `giroxService` firma
+  TODAS las operaciones de ese jugador con la key de esa campaña (keyResolver
+  inyectado desde server.js, cache 60s; el batch de stats se agrupa por key).
+  Consecuencia: las cargas a esos jugadores salen del SALDO del sub-agente en
+  1girox — mantenerlos fondeados.
 - **CampaignClick** (TTL 90 días), **InfluencerStory** (placement con costo; la
   atribución de registros es por VENTANA HORARIA calculada a demanda en
   publisherAnalyticsService).

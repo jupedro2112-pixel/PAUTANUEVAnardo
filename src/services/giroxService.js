@@ -102,9 +102,35 @@ async function _acquireSlot() {
 // TRANSPORTE
 // ============================================================
 
-function _headers() {
+// ============================================================
+// RUTEO POR DUEÑO DEL JUGADOR (fix 2026-08-05)
+// ============================================================
+// Los jugadores creados con la key de un PUBLICISTA viven bajo ESE agente en la
+// jerarquía de 1girox, y la key MASTER **NO LOS VE** por Partner API (comprobado:
+// depositar a un jugador de un sub-agente devolvía player_not_found, aunque el
+// panel web sí lo permita). El supuesto viejo de giroxPublisherKeys.js ("cargas y
+// retiros van por la master, que opera sobre toda su jerarquía") era FALSO.
+//
+// server.js inyecta acá un resolver `username → apiKey|null` (lee
+// User.giroxOwnerCampaign → Campaign.giroxApiKey, con cache corto). Con eso,
+// TODA operación por username firma sola con la key del dueño del jugador —
+// cargas, retiros, saldo, stats, SSO, cambio de clave — sin tocar los ~60 call
+// sites. null / error del resolver → key master (comportamiento de siempre).
+let _keyResolver = null;
+function setKeyResolver(fn) { _keyResolver = typeof fn === 'function' ? fn : null; }
+async function _resolveKeyFor(username) {
+  if (!_keyResolver || !username) return null;
+  try {
+    return (await _keyResolver(String(username))) || null;
+  } catch (e) {
+    logger.warn(`[girox] keyResolver(${username}) falló: ${e.message} — usando key master`);
+    return null;
+  }
+}
+
+function _headers(apiKeyOverride) {
   return {
-    'X-Api-Key': getApiKey(),
+    'X-Api-Key': apiKeyOverride || getApiKey(),
     'Content-Type': 'application/json',
     // La doc lo pide explícitamente: evita que los errores vuelvan en HTML.
     Accept: 'application/json'
@@ -189,12 +215,17 @@ function _parseRetryAfter(headers) {
  * @param {object} [opts.body]
  * @param {string} opts.label           etiqueta para los logs
  * @param {boolean} [opts.retryable]    si false, no reintenta (operaciones sin idempotencia)
+ * @param {string} [opts.username]      jugador objetivo → el resolver decide con qué key firmar
+ * @param {string} [opts.apiKey]        key explícita (gana sobre el resolver; para el batch)
  */
-async function _request({ method, path, body, label, retryable = true }) {
+async function _request({ method, path, body, label, retryable = true, username = null, apiKey = null }) {
   if (!isEnabled()) {
     logger.error('[girox] GIROX_API_URL / GIROX_API_KEY no configurados');
     return { ok: false, error: 'La plataforma no está configurada. Avisale al soporte.', code: 'not_configured', httpStatus: null };
   }
+
+  // Se resuelve UNA vez (no por reintento): la key del dueño no cambia en medio.
+  const keyOverride = apiKey || await _resolveKeyFor(username);
 
   const url = `${getBaseUrl()}${path}`;
   let lastErr = null;
@@ -216,7 +247,7 @@ async function _request({ method, path, body, label, retryable = true }) {
         method,
         url,
         data: body,
-        headers: _headers(),
+        headers: _headers(keyOverride),
         timeout: TIMEOUT_MS,
         proxy: false
       });
@@ -327,7 +358,8 @@ async function createPlatformUser({ username, password }) {
     method: 'post',
     path: '/players',
     body: { username: String(username), password: String(password) },
-    label: `createPlayer(${username})`
+    label: `createPlayer(${username})`,
+    username
   });
 
   if (r.ok) return { success: true, player: (r.data && r.data.player) || null };
@@ -348,7 +380,8 @@ async function getUserInfoByName(username) {
   const r = await _request({
     method: 'get',
     path: `/players/${encodeURIComponent(String(username))}`,
-    label: `getPlayer(${username})`
+    label: `getPlayer(${username})`,
+    username
   });
   if (!r.ok) {
     if (r.code === 'player_not_found' || r.httpStatus === 404) return null;
@@ -455,7 +488,8 @@ async function validateCredentials(username, password) {
     method: 'post',
     path: '/players/validate',
     body: { username: String(username), password: String(password) },
-    label: `validate(${username})`
+    label: `validate(${username})`,
+    username
   });
   if (!r.ok) return { success: false, valid: false, error: r.error, code: r.code };
   return { success: true, valid: !!(r.data && r.data.valid), player: (r.data && r.data.player) || null };
@@ -475,7 +509,8 @@ async function changeUserPassword(username, newPassword) {
     method: 'put',
     path: `/players/${encodeURIComponent(String(username))}/password`,
     body: { password: String(newPassword) },
-    label: `changePassword(${username})`
+    label: `changePassword(${username})`,
+    username
   });
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
   return { success: true };
@@ -505,6 +540,7 @@ async function createSession(username, password = null) {
     path: `/players/${encodeURIComponent(String(username))}/session`,
     body,
     label: `session(${username})`,
+    username,
     // No es idempotente, pero reintentar sólo emite otro código de un uso: es inocuo.
     retryable: true
   });
@@ -569,7 +605,8 @@ async function depositToUser(username, amount, description = '', reference = nul
     method: 'post',
     path: `/players/${encodeURIComponent(String(username))}/deposit`,
     body,
-    label: `deposit(${username}, $${amt}, ref=${body.reference})`
+    label: `deposit(${username}, $${amt}, ref=${body.reference})`,
+    username
   });
 
   // RED DE SEGURIDAD — auto-creación del jugador.
@@ -591,7 +628,8 @@ async function depositToUser(username, amount, description = '', reference = nul
         method: 'post',
         path: `/players/${encodeURIComponent(String(username))}/deposit`,
         body,
-        label: `deposit-retry(${username}, $${amt}, ref=${body.reference})`
+        label: `deposit-retry(${username}, $${amt}, ref=${body.reference})`,
+        username
       });
     } else {
       logger.error(`[girox] deposit(${username}) — no se pudo crear al jugador: ${created.error}`);
@@ -627,7 +665,8 @@ async function withdrawFromUser(username, amount, description = '', reference = 
     method: 'post',
     path: `/players/${encodeURIComponent(String(username))}/withdraw`,
     body,
-    label: `withdraw(${username}, $${amt}, ref=${body.reference})`
+    label: `withdraw(${username}, $${amt}, ref=${body.reference})`,
+    username
   });
 
   if (!r.ok) {
@@ -685,7 +724,8 @@ async function creditUserBalance(username, amount, reference = null, opts = {}) 
       method: 'post',
       path: `/players/${encodeURIComponent(String(username))}/bonus`,
       body,
-      label: `bonus(${username}, $${amt}, x${body.multiplier}, ref=${body.reference})`
+      label: `bonus(${username}, $${amt}, x${body.multiplier}, ref=${body.reference})`,
+      username
     });
     if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
     return _moneyResult(r.data);
@@ -824,7 +864,8 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
   const r = await _request({
     method: 'get',
     path: `/players/${encodeURIComponent(String(username))}/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-    label: `${label}(${username}, ${from} → ${to})`
+    label: `${label}(${username}, ${from} → ${to})`,
+    username
   });
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
@@ -871,45 +912,59 @@ async function getPlayersStatsBatch(usernames, fromDate, toDate, label = 'stats-
   const to = formatStatsDate(toDate);
   if (!from || !to) return { success: false, error: 'Rango de fechas inválido', code: 'invalid_range' };
 
-  const r = await _request({
-    method: 'post',
-    path: '/players/stats/batch',
-    body: { usernames: list, from, to },
-    label: `${label}(${list.length} jugadores, ${from} → ${to})`
-  });
-
-  if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
-
-  const d = r.data || {};
-  const players = {};
-  for (const p of (Array.isArray(d.players) ? d.players : [])) {
-    const totals = _statsTotals(p.totals);
-    const cats = p.categories || {};
-    const casino = _statsTotals(cats.casino);
-    const sports = _statsTotals(cats.sports);
-    players[String(p.username)] = {
-      success: true,
-      playerId: p.id != null ? Number(p.id) : null,
-      username: p.username,
-      netwin: totals.netwin,
-      casinoNetwin: casino.netwin,
-      sportsNetwin: sports.netwin,
-      wagered: totals.wagered,
-      payout: totals.payout,
-      betsCount: totals.betsCount,
-      categories: { casino, sports }
-    };
+  // RUTEO POR DUEÑO (fix 2026-08-05): el batch puede mezclar jugadores de la
+  // master y de varios publicistas, y cada key SOLO ve a los suyos — un batch
+  // único con la master devolvía a los de publicista como not_found (y sus
+  // reembolsos/VIP/referidos quedaban en $0). Se agrupa por key resuelta y se
+  // hace UN request por grupo; sin resolver, un solo grupo con la master.
+  const groups = new Map(); // keyOverride (null = master) → usernames
+  for (const u of list) {
+    const k = await _resolveKeyFor(u);
+    const gk = k || '';
+    if (!groups.has(gk)) groups.set(gk, []);
+    groups.get(gk).push(u);
   }
 
-  return {
-    success: true,
-    players,
+  const players = {};
+  const notFound = [];
+  for (const [gk, groupList] of groups) {
+    const r = await _request({
+      method: 'post',
+      path: '/players/stats/batch',
+      body: { usernames: groupList, from, to },
+      label: `${label}(${groupList.length} jugadores${gk ? ', key publicista' : ''}, ${from} → ${to})`,
+      apiKey: gk || null
+    });
+
+    // Si UN grupo falla, falla todo el batch (mismo contrato de antes: el caller
+    // trata el fallo como "sin datos" y no paga de más).
+    if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
+
+    const d = r.data || {};
+    for (const p of (Array.isArray(d.players) ? d.players : [])) {
+      const totals = _statsTotals(p.totals);
+      const cats = p.categories || {};
+      const casino = _statsTotals(cats.casino);
+      const sports = _statsTotals(cats.sports);
+      players[String(p.username)] = {
+        success: true,
+        playerId: p.id != null ? Number(p.id) : null,
+        username: p.username,
+        netwin: totals.netwin,
+        casinoNetwin: casino.netwin,
+        sportsNetwin: sports.netwin,
+        wagered: totals.wagered,
+        payout: totals.payout,
+        betsCount: totals.betsCount,
+        categories: { casino, sports }
+      };
+    }
     // ⚠️ `not_found` mezcla "no existe" con "no es tuyo" a propósito (lo aclara el
     // manual): no se puede distinguir, así que se trata igual — sin netwin.
-    notFound: Array.isArray(d.not_found) ? d.not_found : [],
-    from: d.from || from,
-    to: d.to || to
-  };
+    for (const nf of (Array.isArray(d.not_found) ? d.not_found : [])) notFound.push(nf);
+  }
+
+  return { success: true, players, notFound, from, to };
 }
 
 /**
@@ -959,7 +1014,8 @@ async function claimPendingBonus(username, requirementId = null) {
     method: 'post',
     path: `/players/${encodeURIComponent(String(username))}/bonus/claim`,
     body,
-    label: `bonusClaim(${username}${requirementId != null ? ', req=' + requirementId : ''})`
+    label: `bonusClaim(${username}${requirementId != null ? ', req=' + requirementId : ''})`,
+    username
   });
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
@@ -979,6 +1035,8 @@ module.exports = {
   getPlayUrl,
   getBaseUrl,
   validateUsername,
+  // ruteo por dueño del jugador (server.js inyecta el resolver username→apiKey)
+  setKeyResolver,
   // jugadores
   createPlatformUser,
   getUserInfoByName,

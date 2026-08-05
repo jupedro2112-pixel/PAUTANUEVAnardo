@@ -195,6 +195,15 @@ const userSchema = new mongoose.Schema({
     default: 'pending',
     index: true
   },
+  // Campaña DUEÑA del jugador en 1girox (fix 2026-08-05): se setea SOLO cuando el
+  // alta se hizo con la key del publicista (createUserAsPublisher OK). La key
+  // master NO ve a esos jugadores por Partner API, así que TODAS sus operaciones
+  // (cargas, retiros, saldo, stats, SSO) se firman con la key de ESTA campaña
+  // (resolver inyectado en giroxService). null = jugador de la cuenta master.
+  giroxOwnerCampaign: {
+    type: String,
+    default: null
+  },
   giroxSyncError: {
     type: String,
     default: null

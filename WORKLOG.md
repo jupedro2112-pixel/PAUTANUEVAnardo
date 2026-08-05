@@ -8,6 +8,40 @@
 
 ## Sesión 2026-08-05
 
+### 132. RUTEO por dueño: las operaciones de jugadores de PUBLICISTA van con la key del sub-agente
+- **Síntoma (owner):** al cargarle desde el panel a un usuario creado por un
+  sub-agente (publicista con API key propia), la carga decía "el usuario no
+  existe" — aunque desde el panel WEB de 1girox el principal sí puede cargarle.
+- **Causa raíz:** la key MASTER **NO VE por Partner API** a los jugadores creados
+  bajo un sub-agente (el supuesto de #97 "la master opera sobre toda su
+  jerarquía" era FALSO para la API). Solo el ALTA usaba la key del publicista;
+  cargas/retiros/saldo/stats/SSO iban con la master → player_not_found.
+- **Fix (central, sin tocar los ~60 call sites):**
+  - `giroxService.setKeyResolver(fn)`: server.js inyecta un resolver
+    `username → apiKey|null` (cache 60s). `_request` acepta `username` (resuelve
+    la key del dueño) o `apiKey` explícita; `_headers(override)`.
+  - Las 11 operaciones por jugador pasan `username` (create, getPlayer,
+    validate, changePassword, session/SSO, deposit + deposit-retry, withdraw,
+    bonus, stats, bonusClaim) → firman solas con la key correcta. La red de
+    seguridad del deposit (crear jugador al vuelo) también hereda el ruteo.
+  - **Batch de stats agrupado por key**: antes un batch único con la master
+    devolvía a los de publicista como not_found (reembolsos/VIP/referidos en $0
+    silencioso). Ahora agrupa por key resuelta y hace un request por grupo.
+  - **`User.giroxOwnerCampaign`** (campo nuevo): se setea SOLO cuando el alta
+    del publisher_admin se hizo con la key del publicista OK. null = master.
+    El resolver usa ESTE campo (no acquisitionCampaign: los captados por LINK
+    de pauta se crean bajo la master y ruteárlos por la sub los rompería).
+- **⚠️ Consecuencias operativas (avisadas al owner):**
+  1. Los depósitos a jugadores de publicista salen del SALDO del sub-agente en
+     1girox → el principal debe mantener fondeados a los sub-agentes.
+  2. Los usuarios de PRUEBA creados antes de este fix bajo sub-agentes no tienen
+     `giroxOwnerCampaign` → siguen fallando; recrearlos (o marcarlos a mano).
+- **Comentario stale de giroxPublisherKeys.js corregido** (afirmaba el supuesto
+  falso). **Validado:** `node --check` OK (server, giroxService, publisherKeys,
+  User). Back necesita redeploy. PROBAR: crear usuario con un publicista →
+  cargarle desde el panel (debe acreditar y descontar del saldo del SUB en
+  1girox); botón CASINO del cliente; reclamar un reembolso con pérdida.
+
 ### 131. La card de hgcash del panel mostraba el webhook con vipcargas.com hardcodeado
 - **Síntoma (owner):** la línea informativa "Webhook a configurar en hgcash:"
   decía `https://vipcargas.com/api/...` — el dominio estaba HARDCODEADO en

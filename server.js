@@ -428,6 +428,35 @@ const girox = require('./src/services/giroxService');
 const { resolveGiroxUserId } = require('./src/services/giroxUserLinkService');
 // Alta de jugadores bajo la cuenta de un publicista (con su propia API key).
 const giroxPublisherKeys = require('./src/services/giroxPublisherKeys');
+
+// ============================================================
+// RUTEO DE OPERACIONES 1GIROX POR DUEÑO DEL JUGADOR (fix 2026-08-05)
+// ============================================================
+// La key MASTER no ve por Partner API a los jugadores creados bajo un
+// publicista (sub-agente): depositar/consultar devolvía player_not_found aunque
+// el panel web sí lo permita. Este resolver le dice a giroxService con qué key
+// firmar cada operación: si el usuario tiene `giroxOwnerCampaign` (se setea en
+// el alta del publisher_admin cuando el jugador se creó con SU key), se usa la
+// key de esa campaña; si no, la master de siempre. Cache 60s por username
+// (TTL corto a propósito: multi-instancia, y un cambio de key pega rápido).
+const _giroxKeyCache = new Map();
+const GIROX_KEY_CACHE_TTL_MS = 60 * 1000;
+girox.setKeyResolver(async (username) => {
+  const now = Date.now();
+  const hit = _giroxKeyCache.get(username);
+  if (hit && (now - hit.ts) < GIROX_KEY_CACHE_TTL_MS) return hit.key;
+  let key = null;
+  const u = await User.findOne({ username })
+    .select('giroxOwnerCampaign role').lean();
+  if (u && u.role === 'user' && u.giroxOwnerCampaign) {
+    const c = await Campaign.findOne({ code: u.giroxOwnerCampaign, isActive: { $ne: false } })
+      .select('+giroxApiKey').lean();
+    if (c && c.giroxApiKey) key = c.giroxApiKey;
+  }
+  _giroxKeyCache.set(username, { key, ts: now });
+  if (_giroxKeyCache.size > 5000) _giroxKeyCache.clear(); // backstop anti-fuga
+  return key;
+});
 // Rangos de fecha en hora argentina para los períodos de reembolso.
 const periodRanges = require('./src/utils/periodRanges');
 // Rangos de reembolso Bronce/Plata/Oro según la pérdida del período.
@@ -11293,8 +11322,14 @@ app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdmi
           if (result.success) {
             // Sin giroxUserId: la Partner API no lo devuelve; lo completa después
             // resolveGiroxUserId cuando se necesite.
-            await User.updateOne({ id: newUserId }, { giroxSyncStatus: 'synced' });
-            logger.info(`[publisher_admin create-user] ${username} creado con la key de ${campaign.code}`);
+            // giroxOwnerCampaign: el jugador quedó bajo el SUB-AGENTE de esta
+            // campaña → todas sus operaciones se firman con la key de la campaña
+            // (la master no lo ve por API; ver el resolver de giroxService).
+            await User.updateOne({ id: newUserId }, {
+              giroxSyncStatus: 'synced',
+              giroxOwnerCampaign: campaign.code
+            });
+            logger.info(`[publisher_admin create-user] ${username} creado con la key de ${campaign.code} (owner=${campaign.code})`);
           } else if (result.code === 'NO_CREDS') {
             // El check inicial dijo que había key pero al leerla no estaba — race
             // condition con un PUT de campaña justo en ese momento. Fallback al master.
