@@ -8,6 +8,22 @@
 
 ## Sesión 2026-08-05
 
+### 125. Variable {escalera} en la bienvenida: los rangos de reembolso se insertan solos
+- **Contexto (owner):** la bienvenida guardada decía "DIARIO 20% / SEMANAL 10% /
+  MENSUAL 5%" — porcentajes de la era JUGAYGANA, mal para todos. Con los rangos
+  editables (#118), cualquier texto fijo queda desactualizado al primer cambio.
+- **Fix:** helper **`buildEscaleraText()`** (server.js) — arma el texto de la
+  escalera VIGENTE leyendo `getRefundTiersByPeriod()` al momento de ENVIAR cada
+  bienvenida: si las 3 escaleras son iguales muestra una sola ("Si perdés hasta
+  $30.000 → te devolvemos el 3%…"); si difieren, una línea por período. Nueva
+  variable **`{escalera}`** en `/api/messages/welcome` (mismo formato {var} que
+  {username}/{cbu}). Fallback y seed de `/sys_welcome` actualizados (afuera el
+  20/10/5 stale; la description del comando documenta la variable).
+- **⚠️ ACCIÓN OWNER (una vez, por base ya sembrada):** el `/sys_welcome` GUARDADO
+  en la base conserva el texto viejo — editarlo desde COMANDOS reemplazando las 3
+  líneas de "Reembolso X del N%" por `{escalera}`.
+- **Validado:** `node --check` OK. Back necesita redeploy.
+
 ### 124. La app pasa a llamarse "CARGAS 1GIROX"
 - **Pedido del owner:** cambiar el nombre visible de la app por "CARGAS 1GIROX".
 - Cambiado en: `<title>` ("CARGAS 1GIROX | 24/7"), metas `apple-mobile-web-app-title`

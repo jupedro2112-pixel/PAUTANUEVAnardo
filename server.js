@@ -1255,6 +1255,42 @@ async function renderSystemCommand(name, fallback, vars = {}) {
   return out;
 }
 
+// Arma el texto de la escalera de reembolsos VIGENTE, para la variable {escalera}
+// de los mensajes automáticos (ej. /sys_welcome). Así la bienvenida NUNCA queda
+// desactualizada cuando se cambian los rangos desde el panel (#118): se renderiza
+// con la config real al momento de ENVIAR cada mensaje. Si las 3 escaleras
+// (diaria/semanal/mensual) son iguales muestra una sola; si difieren, una por línea.
+async function buildEscaleraText() {
+  try {
+    const tbp = await getRefundTiersByPeriod();
+    const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
+    const linea = (tiers) => tiers.map((t) => {
+      const rango = t.max === null
+        ? `más de ${money(t.min)}`
+        : (t.min === 0 ? `hasta ${money(t.max)}` : `${money(t.min + 1)} a ${money(t.max)}`);
+      return `${rango} → ${t.pct}%`;
+    }).join(' · ');
+    const key = (tiers) => JSON.stringify(tiers.map((t) => [t.pct, t.max]));
+    const iguales = key(tbp.daily) === key(tbp.weekly) && key(tbp.daily) === key(tbp.monthly);
+    if (iguales) {
+      return '• Reembolso DIARIO, SEMANAL (lun-mar) y MENSUAL (desde el día 7) según tu pérdida del período:\n' +
+        tbp.daily.map((t) => {
+          const rango = t.max === null
+            ? `más de ${money(t.min)}`
+            : (t.min === 0 ? `hasta ${money(t.max)}` : `${money(t.min + 1)} a ${money(t.max)}`);
+          return `   ${t.emoji} Si perdés ${rango} → te devolvemos el ${t.pct}%`;
+        }).join('\n');
+    }
+    return '• Reembolsos según tu pérdida del período:\n' +
+      `   📅 DIARIO: ${linea(tbp.daily)}\n` +
+      `   🗓️ SEMANAL (lun-mar): ${linea(tbp.weekly)}\n` +
+      `   📆 MENSUAL (desde el día 7): ${linea(tbp.monthly)}`;
+  } catch (e) {
+    logger.warn(`[escalera] no se pudo armar el texto: ${e.message}`);
+    return '• Reembolso DIARIO, SEMANAL y MENSUAL según tu pérdida del período';
+  }
+}
+
 // Igual que renderSystemCommand pero a partir de un Command ya cargado (los flujos
 // que ya hacían Command.findOne directo). Devuelve null si el comando existe pero su
 // respuesta está vacía (desactivado a propósito); usa el fallback si no existe.
@@ -5178,11 +5214,13 @@ app.post('/api/messages/welcome', authMiddleware, async (req, res) => {
       if (cbuConfig && cbuConfig.number) cbuNumber = cbuConfig.number;
     } catch (e) { /* sin CBU configurado */ }
 
-    // Texto editable desde COMANDOS (/sys_welcome). Fallback al texto original.
+    // Texto editable desde COMANDOS (/sys_welcome). La variable {escalera} se
+    // reemplaza por la escalera de reembolsos VIGENTE (config del panel) al
+    // momento de enviar — así la bienvenida no queda desactualizada (#118).
     const welcomeContent = await renderSystemCommand(
       '/sys_welcome',
-      `🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}`,
-      { username, cbu: cbuNumber }
+      `🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n{escalera}\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}`,
+      { username, cbu: cbuNumber, escalera: await buildEscaleraText() }
     );
 
     // Helper para crear + emitir un mensaje de sistema (lado admin).
@@ -9229,9 +9267,9 @@ async function initializeData() {
     },
     {
       name: '/sys_welcome',
-      description: 'Mensaje de bienvenida que se envía cuando el usuario ingresa por primera vez (cada 24h). Variables: {username}, {cbu}',
+      description: 'Mensaje de bienvenida que se envía cuando el usuario ingresa por primera vez (cada 24h). Variables: {username}, {cbu}, {escalera} (se reemplaza sola por los rangos de reembolso vigentes del panel)',
       type: 'message',
-      response: '🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n• Reembolso DIARIO del 20%\n• Reembolso SEMANAL del 10%\n• Reembolso MENSUAL del 5%\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}'
+      response: '🎉 ¡Bienvenido a la Sala de Juegos, {username}!\n\n🎁 Beneficios exclusivos:\n{escalera}\n• Fueguito diario con recompensas\n• Atención 24/7\n\n💬 Escribe aquí para hablar con un agente.\n\nLink de pagina: https://1girox.com/\n\nCBU activo: {cbu}'
     },
     {
       name: '/sys_cbu',
