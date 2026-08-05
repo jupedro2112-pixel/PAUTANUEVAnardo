@@ -8,6 +8,35 @@
 
 ## Sesión 2026-08-05
 
+### 138. Carga con bonus y bono directo NATIVOS: en el panel de 1girox ya se distinguen de las cargas
+- **Reporte del owner (con capturas del panel 1girox):** una "carga con bonus"
+  aparecía como DOS operaciones tipo "Carga" (+$1000 y +$1000, refs vip-dep y
+  vip-depbonus) — indistinguibles salvo por la descripción. Ídem el botón Bonus.
+- **Carga con bonus (`POST /api/admin/deposit`):** ahora es UNA sola operación —
+  el bonus viaja NATIVO en el depósito (`bonus_amount` del feat "Rollover y
+  Bonos") → la plataforma registra carga y bono como tipos DISTINTOS y le
+  aplica al bono su regla de rollover (la configurada en 1girox). Se eliminó el
+  segundo depósito (vip-depbonus) y la pausa de 700ms. `result.bonusFailed`
+  (carga OK pero bono rechazado) alimenta el aviso admin-only existente.
+  ⚠️ Si el bono viola los límites del feat, la plataforma puede rechazar la
+  operación COMPLETA (antes la carga entraba y el bono moría) — el agente ve el
+  error y corrige montos.
+- **Bono directo (`POST /api/admin/bonus`):** ahora usa `POST /players/{u}/bonus`
+  (tipo BONO real) vía `creditUserBalance` con `multiplier` =
+  **`GIROX_BONUS_MULTIPLIER`** (env/SSM, default 1; debe ser un multiplicador
+  permitido en 1girox). Reglas v1.7 cubiertas: **guard previo** que BLOQUEA si
+  el cliente ya tiene bono activo o pendiente (otorgar otro lo pisaría y le
+  debitaría el resto) + **auto-claim** (`claimPendingBonus`) para que no quede
+  "a reclamar"; si el claim falla, warn y el cliente lo reclama del casino.
+- **⚠️ Cambio de comportamiento (consecuencia natural del pedido):** la parte
+  de bono ahora SIGUE LAS REGLAS DE BONO de la plataforma (rollover, no
+  retirable al instante) — antes era plata libre. Avisado al owner.
+- **Referencias intactas:** vip-dep-{txId} y vip-bonus-{txId} idénticas
+  (idempotencia). **Validado:** `node --check` OK. Back necesita redeploy.
+  PROBAR: carga con bonus → en el panel 1girox deben verse Carga + Bono como
+  tipos distintos; botón Bonus a cliente sin bono activo → entra como Bono y
+  el saldo lo refleja; con bono activo → bloqueado con mensaje claro.
+
 ### 137. Bono de instalación SIN SMS para usuarios creados por un AGENTE
 - **Pedido del owner:** el bono 100% de instalación exige app instalada + SMS
   verificado. Para usuarios que NO se registraron solos (los creó un agente

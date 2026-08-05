@@ -7532,40 +7532,46 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
     // reintenta por timeout, la plataforma reconoce la operación y NO acredita dos
     // veces. La MISMA constante se guarda después como Transaction.id, de modo que la
     // fila local y la operación remota quedan atadas por el mismo identificador.
+    //
+    // BONUS NATIVO (owner 2026-08-05): el bonus viaja EN el propio depósito
+    // (`bonus_amount` del feat "Rollover y Bonos") en UNA sola operación. Antes
+    // se mandaban DOS depósitos (vip-dep + vip-depbonus) y el panel de 1girox
+    // los mostraba a ambos como "Carga", indistinguibles; ahora la plataforma
+    // registra carga y bono como operaciones de TIPO distinto y le aplica al
+    // bono su propia regla de rollover (la configurada en 1girox).
+    // ⚠️ Si el bono viola los límites del feat (min/max/multiplicador), la
+    // plataforma puede rechazar la operación COMPLETA → el agente ve el error
+    // y reintenta con montos válidos (antes la carga entraba y el bono moría
+    // en silencio contable).
+    const bonusRequested = parseFloat(bonus) > 0;
     const _depTxId = uuidv4();
-    const result = await girox.depositToUser(user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`);
+    const result = await girox.depositToUser(
+      user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`,
+      bonusRequested ? { bonusAmount: parseFloat(bonus) } : null
+    );
 
     if (result.success) {
       // SLA: atender al cliente con una carga cuenta como respuesta (resuelve el reloj).
       await delayClockResolve(user.id, { responded: true, agentId: req.user.userId, agentUsername: req.user.username, via: 'operation', queueHint: 'cargas' });
-      // Si hay bonus, se acredita en una operación contable SEPARADA (así el panel de
-      // la plataforma distingue carga de bonificación).
-      // La pausa de 700ms viene de JUGAYGANA, donde dos operaciones sobre el mismo
-      // usuario en <100ms disparaban el bloqueo de Cloudflare ("carga sí, bonus no").
-      // Con 1girox ese problema no existe (hay un rate limit propio y ordenado), pero
-      // se conserva: no cuesta nada y evita apurar el cupo de 60 req/min.
-      const bonusRequested = parseFloat(bonus) > 0;
-      let bonusJgResult = null;
-      let bonusActuallyApplied = false;
-
-      if (bonusRequested) {
-        await new Promise(r => setTimeout(r, 700));
-        // Reference propia y distinta de la carga: son dos operaciones diferentes.
-        // Derivarla del mismo _depTxId las mantiene ligadas y hace que un reintento
-        // del bonus tampoco pueda duplicarlo.
-        bonusJgResult = await girox.creditUserBalance(
-          user.username,
-          parseFloat(bonus),
-          `vip-depbonus-${_depTxId}`
+      // Caso excepcional documentado por 1girox: la carga entró pero el bono
+      // adjunto falló (result.bonusFailed, wagering.bonus.status='failed').
+      // NO se reintenta el depósito (duplicaría por reference) — se avisa al
+      // agente más abajo para que aplique el bono a mano.
+      const bonusActuallyApplied = bonusRequested && !result.bonusFailed;
+      const bonusJgResult = bonusRequested
+        ? {
+            success: bonusActuallyApplied,
+            error: result.bonusFailed
+              ? 'La plataforma acreditó la carga pero RECHAZÓ el bono adjunto (revisar límites del feat "Rollover y Bonos" en 1girox)'
+              : null
+          }
+        : null;
+      if (bonusRequested && !bonusActuallyApplied) {
+        logger.error(
+          `[deposit] BONUS FALLÓ user=${user.username} ` +
+          `amount=$${amount} bonus=$${bonus} agent=${req.user?.username || '?'} ` +
+          `error=${bonusJgResult?.error || 'sin detalle'}`
         );
-        bonusActuallyApplied = !!(bonusJgResult && bonusJgResult.success);
-        if (!bonusActuallyApplied) {
-          logger.error(
-            `[deposit] BONUS FALLÓ user=${user.username} ` +
-            `amount=$${amount} bonus=$${bonus} agent=${req.user?.username || '?'} ` +
-            `error=${bonusJgResult?.error || 'sin detalle'}`
-          );
-        }
       }
 
       await recordUserActivity(user.id, 'deposit', parseFloat(amount));
@@ -8136,16 +8142,48 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
       return res.status(400).json({ error: 'Monto de bonificación inválido' });
     }
 
+    // BONO NATIVO (owner 2026-08-05): antes esto era un DEPÓSITO libre → en el
+    // panel de 1girox salía como "Carga", indistinguible de una carga real.
+    // Ahora va por POST /players/{u}/bonus (operación de TIPO bono de verdad).
+    // Dos reglas de la v1.7 que obligan a los pasos extra:
+    //   1. "Bono sobre bono": otorgar un bono a quien ya tiene uno activo PISA
+    //      el anterior y le DEBITA lo que le quede → guard previo que lo
+    //      bloquea (que el agente espere o use "carga con bonus").
+    //   2. El bono NO se libera solo: queda "a reclamar" en el casino → se
+    //      auto-reclama acá (claimPendingBonus) para que el cliente lo tenga al
+    //      instante; si el claim fallara, lo reclama él desde el casino.
+    // Rollover del bono: GIROX_BONUS_MULTIPLIER (default 1 = apostarlo 1 vez;
+    // tiene que ser un multiplicador permitido en la config de 1girox).
+    const _playerInfo = await girox.getUserInfoByName(resolvedUsername);
+    if (_playerInfo && (Number(_playerInfo.bonusLocked) > 0 || Number(_playerInfo.claimableTotal) > 0)) {
+      return res.status(400).json({
+        error: 'El cliente ya tiene un bono ACTIVO (o pendiente de reclamar) en el casino. Otorgar otro lo pisaría y le debitaría lo que le queda. Esperá a que lo termine o hacé una carga con bonus.'
+      });
+    }
+
     // Id generado antes de llamar: sirve como `reference` (idempotencia de 1girox)
     // y después como Transaction.id.
     const _bonusTxId = uuidv4();
     const depositResult = await girox.creditUserBalance(
       resolvedUsername,
       bonusAmount,
-      `vip-bonus-${_bonusTxId}`
+      `vip-bonus-${_bonusTxId}`,
+      {
+        multiplier: Number(process.env.GIROX_BONUS_MULTIPLIER || 1),
+        description: 'Bonificación otorgada'
+      }
     );
 
     if (depositResult.success) {
+      // v1.7: liberar el bono YA (sin esto queda como "regalito" sin acreditar).
+      try {
+        const _claimRes = await girox.claimPendingBonus(resolvedUsername);
+        if (!_claimRes.success) {
+          logger.warn(`[bonus] auto-claim falló para ${resolvedUsername}: ${_claimRes.error} — el cliente puede reclamarlo desde el casino (regalito del header)`);
+        }
+      } catch (claimErr) {
+        logger.warn(`[bonus] auto-claim excepción para ${resolvedUsername}: ${claimErr.message}`);
+      }
       // SLA: atender al cliente con un bonus cuenta como respuesta (resuelve el reloj).
       await delayClockResolve(bonusUser.id, { responded: true, agentId: req.user.userId, agentUsername: req.user.username, via: 'operation', queueHint: 'cargas' });
       // bonusUser ya lo resolvimos arriba con findOne — no hace falta repetir
