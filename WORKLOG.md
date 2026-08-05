@@ -8,6 +8,37 @@
 
 ## Sesión 2026-08-05
 
+### 144. CASO ASENTADO: retiro de $85.000 (giroxWalter354) descontado pero NO visible en "Cargas y Retiros" de 1girox
+- **Hechos (owner, 2026-08-05 ~10:00 ART, capturas p1/p2):** retiro
+  autogestionado de $85.000 de giroxWalter354 (usuario del publicista
+  superwhat): el flujo completo anduvo — solicitud, verificación del agente,
+  descuento de fichas (saldo quedó en 0), pago automático hgcash y comprobante
+  PDF enviado. PERO en el panel de 1girox (logueado como giroxsuperwhat),
+  "Cargas y Retiros de Fichas" del día muestra SOLO la carga de $20.000
+  (vip-dep-53288d6b…) — Total de retiros $0.
+- **Verificación hecha (Partner API directa):** `GET /players/giroxWalter354`
+  con la key MASTER → `player_not_found` ⇒ el jugador vive BAJO EL SUB-AGENTE
+  superwhat ⇒ el débito de los $85.000 solo pudo ejecutarse con la key de
+  superwhat (ruteo #132 funcionando). El descuento es real y verificado
+  doblemente (el confirm del payout relee el saldo y exige que haya bajado
+  antes de pagar — anti-fantasma #61). **No hay pérdida de plata**: fichas
+  descontadas + pago hgcash hecho = operación consistente.
+- **Conclusión:** es un problema de VISUALIZACIÓN del panel de 1girox — el
+  RETIRO hecho por Partner API con la key del sub no aparece en su vista
+  "Cargas y Retiros de Fichas", aunque la CARGA por la misma vía sí aparece.
+  Inconsistencia de su lado (¿otra sección? ¿bug de la vista?).
+- **Datos para el reclamo a 1girox:** jugador `giroxWalter354`, agente
+  `giroxsuperwhat`, 05/08/2026 ~10:00, monto $85.000, operación WITHDRAW por
+  Partner API, reference **`vip-payout-2771989b-55bb-47b8-8a09-8f8e2bba1760`**.
+  Pedirles que ubiquen el ledger de esa reference y expliquen por qué no
+  figura en la vista del agente.
+- **Chequeo extra sugerido al owner:** el saldo del AGENTE superwhat debería
+  haber SUBIDO ~$85.000 con ese retiro (las fichas del retiro vuelven al saldo
+  del agente dueño de la key). Sobre el origen de los $85.000 con una sola
+  carga de $20.000 en el día: el filtro era "Hoy" (puede haber cargas de días
+  anteriores) y las GANANCIAS de juego no aparecen en esa vista — no es
+  anomalía por sí misma.
+
 ### 143. El rollover del bono del código de Comunidad ahora es EDITABLE desde el panel
 - **Pedido del owner (sobre #142):** el x2 fijo pasa a config. Nuevo
   `Config['communityWelcomeRolloverX']` (default **2**, 0 = sin rollover),
