@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v75'; // v75: avisos de formulario del navegador en español
+const CACHE_VERSION = 'v76'; // v76: login solo con Soporte Telegram (chau WhatsApp)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

@@ -4,7 +4,38 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-04**
+> **Última actualización: 2026-08-05**
+
+## Sesión 2026-08-05
+
+### 117. Login solo con Soporte Telegram + logo del chat de soporte subible como IMAGEN
+- **Pedido del owner:** (a) sacar el botón "Soporte WhatsApp" del login (el soporte
+  por WhatsApp ya no existe; queda solo Telegram); (b) el "Logo del chat de soporte"
+  del panel (Comunidad) solo aceptaba URL — ahora también se puede SUBIR un archivo
+  de imagen.
+- **Login (PWA):** eliminado el botón `helpWhatsappBtn` (index.html, con lápida) y su
+  cableado en app.js. El botón de Telegram queda solo en la fila (ocupa todo el ancho).
+  El endpoint `/api/config/soporte-vip` sigue devolviendo el bloque whatsapp (no se
+  tocó el backend de eso; ya no lo consume nadie en el login).
+- **Logo del chat como imagen (panel Comunidad):** input file + vista previa +
+  botón "🗑️ Quitar" junto al campo URL de siempre. La imagen se procesa EN EL
+  NAVEGADOR: recorte cuadrado centrado + resize a 128x128 por canvas → data URL
+  (PNG si el archivo era PNG —conserva transparencia—, si no JPEG 0.85, ~5-40KB)
+  y se guarda en `communityConfig.chatLogoUrl` al tocar "Guardar Comunidad".
+  - **Backend (`POST /api/admin/community`):** rama nueva para el logo — acepta
+    `data:image/(png|jpeg|webp|gif);base64,...` (cap 300KB, validado por regex) SIN
+    pasarlo por `_normUrl` (lo rompía: prefijo https:// + recorte a 300 chars).
+    Una URL normal sigue el camino de siempre.
+  - **Sin cambios en la PWA:** chat.js ya hace `avatar.src = chatLogoUrl` y la CSP
+    ya permite `img-src data:`. El body JSON acepta 10mb → la imagen entra bien.
+  - **Lógica del form (admin.js):** `_communityLogoPending` (undefined=sin cambios,
+    ''=quitar, data:...=imagen nueva) + `_communityLogoSaved`. Guardar con el input
+    URL vacío NO borra una imagen subida (para borrar está "Quitar"); tipear una URL
+    pisa la imagen. Un data URL guardado no se vuelca al input de texto (solo preview).
+- **Validado:** `node --check` OK (server.js, app.js, admin.js, SW). SW a **v76**.
+  Back necesita redeploy (rama nueva del logo). PROBAR: subir una foto en el panel →
+  Guardar → la cabecera del chat del cliente muestra la foto; "Quitar" + Guardar →
+  vuelve el logo default; login sin botón de WhatsApp.
 
 ## Sesión 2026-08-04
 

@@ -16536,7 +16536,20 @@ app.post('/api/admin/community', authMiddleware, adminMiddleware, async (req, re
     }
     const channelUrl = _normUrl(req.body && req.body.channelUrl);
     const supportUrl = _normUrl(req.body && req.body.supportUrl);
-    const chatLogoUrl = _normUrl(req.body && req.body.chatLogoUrl);
+    // El logo puede ser una URL https O una imagen subida desde el panel
+    // (data URL base64, achicada a 128x128 por el front). _normUrl la rompería
+    // (prefijo https:// + recorte a 300 chars), por eso va por su propia rama.
+    // Cap 300KB: una 128x128 pesa ~5-40KB; esto solo frena abusos.
+    const rawLogo = String((req.body && req.body.chatLogoUrl) || '').trim();
+    let chatLogoUrl;
+    if (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(rawLogo)) {
+      if (rawLogo.length > 300000) {
+        return res.status(400).json({ error: 'La imagen del logo es demasiado pesada (máx ~300KB). Probá con una más chica.' });
+      }
+      chatLogoUrl = rawLogo;
+    } else {
+      chatLogoUrl = _normUrl(rawLogo);
+    }
     await setConfig('communityConfig', { channelUrl, supportUrl, chatLogoUrl });
     logger.info(`[community] config guardada por ${(req.user && req.user.username) || '?'}`);
     res.json({ success: true, channelUrl, supportUrl, chatLogoUrl });

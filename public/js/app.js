@@ -104,20 +104,15 @@ function setupEventListeners() {
         if (loginForm) loginForm.addEventListener('submit', VIP.auth.handleLogin);
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) logoutBtn.addEventListener('click', VIP.auth.handleLogout);
-        // Soporte del login: dos botones (WhatsApp y Telegram). Cada uno trae
-        // la config del server y abre el canal correspondiente.
+        // Soporte del login: trae la config del server y abre el canal.
+        // 🪦 Acá también se cableaba helpWhatsappBtn (Soporte WhatsApp):
+        // ELIMINADO 2026-08-05 junto con su botón del HTML (queda solo Telegram).
         async function _vipFetchSoporte() {
             try {
                 const r = await fetch(VIP.config.API_URL + '/api/config/soporte-vip');
                 return r.ok ? await r.json() : null;
             } catch (e) { return null; }
         }
-        const helpWhatsappBtn = document.getElementById('helpWhatsappBtn');
-        if (helpWhatsappBtn) helpWhatsappBtn.addEventListener('click', async () => {
-            const d = await _vipFetchSoporte();
-            const url = (d && d.whatsapp && d.whatsapp.url) ? d.whatsapp.url : 'https://wa.link/metawin2026';
-            window.open(url, '_blank');
-        });
         const helpTelegramBtn = document.getElementById('helpTelegramBtn');
         if (helpTelegramBtn) helpTelegramBtn.addEventListener('click', async () => {
             const d = await _vipFetchSoporte();

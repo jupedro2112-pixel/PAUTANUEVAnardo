@@ -5796,6 +5796,76 @@ async function saveCBUConfig() {
 // canalInformativoUrl): ELIMINADAS — el canal es UNO solo y se configura en
 // Comunidad (channelUrl), que alimenta el botón celeste de la app (2026-08-03).
 
+// Logo del chat: además de la URL, se puede SUBIR una imagen (se achica a
+// 128x128 en el navegador y se guarda como data URL en la config — la CSP de
+// la PWA ya permite img-src data:). Estado del formulario:
+//   _communityLogoPending: undefined = sin cambios · '' = quitar · 'data:...' = imagen nueva
+//   _communityLogoSaved: lo que está guardado en el server (para no pisarlo al guardar otra cosa)
+let _communityLogoPending;
+let _communityLogoSaved = '';
+
+function _renderCommunityLogoPreview(src) {
+    const img = document.getElementById('communityChatLogoPreview');
+    const clearBtn = document.getElementById('communityChatLogoClearBtn');
+    if (img) {
+        if (src) { img.src = src; img.style.display = ''; }
+        else { img.removeAttribute('src'); img.style.display = 'none'; }
+    }
+    if (clearBtn) clearBtn.style.display = src ? '' : 'none';
+}
+
+function handleCommunityChatLogoFile(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) {
+        showToast('El archivo tiene que ser una imagen', 'error');
+        input.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                // Recorte cuadrado centrado + achicado a 128x128 (la cabecera lo muestra chico).
+                const SIZE = 128;
+                const canvas = document.createElement('canvas');
+                canvas.width = SIZE;
+                canvas.height = SIZE;
+                const ctx = canvas.getContext('2d');
+                const side = Math.min(img.width, img.height);
+                ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE);
+                // PNG conserva transparencia (logos); para fotos, JPEG pesa menos.
+                const dataUrl = (file.type === 'image/png')
+                    ? canvas.toDataURL('image/png')
+                    : canvas.toDataURL('image/jpeg', 0.85);
+                _communityLogoPending = dataUrl;
+                _renderCommunityLogoPreview(dataUrl);
+                const urlInput = document.getElementById('communityChatLogoUrl');
+                if (urlInput) urlInput.value = '';
+                showToast('Imagen lista — tocá "Guardar Comunidad" para aplicarla', 'info');
+            } catch (e) {
+                console.error('Error procesando imagen del logo:', e);
+                showToast('No se pudo procesar la imagen', 'error');
+            }
+        };
+        img.onerror = () => showToast('No se pudo leer la imagen', 'error');
+        img.src = reader.result;
+    };
+    reader.onerror = () => showToast('No se pudo leer el archivo', 'error');
+    reader.readAsDataURL(file);
+}
+
+function clearCommunityChatLogo() {
+    _communityLogoPending = '';
+    _renderCommunityLogoPreview('');
+    const fileInput = document.getElementById('communityChatLogoFile');
+    if (fileInput) fileInput.value = '';
+    const urlInput = document.getElementById('communityChatLogoUrl');
+    if (urlInput) urlInput.value = '';
+    showToast('Logo quitado — tocá "Guardar Comunidad" para aplicar', 'info');
+}
+
 async function loadCommunityConfig() {
     try {
         const response = await fetch(`${API_URL}/api/config/community`, {
@@ -5808,7 +5878,15 @@ async function loadCommunityConfig() {
             const logoInput = document.getElementById('communityChatLogoUrl');
             if (channelInput) channelInput.value = data.channelUrl || '';
             if (supportInput) supportInput.value = data.supportUrl || '';
-            if (logoInput) logoInput.value = data.chatLogoUrl || '';
+            const logo = data.chatLogoUrl || '';
+            _communityLogoSaved = logo;
+            _communityLogoPending = undefined;
+            const fileInput = document.getElementById('communityChatLogoFile');
+            if (fileInput) fileInput.value = '';
+            // Una imagen subida (data URL, larguísima) no se vuelca al input de
+            // texto: se muestra solo en la vista previa. Las URLs https sí.
+            if (logoInput) logoInput.value = logo.startsWith('data:') ? '' : logo;
+            _renderCommunityLogoPreview(logo);
         }
     } catch (error) {
         console.error('Error loading community config:', error);
@@ -5821,7 +5899,14 @@ async function saveCommunityConfig() {
     const logoInput = document.getElementById('communityChatLogoUrl');
     const channelUrl = channelInput ? channelInput.value.trim() : '';
     const supportUrl = supportInput ? supportInput.value.trim() : '';
-    const chatLogoUrl = logoInput ? logoInput.value.trim() : '';
+    const logoUrlTyped = logoInput ? logoInput.value.trim() : '';
+    // Prioridad: acción explícita (subir imagen / Quitar) > URL tipeada > lo
+    // guardado (si era imagen subida, el input vacío no la borra: se borra con Quitar).
+    let chatLogoUrl;
+    if (_communityLogoPending !== undefined) chatLogoUrl = _communityLogoPending;
+    else if (logoUrlTyped) chatLogoUrl = logoUrlTyped;
+    else if (_communityLogoSaved.startsWith('data:')) chatLogoUrl = _communityLogoSaved;
+    else chatLogoUrl = '';
     try {
         const response = await fetch(`${API_URL}/api/admin/community`, {
             method: 'POST',
@@ -5833,6 +5918,11 @@ async function saveCommunityConfig() {
         });
         const data = await response.json();
         if (response.ok) {
+            _communityLogoSaved = chatLogoUrl;
+            _communityLogoPending = undefined;
+            const fileInput = document.getElementById('communityChatLogoFile');
+            if (fileInput) fileInput.value = '';
+            _renderCommunityLogoPreview(chatLogoUrl);
             showToast('Comunidad guardada correctamente', 'success');
         } else {
             showToast(data.error || data.message || 'Error al guardar comunidad', 'error');

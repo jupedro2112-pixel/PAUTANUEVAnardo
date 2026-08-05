@@ -615,9 +615,14 @@ document.addEventListener('change', function (ev) {
                                 <small style="color:#aaa;font-size:11px;">Alimenta el "Soporte 24/7 (Telegram)" del menú ☰ del cliente (ese botón aparece SIEMPRE; sin URL usa el link por defecto) y el botón "Soporte Telegram" de la pantalla principal (ese sí se oculta si está vacío).</small>
                             </div>
                             <div class="form-group">
-                                <label>Logo del chat de soporte (URL de imagen):</label>
-                                <input type="url" id="communityChatLogoUrl" placeholder="https://... (imagen cuadrada, ej. 96x96)" style="width:100%;">
-                                <small style="color:#aaa;font-size:11px;">Es la foto de perfil que el cliente ve en la cabecera "Soporte VIPCARGAS" del chat. Vacío = el logo de VIPCARGAS de siempre.</small>
+                                <label>Logo del chat de soporte:</label>
+                                <div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
+                                    <img id="communityChatLogoPreview" src="" alt="" style="display:none;width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid #444;background:#111;">
+                                    <input type="file" id="communityChatLogoFile" accept="image/*" onchange="handleCommunityChatLogoFile(this)" style="flex:1;min-width:0;">
+                                    <button type="button" class="btn-secondary" id="communityChatLogoClearBtn" onclick="clearCommunityChatLogo()" style="display:none;white-space:nowrap;">🗑️ Quitar</button>
+                                </div>
+                                <input type="url" id="communityChatLogoUrl" placeholder="…o pegá una URL https:// (imagen cuadrada, ej. 96x96)" style="width:100%;">
+                                <small style="color:#aaa;font-size:11px;">Es la foto de perfil que el cliente ve en la cabecera del chat de soporte. Podés SUBIR una imagen (se achica sola a 128x128) o pegar una URL. Vacío = el logo de VIPCARGAS de siempre. Se aplica al tocar "Guardar Comunidad".</small>
                             </div>
                             <button class="btn-primary" onclick="saveCommunityConfig()">
                                 <span class="icon icon-save"></span> Guardar Comunidad
