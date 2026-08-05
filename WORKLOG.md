@@ -8,6 +8,28 @@
 
 ## Sesión 2026-08-05
 
+### 137. Bono de instalación SIN SMS para usuarios creados por un AGENTE
+- **Pedido del owner:** el bono 100% de instalación exige app instalada + SMS
+  verificado. Para usuarios que NO se registraron solos (los creó un agente
+  desde el panel), NO pedir el SMS — que puedan completar el teléfono u
+  omitirlo. Si el usuario se registró SOLO, sigue TODO igual (app + SMS).
+- **Campo nuevo `User.createdByAgent`** (bool): lo setean los DOS altas del
+  panel (POST /api/admin/users con role user, y el create-user del
+  publisher_admin). Señales de respaldo para cuentas creadas ANTES del campo:
+  `acquisitionSource='manual'` (publisher) o `accessLinkCreatedAt` (el link de
+  un solo uso siempre lo genera un agente).
+- **Gate del claim (`/api/install-bonus/claim`):** el chequeo `phoneVerified`
+  se saltea si `_agentCreated`. Los DEMÁS candados siguen para todos: app
+  standalone + token FCM + bloqueo por dispositivo que ya cobró
+  (DEVICE_ALREADY_CLAIMED). Racional: el creado por agente no puede
+  auto-fabricarse cuentas en masa (el alta la controla el agente).
+- **Front sin cambios:** installbonus.js solo reacciona a los códigos del
+  server; el banner de "verificá tu teléfono" sigue empujando la verificación
+  opcional (#115). **Validado:** `node --check` OK. Back necesita redeploy.
+  PROBAR: usuario creado por agente + app instalada, SIN teléfono → reclama OK;
+  usuario auto-registrado sin SMS → sigue rechazado con
+  PHONE_VERIFICATION_REQUIRED.
+
 ### 136. Config de Comunidad: reintento continuo + refresh al abrir el menú (los links ya no quedan clavados)
 - **Reporte del owner:** con la config de Comunidad BIEN guardada en el panel
   (verificada en su captura: canal y soporte cargados), el cliente seguía

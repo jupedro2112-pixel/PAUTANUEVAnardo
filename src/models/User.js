@@ -376,6 +376,16 @@ const userSchema = new mongoose.Schema({
     default: 'organic',
     index: true
   },
+  // true = la cuenta la creó UN AGENTE desde el panel (admin general, depositor
+  // o publisher_admin), NO el propio cliente registrándose. Lo usan los gates
+  // que distinguen auto-registro de alta asistida (ej. el bono de instalación
+  // no exige SMS a los creados por agente, owner 2026-08-05). Para cuentas
+  // viejas sin el campo hay señales de respaldo: acquisitionSource='manual' o
+  // accessLinkCreatedAt (el link de un solo uso lo genera siempre un agente).
+  createdByAgent: {
+    type: Boolean,
+    default: false
+  },
   // Sólo se llena cuando acquisitionSource='manual': identifica al
   // publisher_admin (o admin futuro) que creó el usuario desde el panel.
   // Permite reportes de "cuántos usuarios trajo cada cuenta publicista".

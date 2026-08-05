@@ -9859,7 +9859,19 @@ app.post('/api/install-bonus/claim', authMiddleware, async (req, res) => {
 
     // Teléfono verificado por SMS: requisito anti-multi-cuenta. Sin esto, un
     // mismo número podía abrir varias cuentas y cobrar el bono en cada una.
-    if (user.phoneVerified !== true) {
+    //
+    // EXCEPCIÓN (owner 2026-08-05): a los usuarios CREADOS POR UN AGENTE desde
+    // el panel (admin/depositor/publisher_admin) NO se les exige el SMS — ya
+    // pasaron por un alta asistida (no pueden auto-fabricarse cuentas en masa
+    // registrándose solos) y siguen vigentes los otros candados: app instalada
+    // + token FCM + bloqueo por dispositivo repetido. El que se registró SOLO
+    // sigue necesitando el SMS como siempre. Señales de respaldo para cuentas
+    // creadas antes del campo createdByAgent: acquisitionSource='manual'
+    // (publisher) y accessLinkCreatedAt (el link lo genera siempre un agente).
+    const _agentCreated = user.createdByAgent === true ||
+      user.acquisitionSource === 'manual' ||
+      !!user.accessLinkCreatedAt;
+    if (!_agentCreated && user.phoneVerified !== true) {
       return res.status(400).json({
         error: 'Para reclamar el bono necesitás tener tu teléfono verificado por SMS. Verificalo y volvé a tocar "Reclamar".',
         code: 'PHONE_VERIFICATION_REQUIRED'
@@ -11338,7 +11350,8 @@ app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdmi
       acquiredAt: new Date(),
       createdByEmployeeId: employee.id,
       createdByEmployeeUsername: employee.username,
-      acquisitionInfluencer: chosenInfluencer
+      acquisitionInfluencer: chosenInfluencer,
+      createdByAgent: true
     });
 
     // NO creamos ChatStatus acá. Si lo hiciéramos, el usuario aparecería como
@@ -14892,7 +14905,10 @@ app.post('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =
       isActive: true,
       giroxUserId: null,
       giroxSyncStatus: role === 'user' ? 'pending' : 'not_applicable',
-      giroxPasswordSynced: role === 'user'
+      giroxPasswordSynced: role === 'user',
+      // Alta hecha por un agente desde el panel (no auto-registro): habilita
+      // gates más laxos, ej. el bono de instalación sin SMS (owner 2026-08-05).
+      createdByAgent: role === 'user'
     });
 
     // NO creamos ChatStatus acá (ver nota en publisher-admin/create-user):
