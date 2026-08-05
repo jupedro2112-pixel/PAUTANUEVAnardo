@@ -7507,27 +7507,32 @@ app.get('/api/movements', authMiddleware, async (req, res) => {
   }
 });
 
-// Multiplicador de rollover a usar en los BONOS (carga con bonus y bono directo).
-// La Partner API EXIGE `bonus_multiplier` junto con `bonus_amount`, y solo acepta
-// los multiplicadores de la config del sitio (GET /config → rollover.multipliers;
-// x1 puede NO estar permitido — visto 2026-08-05: "The selected multiplier is
-// invalid"). Prioridad: GIROX_BONUS_MULTIPLIER (env/SSM) si la plataforma lo
-// permite; si no, el MENOR permitido (el rollover más suave); último recurso 1.
+// Multiplicador a usar en los BONOS (carga con bonus y bono directo).
+// La Partner API EXIGE `bonus_multiplier` junto con `bonus_amount`, y valida
+// contra la lista de BONOS de la config del sitio: `bonus.multipliers` — ⚠️ NO
+// confundir con `rollover.multipliers`, que es la de los DEPÓSITOS (bug del
+// primer intento: leía esa otra lista y elegía 1, que para bonos no está
+// permitido → "The selected multiplier is invalid").
+// En la config real del owner (2026-08-05): bonus.multipliers = [0,2,5,10,20,40].
+// El 0 es EL valor deseado por default: bono SIN rollover = tipado como Bono en
+// el panel pero retirable como siempre (el comportamiento histórico de los
+// bonos manuales del agente). Prioridad: GIROX_BONUS_MULTIPLIER (env/SSM) si la
+// plataforma lo permite; si no, 0 si está permitido; si no, el menor permitido.
 async function getGiroxBonusMultiplier() {
   let allowed = null;
   try {
     const cfg = await girox.getPlatformConfig();
-    const raw = cfg.success && cfg.config && cfg.config.rollover && cfg.config.rollover.multipliers;
+    const raw = cfg.success && cfg.config && cfg.config.bonus && cfg.config.bonus.multipliers;
     if (Array.isArray(raw) && raw.length) {
-      allowed = raw.map(Number).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+      allowed = raw.map(Number).filter((n) => Number.isFinite(n) && n >= 0).sort((a, b) => a - b);
       if (!allowed.length) allowed = null;
     }
   } catch (_) { /* config no disponible: se sigue con la env */ }
   const envVal = Number(process.env.GIROX_BONUS_MULTIPLIER);
-  const envOk = Number.isFinite(envVal) && envVal > 0;
+  const envOk = Number.isFinite(envVal) && envVal >= 0;
   if (envOk && (!allowed || allowed.includes(envVal))) return envVal;
-  if (allowed) return allowed[0];
-  return envOk ? envVal : 1;
+  if (allowed) return allowed.includes(0) ? 0 : allowed[0];
+  return envOk ? envVal : 0;
 }
 
 app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, res) => {
@@ -7584,6 +7589,20 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       // NO se reintenta el depósito (duplicaría por reference) — se avisa al
       // agente más abajo para que aplique el bono a mano.
       const bonusActuallyApplied = bonusRequested && !result.bonusFailed;
+
+      // claim_required=true en la config del owner: el bono adjunto puede quedar
+      // "a reclamar" en el casino → se libera acá para que el cliente lo vea en
+      // su saldo al instante. Idempotente (si no hay nada que reclamar, amount 0).
+      if (bonusActuallyApplied) {
+        try {
+          const _depClaim = await girox.claimPendingBonus(user.username);
+          if (!_depClaim.success) {
+            logger.warn(`[deposit] auto-claim del bono falló para ${user.username}: ${_depClaim.error} — el cliente puede reclamarlo desde el casino`);
+          }
+        } catch (depClaimErr) {
+          logger.warn(`[deposit] auto-claim del bono excepción para ${user.username}: ${depClaimErr.message}`);
+        }
+      }
       const bonusJgResult = bonusRequested
         ? {
             success: bonusActuallyApplied,

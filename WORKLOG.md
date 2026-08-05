@@ -8,6 +8,25 @@
 
 ## Sesión 2026-08-05
 
+### 140. FIX real del #139: la lista de multiplicadores era la de BONOS, y el default correcto es 0
+- **Los mismos 2 errores persistían.** Causas: (a) el server probado aún no
+  tenía el fix deployado, y (b) el fix #139 leía la lista EQUIVOCADA — se
+  verificó la config real con `GET /config` directo contra la Partner API:
+  `rollover.multipliers=[0,1,2,5,10]` (DEPÓSITOS) vs
+  **`bonus.multipliers=[0,2,5,10,20,40]`** (BONOS) — el 1 elegido por #139 no
+  está permitido para bonos. Además `claim_required=true` y
+  `fixed_min=2/fixed_max=1000000`.
+- **Fix:** `getGiroxBonusMultiplier()` lee `bonus.multipliers` y el default
+  preferido es **0 = bono SIN rollover** (tipado como Bono en el panel de
+  1girox pero retirable como siempre — exactamente el comportamiento histórico
+  de los bonos manuales, que es lo que el owner pidió: distinguirlos, no
+  cambiarles las reglas). `GIROX_BONUS_MULTIPLIER` (env) sigue pudiendo forzar
+  cualquier valor permitido (ahora acepta 0). **Auto-claim TAMBIÉN en la carga
+  con bonus** (claim_required=true: el bono adjunto podía quedar "a reclamar").
+- **Validado:** `node --check` OK + config real consultada a la API. Back
+  necesita redeploy (Render: verificar que tome el último commit — tiene un
+  "Payment failed" que puede frenar deploys; AWS: zip nuevo).
+
 ### 139. FIX del #138: multiplicador de bono VÁLIDO elegido desde la config de la plataforma
 - **Errores reportados por el owner al probar #138:** carga con bonus → "The
   bonus multiplier field is required when bonus percent / bonus amount is
