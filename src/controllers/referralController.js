@@ -15,8 +15,14 @@ const logger = require('../utils/logger');
 const PERIOD_KEY_REGEX = /^\d{4}-\d{2}$/;
 // Allowed status values for payout queries
 const VALID_PAYOUT_STATUSES = ['pending', 'paid', 'failed', 'cancelled'];
-// Brand domain used for referral links shown to end users
-const REFERRAL_BASE_URL = 'https://vipcargas.com/linkreferido';
+// Dominio de los links de referido que ve el usuario final.
+// GETTER LAZY a propósito (fix 2026-08-05): PUBLIC_BASE_URL llega desde SSM en
+// el bootstrap async — una const acá quedaba clavada en el default viejo
+// (vipcargas.com) aunque la env estuviera bien. Mismo patrón que
+// getPublicBaseUrl() de server.js.
+function referralBaseUrl() {
+  return (process.env.PUBLIC_BASE_URL || 'https://cargas1girox.com').replace(/\/$/, '') + '/linkreferido';
+}
 
 /**
  * Sanitize a string for use as a plain-string query filter (no operators)
@@ -84,7 +90,7 @@ const getMyReferralInfo = asyncHandler(async (req, res) => {
   }
 
   const referralLink = user.referralCode
-    ? `${REFERRAL_BASE_URL}?ref=${encodeURIComponent(user.referralCode)}`
+    ? `${referralBaseUrl()}?ref=${encodeURIComponent(user.referralCode)}`
     : null;
 
   // Contar referidos
@@ -569,7 +575,7 @@ const adminGetUserReferrals = asyncHandler(async (req, res) => {
         id: user.id,
         username: user.username,
         referralCode: user.referralCode,
-        referralLink: user.referralCode ? `${REFERRAL_BASE_URL}?ref=${encodeURIComponent(user.referralCode)}` : null,
+        referralLink: user.referralCode ? `${referralBaseUrl()}?ref=${encodeURIComponent(user.referralCode)}` : null,
         referralTier: user.referralTier,
         referralRateOverride: user.referralRateOverride,
         excludedFromReferral: user.excludedFromReferral

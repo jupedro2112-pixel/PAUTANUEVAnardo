@@ -144,13 +144,95 @@ VIP.ui = (function () {
                     const newBalance      = parseFloat(data.balance);
                     if (Math.abs(newBalance - previousBalance) > 0.01) {
                         localStorage.setItem('lastBalance', newBalance);
-                        showBalanceToast(newBalance);
+                        if (newBalance > previousBalance) {
+                            // Subió el saldo (carga/premio): invitación grande al
+                            // casino en vez del toast chico (owner 2026-08-05).
+                            showCasinoInvite(newBalance);
+                        } else {
+                            showBalanceToast(newBalance);
+                        }
                     }
                 }
             }
         } catch (error) {
             console.error('Error sincronizando saldo:', error);
         }
+    }
+
+    // Saldo empujado por SOCKET (el server emite `balance_updated` al acreditar
+    // una carga, premio o devolución): mismo tratamiento que el polling, pero
+    // instantáneo — el cliente ve la invitación al casino apenas el agente carga.
+    function handleBalancePush(balance) {
+        const newBalance = parseFloat(balance);
+        if (!Number.isFinite(newBalance)) return;
+        if (VIP.state.currentUser) VIP.state.currentUser.balance = newBalance;
+        updateBalanceDisplay(newBalance);
+        const previousBalance = parseFloat(localStorage.getItem('lastBalance') || '0');
+        if (Math.abs(newBalance - previousBalance) > 0.01) {
+            localStorage.setItem('lastBalance', newBalance);
+            if (newBalance > previousBalance) {
+                showCasinoInvite(newBalance);
+            } else {
+                showBalanceToast(newBalance);
+            }
+        }
+    }
+
+    // ---- Invitación al casino tras una carga (owner 2026-08-05) ----
+    // Cuando el saldo SUBE, un recuadro grande y bien visible invita a entrar al
+    // casino YA LOGUEADO (VIP.ui.enterCasino, el SSO de siempre). Se va solo a
+    // los 15 segundos (barra de tiempo incluida) o con la ✕. Throttle de 60s:
+    // el evento puede llegar por socket Y por el polling de saldo — una sola vez.
+    let _lastCasinoInviteAt = 0;
+    let _casinoInviteTimer = null;
+
+    function showCasinoInvite(balance) {
+        const now = Date.now();
+        if (now - _lastCasinoInviteAt < 60000) return;
+        if (!VIP.state.currentUser) return;
+        if (VIP.ui._casinoOpen) return; // ya está jugando: no tapar el casino
+        _lastCasinoInviteAt = now;
+
+        let box = document.getElementById('casinoInviteBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'casinoInviteBox';
+            box.style.cssText =
+                'position:fixed;left:50%;top:16%;transform:translateX(-50%);z-index:19000;' +
+                'width:min(92vw,380px);background:linear-gradient(150deg,#1a0033,#2d0052);' +
+                'border:2px solid #ffd700;border-radius:18px;padding:18px 16px 14px;text-align:center;' +
+                'box-shadow:0 12px 44px rgba(212,175,55,0.6);display:none;';
+            document.body.appendChild(box);
+        }
+        const amt = Number(balance) || 0;
+        box.innerHTML =
+            '<button type="button" onclick="VIP.ui.hideCasinoInvite()" ' +
+                'style="position:absolute;top:6px;right:10px;background:none;border:none;color:#999;font-size:20px;cursor:pointer;line-height:1;">×</button>' +
+            '<div style="font-size:30px;line-height:1;margin-bottom:6px;">💰</div>' +
+            '<div style="color:#00ff88;font-weight:900;font-size:16px;margin-bottom:2px;">¡Saldo acreditado!</div>' +
+            '<div style="color:#fff;font-weight:800;font-size:22px;margin-bottom:10px;">$' + amt.toLocaleString('es-AR') + '</div>' +
+            '<button type="button" onclick="VIP.ui.hideCasinoInvite();VIP.ui.enterCasino();" ' +
+                'style="width:100%;background:linear-gradient(135deg,#d4af37,#ffd700);color:#000;border:none;' +
+                'padding:14px;border-radius:26px;font-weight:900;font-size:16px;cursor:pointer;' +
+                'box-shadow:0 4px 16px rgba(212,175,55,0.5);">🎰 JUGAR AHORA EN 1GIROX</button>' +
+            '<div style="color:#aaa;font-size:10.5px;margin-top:7px;">Entrás directo, con tu sesión ya iniciada</div>' +
+            '<div style="height:3px;background:rgba(255,255,255,0.12);border-radius:2px;margin-top:9px;overflow:hidden;">' +
+                '<div id="casinoInviteBar" style="height:100%;width:100%;background:#ffd700;transition:width 15s linear;"></div></div>';
+        box.style.display = 'block';
+
+        // Barra de tiempo: 100% → 0 en los 15s de vida del recuadro.
+        requestAnimationFrame(function () {
+            const bar = document.getElementById('casinoInviteBar');
+            if (bar) requestAnimationFrame(function () { bar.style.width = '0%'; });
+        });
+        clearTimeout(_casinoInviteTimer);
+        _casinoInviteTimer = setTimeout(hideCasinoInvite, 15000);
+    }
+
+    function hideCasinoInvite() {
+        clearTimeout(_casinoInviteTimer);
+        const box = document.getElementById('casinoInviteBox');
+        if (box) box.style.display = 'none';
     }
 
     function showBalanceToast(balance) {
@@ -610,6 +692,9 @@ VIP.ui = (function () {
         showChatScreen,
         adjustLayout,
         syncBalance,
+        handleBalancePush,
+        showCasinoInvite,
+        hideCasinoInvite,
         showBalanceToast,
         updateBalanceDisplay,
         startBalancePolling,

@@ -181,6 +181,16 @@ VIP.socket = (function () {
 
         // Un admin abrió el chat → todos los mensajes propios pasan a "leído":
         // los ✓✓ grises se pintan de celeste (como WhatsApp), en vivo.
+        // Saldo empujado por el server al acreditar una carga/premio/devolución:
+        // actualiza el header al instante y dispara la invitación al casino
+        // (ui.handleBalancePush decide si subió o bajó). Antes este evento se
+        // emitía desde el server y el cliente NO lo escuchaba (solo polling 30s).
+        VIP.state.socket.on('balance_updated', function (data) {
+            if (data && data.balance !== undefined && VIP.ui && VIP.ui.handleBalancePush) {
+                try { VIP.ui.handleBalancePush(data.balance); } catch (e) { /* nunca romper el socket */ }
+            }
+        });
+
         VIP.state.socket.on('messages_read_by_admin', function () {
             document.querySelectorAll('#chatMessages .msg-ticks').forEach(function (el) {
                 el.classList.add('msg-read');

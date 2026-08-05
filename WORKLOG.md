@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-05
 
+### 135. Link de referidos con dominio real + INVITACIÓN AL CASINO al acreditarse una carga
+- **Link de referidos (fix):** `referralController` tenía
+  `REFERRAL_BASE_URL='https://vipcargas.com/linkreferido'` como CONST hardcodeada
+  → getter lazy `referralBaseUrl()` sobre `PUBLIC_BASE_URL` (misma trampa y mismo
+  patrón que #130; default cargas1girox.com). Los 2 usos migrados.
+- **Invitación al casino (feature, pedido owner):** cuando el saldo del cliente
+  SUBE (carga del agente, auto-carga hgcash, premio, devolución), aparece un
+  recuadro grande centrado: "💰 ¡Saldo acreditado! $X — 🎰 JUGAR AHORA EN
+  1GIROX" con barra de tiempo; se va solo a los **15 segundos** o con la ✕. El
+  botón llama a `VIP.ui.enterCasino()` (el SSO de siempre: entra logueado).
+  - **Cableado:** `ui.showCasinoInvite/hideCasinoInvite/handleBalancePush` +
+    handler NUEVO `socket.on('balance_updated')` en socket.js — el server YA
+    emitía ese evento al acreditar y el cliente NO lo escuchaba (solo polling
+    de 30s): ahora la invitación sale al instante; el polling queda de respaldo
+    (mismo criterio sube/baja).
+  - Guardas: throttle 60s (socket+polling no duplican), no aparece si el casino
+    ya está abierto, subida → invitación / bajada → toast de siempre.
+- **Validado:** `node --check` OK (referralController, ui.js, socket.js). SW a
+  **v87**. El fix de referidos necesita redeploy del back; la invitación es
+  front. PROBAR: cargarle a un usuario con la app abierta → recuadro al
+  instante con el monto; tocar → casino logueado; dejarlo → se va a los 15s;
+  modal de referidos → link con cargas1girox.com.
+
 ### 134. Soporte/canal saneados: chau wa.link de METAWIN, botón violeta eliminado, fallbacks al dominio nuevo, login unificado
 - **Reportes del owner (verificados los 4):**
   1. "Soporte 24/7" del menú ☰ derivaba a `wa.link/metawin2026` — era el HREF
