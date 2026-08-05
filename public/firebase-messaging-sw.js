@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v84'; // v84: cabecera del chat "Soporte 1Girox" → "Cargas 1Girox"
+const CACHE_VERSION = 'v85'; // v85: bienvenida con reintentos (chat vacío al entrar por link en red lenta)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

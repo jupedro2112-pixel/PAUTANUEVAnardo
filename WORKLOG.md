@@ -8,6 +8,20 @@
 
 ## Sesión 2026-08-05
 
+### 133. FIX bienvenida perdida: reintentos (chat vacío al entrar por link en red lenta)
+- **Síntoma (owner, probando por Tor):** entró con el link de acceso y el chat
+  quedó VACÍO (sin bienvenida) y el chat tampoco aparecía del lado del admin
+  hasta que el cliente escribiera; al recargar la página, la bienvenida salió.
+- **Causa:** `sendWelcomeMessages` (ui.js) hacía UN solo POST a
+  `/api/messages/welcome` y el catch se tragaba cualquier fallo de red en
+  silencio, sin retry. En una red lenta (Tor, 3G) el primer request muere y no
+  hay bienvenida hasta la próxima carga de página. Como la bienvenida es la que
+  crea el ChatStatus, el admin tampoco veía la conversación.
+- **Fix:** 3 intentos con backoff (0/2.5s/7s); el endpoint ya es idempotente
+  (throttle 24h server-side) así que reintentar es seguro; si fallan los 3,
+  warn en consola y reintenta en la próxima carga (comportamiento previo).
+- **Validado:** `node --check` OK (ui.js). SW a **v85**. Solo front.
+
 ### 132. RUTEO por dueño: las operaciones de jugadores de PUBLICISTA van con la key del sub-agente
 - **Síntoma (owner):** al cargarle desde el panel a un usuario creado por un
   sub-agente (publicista con API key propia), la carga decía "el usuario no

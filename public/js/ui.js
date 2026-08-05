@@ -214,21 +214,36 @@ VIP.ui = (function () {
         // senderRole='user' y aparecía como si la hubiera escrito el propio
         // usuario. El endpoint /api/messages/welcome la crea con
         // senderRole='admin' y tiene su propio throttle de 24h server-side.
-        try {
-            const response = await fetch(`${VIP.config.API_URL}/api/messages/welcome`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${VIP.state.currentToken}`
+        //
+        // CON REINTENTOS (fix 2026-08-05): antes un fallo de red se tragaba en
+        // silencio y sin retry → el cliente entraba (típico: por link de acceso
+        // en una red lenta/Tor) con el chat VACÍO, y como la bienvenida es la
+        // que crea el ChatStatus, el chat tampoco aparecía del lado del admin
+        // hasta que el cliente escribiera o recargara la página.
+        const delays = [0, 2500, 7000]; // 3 intentos
+        for (let i = 0; i < delays.length; i++) {
+            if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+            try {
+                const response = await fetch(`${VIP.config.API_URL}/api/messages/welcome`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${VIP.state.currentToken}`
+                    }
+                });
+                if (response.ok) {
+                    // Refrescar el chat para mostrar los mensajes recién creados.
+                    setTimeout(() => { try { VIP.chat.loadMessages(); } catch (e) {} }, 300);
+                    localStorage.setItem(welcomeKey, Date.now().toString());
+                    return;
                 }
-            });
-            if (response.ok) {
-                // Refrescar el chat para mostrar los mensajes recién creados.
-                setTimeout(() => { try { VIP.chat.loadMessages(); } catch (e) {} }, 300);
-                localStorage.setItem(welcomeKey, Date.now().toString());
+                // 4xx (ej. 401 por sesión a medio armar): reintentar igual — el
+                // endpoint es idempotente (throttle server-side de 24h).
+            } catch (error) {
+                // red caída/lenta: probamos de nuevo con el próximo delay
             }
-        } catch (error) {
         }
+        console.warn('[welcome] no se pudo enviar la bienvenida tras 3 intentos (se reintenta en la próxima carga)');
     }
 
     // ---- CBU ----
