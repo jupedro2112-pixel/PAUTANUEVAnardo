@@ -8,6 +8,15 @@
 
 ## Sesión 2026-08-05
 
+### 131. La card de hgcash del panel mostraba el webhook con vipcargas.com hardcodeado
+- **Síntoma (owner):** la línea informativa "Webhook a configurar en hgcash:"
+  decía `https://vipcargas.com/api/...` — el dominio estaba HARDCODEADO en
+  admin.js. Era solo display (lo que vale es la URL cargada en el dashboard de
+  hg.cash), pero confundía.
+- **Fix:** `GET /api/admin/hgcash/config` ahora devuelve `webhookFullUrl` armada
+  con `getPublicBaseUrl()` (lazy, #130) y el panel la muestra tal cual (fallback
+  local a cargas1girox.com). Back necesita redeploy; panel, recargar.
+
 ### 130. FIX links con vipcargas.com en AWS: PUBLIC_BASE_URL pasó a getter LAZY
 - **Síntoma (owner):** en el entorno de AWS, los links de acceso salían con
   `vipcargas.com` aunque `/1girox/prod/PUBLIC_BASE_URL` estaba PERFECTO

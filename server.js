@@ -13866,7 +13866,10 @@ app.get('/api/admin/hgcash/config', authMiddleware, adminMiddleware, async (req,
       // No exponemos el secreto; sólo si está cargado (para que el panel avise).
       secretConfigured: !!process.env.HGCASH_WEBHOOK_SECRET,
       aiEnabled: comprobanteAi.isEnabled(),
-      webhookUrl: '/api/hgcash/webhook'
+      webhookUrl: '/api/hgcash/webhook',
+      // URL COMPLETA armada con el dominio real (getter lazy): el panel la
+      // mostraba con vipcargas.com hardcodeado y confundía (owner 2026-08-05).
+      webhookFullUrl: `${getPublicBaseUrl()}/api/hgcash/webhook`
     });
   } catch (error) {
     console.error('Error obteniendo config hgcash:', error);

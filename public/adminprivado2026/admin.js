@@ -5695,7 +5695,7 @@ async function loadHgcashConfig() {
             parts.push(j.secretConfigured ? 'firma ✅' : 'firma ❌ (falta HGCASH_WEBHOOK_SECRET en SSM)');
             parts.push(j.aiEnabled ? 'IA ✅' : 'IA ❌ (falta ANTHROPIC_API_KEY)');
             status.innerHTML = parts.join(' · ') +
-                '<br><span style="color:#888;">Webhook a configurar en hgcash: <code>https://vipcargas.com' + (j.webhookUrl || '/api/hgcash/webhook') + '</code></span>';
+                '<br><span style="color:#888;">Webhook a configurar en hgcash: <code>' + (j.webhookFullUrl || ('https://cargas1girox.com' + (j.webhookUrl || '/api/hgcash/webhook'))) + '</code></span>';
         }
     } catch (e) {
         if (form) form.style.display = 'none';
