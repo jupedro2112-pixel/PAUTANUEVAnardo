@@ -8,6 +8,28 @@
 
 ## Sesión 2026-08-05
 
+### 146. balance_updated por ROOM (fix multi-instancia) + mini-ENCUESTA de Comunidad en la invitación
+- **Fix real de multi-instancia:** los 6 emits de `balance_updated` usaban el
+  Map LOCAL `connectedUsers` → si el cliente estaba en la OTRA instancia, el
+  evento no salía y la invitación al casino esperaba el poll de 30s (por eso el
+  cartel "no aparecía tan al instante como los mensajes", que sí van por room).
+  Todos migrados a **`io.to('user_<id>')`** (cruza instancias vía el adapter
+  Redis): carga manual, bonus, auto-carga hgcash, confirm de payout, webhook de
+  payout y devolución de rechazo. Ahora el cartel sale a la vez que el mensaje.
+- **Encuesta de Comunidad:** el bloque informativo del código de $5.000 dentro
+  de la invitación fue REEMPLAZADO (lápida) por una mini-encuesta: "📣 ¿Ya
+  estás en nuestra Comunidad de Telegram?" con **"🚀 SÍ, quiero entrar"**
+  (abre el link de la Comunidad — el de la card del panel, leído del pill del
+  header con fallback) y **"✅ Ya estoy en la Comunidad"**. Cualquier respuesta
+  se recuerda (localStorage `communitySurveyDone`) y la encuesta no se repite;
+  el cartel completo sigue desapareciendo a los 15s.
+- **Infra completada por el owner (esta sesión):** stickiness ya venía del
+  clon; `/1girox/prod/REDIS_URL` cargada apuntando al ElastiCache del entorno
+  viejo con **base lógica /1** (sin cruce con la vieja vipcargas).
+- **Validado:** `node --check` OK (server, ui). SW a **v91**. Back necesita
+  redeploy (zip). PROBAR con 2 instancias: carga → cartel + mensaje AL MISMO
+  TIEMPO; encuesta → SÍ abre Telegram y no vuelve a aparecer.
+
 ### 145. DIAGNÓSTICO: tiempo real muerto en el entorno AWS nuevo (chats no aparecen sin refresh)
 - **Reclamo de los agentes:** los chats nuevos no aparecen sin refresh; todo
   carga más lento que en la vieja vipcargas. Del lado del cliente, ídem.

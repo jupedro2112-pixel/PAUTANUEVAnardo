@@ -2155,8 +2155,9 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
       io.to(`chat_${user.id}`).emit('new_message', msgData);
       notifyAdmins('new_message', { message: msgData, userId: user.id, username: user.username });
     }
-    const uSock = connectedUsers.get(user.id);
-    if (uSock && newBalance !== null) uSock.emit('balance_updated', { balance: newBalance });
+    // Por ROOM (no el Map local): con multi-instancia, el Map solo ve los
+    // sockets de ESTA instancia — el room cruza instancias vía el adapter Redis.
+    if (newBalance !== null) io.to(`user_${user.id}`).emit('balance_updated', { balance: newBalance });
 
     // SLA: la auto-carga ES la respuesta al cliente → frena el reloj de demoras
     // (antes quedaba como "sin respuesta" porque la carga es automática, no un agente).
@@ -7880,9 +7881,9 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
 
       // Notificar al usuario específico si está conectado. Sólo si tenemos
       // balance real — si falló el lookup, omitimos para no escribir "null" en UI.
-      const userSocket = connectedUsers.get(user.id);
-      if (userSocket && newBalance !== null) {
-        userSocket.emit('balance_updated', { balance: newBalance });
+      // Por ROOM (cruza instancias vía Redis; el Map local no ve sockets ajenos).
+      if (newBalance !== null) {
+        io.to(`user_${user.id}`).emit('balance_updated', { balance: newBalance });
       }
 
       // Push FCM para usuarios offline. El título/body reflejan el outcome REAL
@@ -8116,9 +8117,9 @@ app.post('/api/admin/withdrawal', authMiddleware, withdrawerMiddleware, async (r
 
       // Notificar al usuario específico si está conectado. Sólo si tenemos
       // balance real — si falló el lookup, omitimos para no escribir "null" en UI.
-      const userSocket = connectedUsers.get(user.id);
-      if (userSocket && newBalance !== null) {
-        userSocket.emit('balance_updated', { balance: newBalance });
+      // Por ROOM (cruza instancias vía Redis; el Map local no ve sockets ajenos).
+      if (newBalance !== null) {
+        io.to(`user_${user.id}`).emit('balance_updated', { balance: newBalance });
       }
 
       // Push FCM para usuarios offline.
@@ -14469,7 +14470,7 @@ async function _deductChipsAtConfirm(payout, agentUser) {
       timestamp: new Date()
     });
   } catch (_) {}
-  try { const uSock = connectedUsers.get(payout.userId); if (uSock && after != null) uSock.emit('balance_updated', { balance: after }); } catch (_) {}
+  try { if (after != null) io.to(`user_${payout.userId}`).emit('balance_updated', { balance: after }); } catch (_) {}
   return { ok: true, balanceAfter: after };
 }
 
@@ -14626,7 +14627,7 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
           try {
             await Transaction.create({ id: uuidv4(), type: 'deposit', amount: W, username: payout.username, userId: payout.userId, description: 'Devolución de retiro rechazado', adminId: req.user.userId, adminUsername: req.user.username, adminRole: req.user.role, transactionId: data?.transfer_id || data?.transferId, metadata: { source: 'payout_refund', refundKind: 'chips', payoutId: payout.id }, timestamp: new Date() });
           } catch (_) {}
-          try { const balRes = await girox.getUserBalanceWithRetry(payout.username); const uSock = connectedUsers.get(payout.userId); if (uSock && balRes.success) uSock.emit('balance_updated', { balance: balRes.balance }); } catch (_) {}
+          try { const balRes = await girox.getUserBalanceWithRetry(payout.username); if (balRes.success) io.to(`user_${payout.userId}`).emit('balance_updated', { balance: balRes.balance }); } catch (_) {}
           await _emitAdminOnlyChatNote(payout.userId, payout.username, `↩️ Retiro RECHAZADO: se devolvió $${W.toLocaleString('es-AR')} en fichas (el pago había fallado tras descontar).`);
           return res.json({ success: true, chipsReturned: true });
         }
@@ -14717,8 +14718,7 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
       await PendingPayout.updateOne({ id }, { $set: { chipsReturned: true } });
       try {
         const balRes = await girox.getUserBalanceWithRetry(payout.username);
-        const uSock = connectedUsers.get(payout.userId);
-        if (uSock && balRes.success) uSock.emit('balance_updated', { balance: balRes.balance });
+        if (balRes.success) io.to(`user_${payout.userId}`).emit('balance_updated', { balance: balRes.balance });
       } catch (_) {}
       const detalle = bonusPart > 0
         ? `$${bonusPart.toLocaleString('es-AR')} como BONUS + $${chipsPart.toLocaleString('es-AR')} en fichas`

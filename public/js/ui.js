@@ -216,9 +216,19 @@ VIP.ui = (function () {
                 'padding:14px;border-radius:26px;font-weight:900;font-size:16px;cursor:pointer;' +
                 'box-shadow:0 4px 16px rgba(212,175,55,0.5);">🎰 JUGAR AHORA EN 1GIROX</button>' +
             '<div style="color:#aaa;font-size:10.5px;margin-top:7px;">Entrás directo, con tu sesión ya iniciada</div>' +
-            '<div style="margin-top:9px;padding:8px 10px;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);border-radius:10px;color:#c9f7dd;font-size:11px;line-height:1.45;text-align:left;">' +
-                '🎲 <strong style="color:#7fe07f;">Probá tu suerte.</strong> ¿No te fue bien? Volvé: con el <strong style="color:#ffd700;">código de la Comunidad</strong> reclamás <strong style="color:#ffd700;">$5.000 GRATIS</strong> (canjealo en el menú ☰ → 🎁 Código de Bienvenida).' +
-            '</div>' +
+            // 🪦 Acá iba el cartel informativo del código de $5.000: reemplazado
+            // (owner 2026-08-05) por la mini-ENCUESTA de Comunidad de abajo.
+            (localStorage.getItem('communitySurveyDone') === '1' ? '' :
+            '<div id="casinoInviteSurvey" style="margin-top:9px;padding:9px 10px;background:rgba(41,169,235,0.10);border:1px solid rgba(41,169,235,0.45);border-radius:10px;">' +
+                '<div style="color:#9ad8f7;font-size:11.5px;font-weight:800;">📣 ¿Ya estás en nuestra Comunidad de Telegram?</div>' +
+                '<div style="color:#8fb9cc;font-size:10px;margin-top:2px;">Bonos, códigos gratis y avisos exclusivos.</div>' +
+                '<div style="display:flex;gap:8px;margin-top:8px;">' +
+                    '<button type="button" onclick="VIP.ui.casinoInviteJoinCommunity()" ' +
+                        'style="flex:1;background:linear-gradient(135deg,#29a9eb,#53bdeb);color:#fff;border:none;padding:9px 6px;border-radius:18px;font-weight:900;font-size:12px;cursor:pointer;">🚀 SÍ, quiero entrar</button>' +
+                    '<button type="button" onclick="VIP.ui.casinoInviteAlreadyIn()" ' +
+                        'style="flex:1;background:rgba(255,255,255,0.10);color:#cde;border:1px solid rgba(255,255,255,0.25);padding:9px 6px;border-radius:18px;font-weight:800;font-size:12px;cursor:pointer;">✅ Ya estoy en la Comunidad</button>' +
+                '</div>' +
+            '</div>') +
             '<div style="height:3px;background:rgba(255,255,255,0.12);border-radius:2px;margin-top:9px;overflow:hidden;">' +
                 '<div id="casinoInviteBar" style="height:100%;width:100%;background:#ffd700;transition:width 15s linear;"></div></div>';
         box.style.display = 'block';
@@ -236,6 +246,28 @@ VIP.ui = (function () {
         clearTimeout(_casinoInviteTimer);
         const box = document.getElementById('casinoInviteBox');
         if (box) box.style.display = 'none';
+    }
+
+    // ---- Mini-encuesta de Comunidad dentro de la invitación al casino ----
+    // "SÍ, quiero entrar" → abre la Comunidad de Telegram (el link que se carga
+    // en el panel → sección Comandos → card Comunidad; chat.js lo mantiene
+    // aplicado en el pill del header, con fallback al dominio propio).
+    // Cualquiera de las dos respuestas queda recordada: la encuesta no se
+    // repite en próximas cargas (localStorage), el resto del cartel sigue igual.
+    function casinoInviteJoinCommunity() {
+        try { localStorage.setItem('communitySurveyDone', '1'); } catch (e) {}
+        const pill = document.getElementById('canalTelegramHeaderBtn');
+        const url = (pill && pill.href) || 'https://cargas1girox.com/canal-proximamente';
+        window.open(url, '_blank', 'noopener');
+        const s = document.getElementById('casinoInviteSurvey');
+        if (s) s.style.display = 'none';
+    }
+
+    function casinoInviteAlreadyIn() {
+        try { localStorage.setItem('communitySurveyDone', '1'); } catch (e) {}
+        const s = document.getElementById('casinoInviteSurvey');
+        if (s) s.style.display = 'none';
+        showToast('¡Genial! 🙌 Gracias por estar en la Comunidad', 'success');
     }
 
     function showBalanceToast(balance) {
@@ -698,6 +730,8 @@ VIP.ui = (function () {
         handleBalancePush,
         showCasinoInvite,
         hideCasinoInvite,
+        casinoInviteJoinCommunity,
+        casinoInviteAlreadyIn,
         showBalanceToast,
         updateBalanceDisplay,
         startBalancePolling,
