@@ -41,6 +41,12 @@
   User). Back necesita redeploy. PROBAR: crear usuario con un publicista →
   cargarle desde el panel (debe acreditar y descontar del saldo del SUB en
   1girox); botón CASINO del cliente; reclamar un reembolso con pérdida.
+- **UPDATE (mismo día):** migración one-shot
+  **`migration_backfill_girox_owner_done`** — backfillea `giroxOwnerCampaign` a
+  los usuarios creados por publisher_admin ANTES del fix (condición triple:
+  acquisitionSource manual + createdByEmployeeId + giroxSyncStatus synced +
+  campaña con key). Corre sola en el próximo arranque → los 4 usuarios de prueba
+  del owner quedan ruteados sin tocar nada a mano.
 
 ### 131. La card de hgcash del panel mostraba el webhook con vipcargas.com hardcodeado
 - **Síntoma (owner):** la línea informativa "Webhook a configurar en hgcash:"

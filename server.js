@@ -8927,6 +8927,46 @@ async function initializeData() {
     logger.error(`[startup-migration] Falló limpieza one-shot de mustChangePassword: ${e.message}`);
   }
 
+  // One-shot (2026-08-05, #132): backfill de `giroxOwnerCampaign` para los
+  // usuarios que un publisher_admin creó ANTES del fix de ruteo por dueño.
+  // Esos jugadores viven bajo el sub-agente en 1girox pero no tienen la marca →
+  // sus cargas/retiros seguían firmándose con la key master (player_not_found).
+  // Condición TRIPLE para no marcar de más: creado a mano por un empleado
+  // (acquisitionSource manual + createdByEmployeeId), alta en plataforma OK
+  // (giroxSyncStatus synced) y campaña CON key propia. Si algún caso raro quedara
+  // mal marcado (race NO_CREDS del alta), se nota al operar (not_found con la key
+  // del sub) y se corrige limpiando el campo a mano.
+  try {
+    const flag = await Config.findOne({ key: 'migration_backfill_girox_owner_done' }).lean();
+    if (!flag || flag.value !== true) {
+      const keyed = await Campaign.find({ hasGiroxKey: true }).select('code').lean();
+      const codes = keyed.map((c) => c.code);
+      let updated = 0;
+      if (codes.length) {
+        const result = await User.updateMany(
+          {
+            role: 'user',
+            giroxOwnerCampaign: null,
+            giroxSyncStatus: 'synced',
+            acquisitionSource: 'manual',
+            createdByEmployeeId: { $ne: null },
+            acquisitionCampaign: { $in: codes }
+          },
+          [{ $set: { giroxOwnerCampaign: '$acquisitionCampaign' } }]
+        );
+        updated = result.modifiedCount || 0;
+      }
+      logger.info(`[startup-migration] giroxOwnerCampaign backfilled: ${updated} usuarios de publicista (one-shot)`);
+      await Config.findOneAndUpdate(
+        { key: 'migration_backfill_girox_owner_done' },
+        { key: 'migration_backfill_girox_owner_done', value: true },
+        { upsert: true }
+      );
+    }
+  } catch (e) {
+    logger.error(`[startup-migration] Falló backfill de giroxOwnerCampaign (reintenta al próximo arranque): ${e.message}`);
+  }
+
   // One-shot migration (guardada con flag): borra los ChatStatus vacíos que se
   // crearon junto con el usuario antes de este cambio. Condición DOBLE para ser
   // seguros:
