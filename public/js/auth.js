@@ -78,6 +78,23 @@ VIP.auth = (function () {
 
     // Registro directo: solo usuario + contraseña, sin SMS. Si hay una pauta
     // activa, también manda campaignCode/utm para conservar la atribución.
+    // Vuelve el registro al paso 1 (cambiar número / reenviar el código).
+    function resetRegisterOtp() {
+        const otpGroup = document.getElementById('registerOtpGroup');
+        const otpCode = document.getElementById('registerOtpCode');
+        const btn = document.getElementById('registerSendOtpBtn');
+        if (otpGroup) otpGroup.style.display = 'none';
+        if (otpCode) otpCode.value = '';
+        if (btn) btn.textContent = '📲 Enviarme el código SMS';
+        window._registerFullPhone = null;
+    }
+
+    // Registro en 2 FASES (SMS OBLIGATORIO para el auto-registro, owner
+    // 2026-08-05 — el que se registra solo no puede omitir la verificación;
+    // las cuentas creadas por un agente no pasan por acá):
+    //   FASE 1 (sin código visible): valida los campos y manda el SMS
+    //           (/api/auth/send-register-otp) → aparece el campo del código.
+    //   FASE 2 (código visible): crea la cuenta con phone+otpCode.
     async function handleRegisterDirect() {
         const username = document.getElementById('registerUsername').value.trim();
         const password = document.getElementById('registerPassword').value;
@@ -106,6 +123,61 @@ VIP.auth = (function () {
             return;
         }
 
+        // Teléfono obligatorio (prefijo + número, mismo armado que verify-phone).
+        const prefixEl = document.getElementById('registerPhonePrefix');
+        const phoneEl = document.getElementById('registerPhone');
+        const phoneNumber = phoneEl ? phoneEl.value.trim() : '';
+        if (!phoneNumber || phoneNumber.replace(/\D/g, '').length < 7) {
+            errorDiv.textContent = 'Ingresá tu número de teléfono (mínimo 7 dígitos)';
+            errorDiv.classList.add('show');
+            return;
+        }
+        const fullPhone = (prefixEl ? prefixEl.value : '+54') + phoneNumber.replace(/[\s\-().]/g, '');
+
+        const otpGroup = document.getElementById('registerOtpGroup');
+        const otpVisible = otpGroup && otpGroup.style.display !== 'none';
+
+        // ── FASE 1: mandar el código SMS ──
+        if (!otpVisible) {
+            if (btn) { btn.textContent = 'Enviando código...'; btn.disabled = true; }
+            try {
+                const r = await fetch(`${VIP.config.API_URL}/api/auth/send-register-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: fullPhone, username })
+                });
+                const d = await r.json();
+                if (r.ok && d.success) {
+                    window._registerFullPhone = fullPhone;
+                    if (otpGroup) otpGroup.style.display = '';
+                    const msg = document.getElementById('registerOtpMsg');
+                    if (msg) msg.textContent = `✅ Código enviado a ${d.phone || fullPhone}`;
+                    if (btn) btn.textContent = '✅ Confirmar y crear cuenta';
+                    const otpInput = document.getElementById('registerOtpCode');
+                    if (otpInput) { otpInput.value = ''; otpInput.focus(); }
+                } else {
+                    errorDiv.textContent = d.error || 'No se pudo enviar el código SMS';
+                    errorDiv.classList.add('show');
+                    if (btn) btn.textContent = '📲 Enviarme el código SMS';
+                }
+            } catch (e) {
+                errorDiv.textContent = 'Error de conexión al enviar el SMS';
+                errorDiv.classList.add('show');
+                if (btn) btn.textContent = '📲 Enviarme el código SMS';
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+            return;
+        }
+
+        // ── FASE 2: confirmar el código y crear la cuenta ──
+        const otpCode = (document.getElementById('registerOtpCode')?.value || '').trim();
+        if (!otpCode || otpCode.length < 6) {
+            errorDiv.textContent = 'Ingresá el código de 6 dígitos que te llegó por SMS';
+            errorDiv.classList.add('show');
+            return;
+        }
+
         const attribution = VIP.campaign ? VIP.campaign.getActive() : null;
         // El código de referido solo cuenta si NO vino por una pauta: en el
         // flujo de pauta la campaña es la atribución relevante.
@@ -124,6 +196,8 @@ VIP.auth = (function () {
                     username,
                     password,
                     email: email || null,
+                    phone: window._registerFullPhone || fullPhone,
+                    otpCode,
                     referralCode: referralCode || undefined,
                     metaEventId,
                     campaignCode: attribution ? attribution.code : undefined,
@@ -159,16 +233,18 @@ VIP.auth = (function () {
                 ));
 
                 VIP.ui.showToast('✅ ¡Cuenta creada exitosamente!', 'success');
-                maybeOfferSmsVerification(data.user);
+                resetRegisterOtp(); // limpiar el paso del código para el próximo registro
             } else {
                 errorDiv.textContent = data.error || 'Error al crear cuenta';
                 errorDiv.classList.add('show');
+                if (btn) btn.textContent = '✅ Confirmar y crear cuenta';
             }
         } catch (error) {
             errorDiv.textContent = 'Error de conexión. Intenta más tarde.';
             errorDiv.classList.add('show');
+            if (btn) btn.textContent = '✅ Confirmar y crear cuenta';
         } finally {
-            if (btn) { btn.textContent = '📝 Crear Cuenta'; btn.disabled = false; }
+            if (btn) btn.disabled = false;
         }
     }
 
@@ -1322,7 +1398,8 @@ VIP.auth = (function () {
         } else {
             if (referralGroup) referralGroup.style.display = '';
         }
-        sendBtn.textContent = '📝 Crear Cuenta';
+        // Registro con SMS obligatorio en 2 fases: arranca en la fase de envío.
+        resetRegisterOtp();
         sendBtn.onclick = handleRegisterDirect;
 
         // El usuario de registro arranca con "girox" (antes "VIP"); el cliente
@@ -1444,6 +1521,7 @@ VIP.auth = (function () {
         checkUsernameAvailability,
         handleRegister,
         handleRegisterDirect,
+        resetRegisterOtp,
         maybeOfferSmsVerification,
         refreshVerifyPhoneBanner,
         applyRegisterModalMode,

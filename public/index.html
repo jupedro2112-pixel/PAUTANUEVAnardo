@@ -1209,9 +1209,40 @@
                     <input type="text" id="registerReferralCode" name="referralCode" placeholder="Ej: VIP3X7" autocomplete="off" maxlength="12" style="text-transform:uppercase;letter-spacing:2px;">
                     <span style="font-size: 11px; color: #888;">Si te invitó alguien, ingresá su código para vincularte.</span>
                 </div>
+                <!-- SMS OBLIGATORIO en el auto-registro (owner 2026-08-05): el que se
+                     registra solo verifica su número SÍ o SÍ (anti cuentas duplicadas).
+                     Las cuentas creadas por un AGENTE no pasan por acá. -->
+                <div class="input-group">
+                    <label>Tu teléfono (obligatorio) *</label>
+                    <div style="display:flex; gap:6px;">
+                        <select id="registerPhonePrefix" style="flex-shrink:0; width: 110px; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); background: rgba(0,0,0,0.4); color: #fff; font-size: 14px;">
+                            <option value="+54">🇦🇷 +54</option>
+                            <option value="+591">🇧🇴 +591</option>
+                            <option value="+55">🇧🇷 +55</option>
+                            <option value="+56">🇨🇱 +56</option>
+                            <option value="+57">🇨🇴 +57</option>
+                            <option value="+593">🇪🇨 +593</option>
+                            <option value="+52">🇲🇽 +52</option>
+                            <option value="+595">🇵🇾 +595</option>
+                            <option value="+51">🇵🇪 +51</option>
+                            <option value="+598">🇺🇾 +598</option>
+                            <option value="+58">🇻🇪 +58</option>
+                            <option value="+34">🇪🇸 +34</option>
+                            <option value="+1">🇺🇸 +1</option>
+                        </select>
+                        <input type="tel" id="registerPhone" name="phone" placeholder="9 11 1234-5678" autocomplete="tel" required minlength="7" style="flex:1; min-width:0;">
+                    </div>
+                    <span style="font-size: 11px; color: #888;">Te mandamos un código por SMS para confirmar tu número.</span>
+                </div>
+                <div class="input-group" id="registerOtpGroup" style="display:none;">
+                    <label>Código SMS *</label>
+                    <input type="text" id="registerOtpCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" style="letter-spacing:4px;font-size:18px;text-align:center;">
+                    <span id="registerOtpMsg" style="font-size: 11px; color: #00ff88;"></span>
+                    <button type="button" onclick="VIP.auth.resetRegisterOtp()" style="margin-top:6px;background:none;border:none;color:#d4af37;font-size:12px;cursor:pointer;text-decoration:underline;padding:0;">↩ Cambiar número / reenviar código</button>
+                </div>
                 <div style="background: rgba(212,175,55,0.10); border: 1px solid rgba(212,175,55,0.35); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
                     <p style="color: #d4af37; margin: 0; font-size: 12px; line-height: 1.4;">
-                        🔒 Para <strong>retirar tus premios</strong> vas a necesitar verificar tu teléfono por SMS. Te lo vamos a pedir al ingresar — es rápido y recomendable hacerlo enseguida para no tener problemas al cobrar.
+                        🔒 Verificamos tu número por <strong>SMS</strong> para crear la cuenta: evita cuentas duplicadas y te sirve para <strong>recuperar tu cuenta</strong> y <strong>retirar tus premios</strong>.
                     </p>
                 </div>
                 <div id="registerError" class="error-message"></div>

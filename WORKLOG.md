@@ -8,6 +8,34 @@
 
 ## Sesión 2026-08-05
 
+### 141. SMS OBLIGATORIO en el auto-registro (los creados por agente siguen sin SMS)
+- **Pedido del owner (revierte la decisión de #74):** el que se registra SOLO
+  verifica su teléfono por SMS SÍ O SÍ (sin poder omitirlo); las cuentas
+  creadas por un AGENTE siguen sin exigir SMS (tienen su propio flujo, #137).
+- **Backend (`/api/auth/register`):** teléfono + otpCode ahora OBLIGATORIOS
+  (antes opcionales). El resto ya existía: OTP purpose 'register'
+  (`/api/auth/send-register-otp`, público y rate-limiteado), unicidad por
+  phoneKey, phoneVerified:true al crear. Los altas del panel no pasan por acá.
+- **`/api/auth/register-quick` DESACTIVADO (410):** era el camino sin SMS del
+  flujo de pauta — SIN callers en el front (verificado por grep) pero público:
+  un curl con un campaignCode real creaba cuentas sin SMS. El código queda
+  abajo por si se revierte.
+- **Front (index.html + auth.js):** el modal de registro suma teléfono
+  OBLIGATORIO (selector de prefijo + número, mismo armado que verify-phone) y
+  el registro pasa a 2 FASES con el mismo botón: "📲 Enviarme el código SMS"
+  (valida campos y manda OTP) → aparece el campo del código → "✅ Confirmar y
+  crear cuenta". Link "↩ Cambiar número / reenviar código"
+  (`VIP.auth.resetRegisterOtp`). Se quitó el `maybeOfferSmsVerification`
+  post-registro (ya nace verificado) y la nota dorada ahora explica el porqué.
+- **⚠️ Impacto en PAUTA avisado:** los que llegan por anuncios de Meta también
+  van a tener que pasar el SMS (las webviews de IG/FB a veces complican recibir
+  el código — motivo original del registro sin SMS). Si la conversión de pauta
+  cae, se puede rehabilitar register-quick para campañas puntuales.
+- **Validado:** `node --check` OK (server, auth.js). SW a **v89**. Back
+  necesita redeploy. PROBAR: registro nuevo → exige teléfono → SMS → código →
+  cuenta creada con phoneVerified; sin código o con código malo → rechazado;
+  register-quick por curl → 410.
+
 ### 140. FIX real del #139: la lista de multiplicadores era la de BONOS, y el default correcto es 0
 - **Los mismos 2 errores persistían.** Causas: (a) el server probado aún no
   tenía el fix deployado, y (b) el fix #139 leía la lista EQUIVOCADA — se

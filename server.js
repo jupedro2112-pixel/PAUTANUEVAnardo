@@ -3042,12 +3042,17 @@ app.post('/api/auth/register', authLimiter, registerIpLimiter, async (req, res) 
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
     }
     
-    // El registro es solo usuario + contraseña: el SMS dejó de ser obligatorio.
-    // Si igualmente llega un teléfono con su OTP (flujo legacy o verificación
-    // opcional), se valida; si no, la cuenta se crea con el teléfono pendiente
-    // de verificar y se le ofrece el SMS al primer ingreso.
+    // SMS OBLIGATORIO en el auto-registro (owner 2026-08-05 — revierte la
+    // decisión de #74). Este endpoint SOLO lo usa el registro público de la
+    // PWA: el que se registra SOLO verifica su número sí o sí (anti cuentas
+    // duplicadas). Las cuentas creadas por un AGENTE van por los endpoints del
+    // panel (sin SMS, ver User.createdByAgent) y no pasan por acá.
     const hasPhone = !!(phone && phone.trim().length >= 8);
     let normalizedPhone = null;
+
+    if (!hasPhone) {
+      return res.status(400).json({ error: 'Ingresá tu número de teléfono y verificalo por SMS para crear tu cuenta.' });
+    }
 
     if (hasPhone) {
       normalizedPhone = phone.trim();
@@ -3290,7 +3295,14 @@ app.post('/api/auth/register', authLimiter, registerIpLimiter, async (req, res) 
 // el primer retiro le exigirá verificar un teléfono real antes de procesarse.
 // Requiere campaignCode válido y activo para evitar abuso (un atacante no puede
 // crear cuentas sin OTP a discreción — necesita un código real de pauta).
+//
+// ⛔ DESACTIVADO (owner 2026-08-05): el SMS pasó a ser OBLIGATORIO para TODO
+// auto-registro y este endpoint era la puerta para saltárselo (sin callers en
+// el front — verificado por grep — pero público: un curl con un campaignCode
+// real creaba cuentas sin SMS). Se deja el código abajo por si se revierte.
 app.post('/api/auth/register-quick', authLimiter, registerIpLimiter, async (req, res) => {
+  return res.status(410).json({ error: 'El registro rápido fue deshabilitado: registrate con tu número de teléfono (verificación por SMS).' });
+  // eslint-disable-next-line no-unreachable
   try {
     const { username, password, email, campaignCode, visitorId, utm, metaEventId, fbc, fbp, landingUrl } = req.body || {};
 
