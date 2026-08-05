@@ -337,6 +337,26 @@
 
 .theme-topbar-btn:active { transform: scale(0.92); }
 
+/* Campanita de notificaciones en la cabecera (movida del menú ☰, 2026-08-05).
+   Estados: .active = notificaciones andando (verde), .blocked = bloqueadas (rojo). */
+.notif-topbar-btn {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 17px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 7px;
+}
+.notif-topbar-btn:active { transform: scale(0.92); }
+.notif-topbar-btn.active { background: rgba(0, 255, 136, 0.22); box-shadow: 0 0 8px rgba(0, 255, 136, 0.45); }
+.notif-topbar-btn.blocked { background: rgba(255, 80, 80, 0.25); }
+
 /* Botón Fueguito (racha diaria): en la CABECERA del chat, a la derecha —
    fuera de la barra de escribir para que esa quede 100% WhatsApp. */
 .fire-topbar-btn {

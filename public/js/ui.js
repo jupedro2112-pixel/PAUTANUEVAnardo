@@ -216,6 +216,9 @@ VIP.ui = (function () {
                 'padding:14px;border-radius:26px;font-weight:900;font-size:16px;cursor:pointer;' +
                 'box-shadow:0 4px 16px rgba(212,175,55,0.5);">🎰 JUGAR AHORA EN 1GIROX</button>' +
             '<div style="color:#aaa;font-size:10.5px;margin-top:7px;">Entrás directo, con tu sesión ya iniciada</div>' +
+            '<div style="margin-top:9px;padding:8px 10px;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);border-radius:10px;color:#c9f7dd;font-size:11px;line-height:1.45;text-align:left;">' +
+                '🎲 <strong style="color:#7fe07f;">Probá tu suerte.</strong> ¿No te fue bien? Volvé: con el <strong style="color:#ffd700;">código de la Comunidad</strong> reclamás <strong style="color:#ffd700;">$5.000 GRATIS</strong> (canjealo en el menú ☰ → 🎁 Código de Bienvenida).' +
+            '</div>' +
             '<div style="height:3px;background:rgba(255,255,255,0.12);border-radius:2px;margin-top:9px;overflow:hidden;">' +
                 '<div id="casinoInviteBar" style="height:100%;width:100%;background:#ffd700;transition:width 15s linear;"></div></div>';
         box.style.display = 'block';

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v89'; // v89: registro con SMS OBLIGATORIO en 2 fases (solo auto-registro)
+const CACHE_VERSION = 'v90'; // v90: colapsado = casino+saldo, campanita en cabecera, sin ganadores en el home, cartel código comunidad
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

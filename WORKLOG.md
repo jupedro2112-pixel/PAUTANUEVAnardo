@@ -8,6 +8,38 @@
 
 ## Sesión 2026-08-05
 
+### 142. Lote de UI del owner + código de Comunidad con gate de saldo y rollover x2
+- **"Ocultar menú"**: el colapsado ahora deja SOLO `.dash-play` (botón "PÁGINA
+  CASINO AQUÍ" + TU SALDO) — antes dejaba `.dash-top` (reembolsos + usuario).
+  Botón del casino con text-align:center explícito.
+- **Recuadro USUARIO**: el pill pasa de "NIVEL Y REEMBOLSOS ▾" (se cortaba) a
+  **"VER MÁS ▾"**; username más chico (9px) para que no se corte.
+- **Campanita de notificaciones**: ELIMINADA del menú ☰ (a veces ni aparecía) y
+  MOVIDA a la cabecera del chat al lado del sol (`.notif-topbar-btn`, MISMO id
+  `notificationBtn` → todo el cableado FCM intacto). Solo ícono: 🔔 verde =
+  activadas, 🔕 rojo = bloqueadas, 🔔 neutro = tocá para activar (labels del
+  FCM inline pasados a emoji pelado; los title explican cada estado).
+- **Invitación al casino post-carga (#135)**: ahora incluye el cartel "🎲 Probá
+  tu suerte. ¿No te fue bien? Volvé: con el código de la Comunidad reclamás
+  $5.000 GRATIS (menú ☰ → Código de Bienvenida)". ⚠️ El "$5.000" es copy fijo:
+  si cambia el monto del bono en el panel, actualizar ui.js.
+- **Código de Comunidad (`/api/community-code/claim`), 2 cambios de negocio:**
+  1. **GATE DE SALDO**: solo canjeable con el saldo REAL de la plataforma por
+     DEBAJO del monto del bono (va ANTES de la reserva atómica para no quemar
+     el una-vez-por-cuenta; si el saldo no se puede leer → 503 reintentable).
+  2. **Tipo cash con ROLLOVER x2 AUTOMÁTICO**: depósito con multiplier 2 (x2
+     permitido en la config del owner) — jugable al instante, retirable tras
+     apostar 2× el bono. El tipo next_charge no cambia (lo aplica el agente).
+- **"GANADORES DE HOY · RULETA DIARIA" del inicio: ELIMINADO para siempre**
+  (rouletteRecentWinnersCard + su render en roulette.js, con lápidas). La lista
+  de ganadores DENTRO del modal de la ruleta sigue.
+- **Validado:** `node --check` OK (server, ui, roulette) + parse inline. SW a
+  **v90**. El gate/rollover del código necesita redeploy del back; el resto es
+  front. PROBAR: ocultar menú → solo casino+saldo; campanita en la cabecera
+  cambia de color según permiso; carga → cartel con el código; canje con saldo
+  ≥ bono → rechazado con mensaje; canje con saldo bajo (tipo cash) → acredita
+  con rollover x2; el home sin el recuadro de ganadores.
+
 ### 141. SMS OBLIGATORIO en el auto-registro (los creados por agente siguen sin SMS)
 - **Pedido del owner (revierte la decisión de #74):** el que se registra SOLO
   verifica su teléfono por SMS SÍ O SÍ (sin poder omitirlo); las cuentas

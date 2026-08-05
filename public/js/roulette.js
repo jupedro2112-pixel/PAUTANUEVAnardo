@@ -354,9 +354,10 @@
         listEl.innerHTML = html;
     }
 
-    // Lista de ganadores del día (transparencia). Aparece debajo del
-    // rouletteHomeCard. 80% del nombre tapado server-side. Tambien se
-    // pinta dentro del modal (cuando esta abierto).
+    // Lista de ganadores del día (transparencia). 🪦 El recuadro del HOME
+    // (rouletteWinnersList) fue ELIMINADO 2026-08-05 (owner: confundía en el
+    // inicio) — ahora los ganadores se pintan SOLO dentro del modal de la
+    // ruleta. 80% del nombre tapado server-side.
     async function loadRecentWinners() {
         if (!VIP.state || !VIP.state.currentToken) return;
         try {
@@ -367,13 +368,7 @@
             const d = await r.json();
             const winners = Array.isArray(d.winners) ? d.winners : [];
             _recentWinnersCache = winners;
-            // 1) Home card.
-            _renderWinnersListInto(
-                document.getElementById('rouletteWinnersList'),
-                document.getElementById('rouletteWinnersEmpty'),
-                winners
-            );
-            // 2) Inside the modal (si está abierto).
+            // Solo dentro del modal (si está abierto).
             _renderWinnersListInto(
                 document.getElementById('rouletteModalWinnersList'),
                 document.getElementById('rouletteModalWinnersEmpty'),

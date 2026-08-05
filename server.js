@@ -10187,6 +10187,22 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     // 'next_charge' (default) = bono extra en la próxima carga, lo aplica el agente.
     const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
 
+    // GATE DE SALDO (owner 2026-08-05): el código es un salvavidas para el que
+    // se quedó corto — solo se puede canjear con el saldo REAL de la plataforma
+    // por DEBAJO del monto del bono. Va ANTES de la reserva atómica para no
+    // quemar el "una vez por cuenta" en un intento rechazado. Si el saldo no se
+    // puede leer, se rechaza (mejor reintentar que regalar con saldo alto).
+    const balCheck = await girox.getUserBalanceWithRetry(req.user.username);
+    if (!balCheck.success) {
+      return res.status(503).json({ error: 'No pudimos verificar tu saldo. Probá de nuevo en unos segundos.' });
+    }
+    if (Number(balCheck.balance) >= amount) {
+      return res.status(400).json({
+        error: `El código es para cuando te quedás sin saldo: se puede canjear con menos de $${amount.toLocaleString('es-AR')} en tu cuenta.`,
+        code: 'BALANCE_TOO_HIGH'
+      });
+    }
+
     // Reserva atómica: UNA vez por cuenta PARA SIEMPRE (aunque el código cambie).
     // $nin cubre docs viejos sin el campo. Si dos requests concurrentes entran,
     // sólo uno gana el doc — el otro recibe null. Los dos tipos reservan en
@@ -10212,9 +10228,15 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     if (bonusType === 'cash') {
       // Reference por usuario: el bono es uno por cuenta para siempre → aunque
       // esto se reintente, la plataforma nunca paga dos veces (duplicate:true).
-      const credit = await girox.creditUserBalance(user.username, amount, `vip-welcome-${user.id}`, {
-        description: 'Bono sorpresa — código de bienvenida de la Comunidad'
-      });
+      // ROLLOVER x2 AUTOMÁTICO (owner 2026-08-05): depósito con multiplier 2 —
+      // la plata entra JUGABLE al instante pero para retirarla hay que apostar
+      // 2× el bono (candado de la plataforma, x2 está permitido en su config).
+      const credit = await girox.depositToUser(
+        user.username, amount,
+        'Bono sorpresa — código de bienvenida de la Comunidad',
+        `vip-welcome-${user.id}`,
+        { multiplier: 2 }
+      );
       if (!credit.success) {
         // Restaurar la reserva (guard en 'pending') para que pueda reintentar.
         await User.updateOne(

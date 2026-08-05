@@ -532,9 +532,9 @@
                     </svg>
                 </span><span class="menu-item-label">Soporte 24/7 <span style="font-weight:600;color:#53bdeb;font-size:11px;">(Telegram)</span></span>
             </a>
-            <button class="menu-item notification-btn" id="notificationBtn" title="Activar Notificaciones" role="menuitem">
-                <span class="menu-item-icon">🔔</span><span class="menu-item-label">Activar notificaciones</span>
-            </button>
+            <!-- 🪦 Acá estaba el botón de notificaciones del menú (a veces ni se veía
+                 por el estado de FCM): MOVIDO a la cabecera del chat como campanita
+                 al lado del sol (owner 2026-08-05). Mismo id, mismo cableado. -->
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
             </button>
@@ -774,7 +774,10 @@
                 }
                 .dash-user-label { font-size:8.5px; font-weight:800; color:#ffd700; letter-spacing:.6px; }
                 .dash-user-name {
-                    font-size:11px; font-weight:900; color:#fff; max-width:74px; text-align:center;
+                    /* Más chico para que los usernames largos entren enteros
+                       (owner 2026-08-05: se cortaba). El ellipsis queda solo
+                       como último recurso para nombres extremos. */
+                    font-size:9px; font-weight:900; color:#fff; max-width:78px; text-align:center;
                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                 }
                 /* Pill dorado pulsante: avisa que el recuadro se toca y qué hay adentro. */
@@ -835,6 +838,7 @@
                     border:none; border-radius:11px; padding:9px 10px; font-weight:900;
                     font-size:12px; line-height:1.15; cursor:pointer;
                     box-shadow:0 3px 10px rgba(106,13,173,.4);
+                    text-align:center; /* centrado explícito (owner: se veía corrido) */
                 }
                 .dash-balance {
                     flex:0 0 auto; display:flex; flex-direction:row; align-items:center;
@@ -866,10 +870,13 @@
                    #homePanel, está dentro de .home-dash. Por eso hacen falta las
                    DOS reglas: si se esconde .home-dash (que es lo que pasaba antes)
                    se van los reembolsos con ella. */
+                /* (owner 2026-08-05: antes el colapsado dejaba .dash-top —
+                   reembolsos + usuario; ahora deja SOLO .dash-play — el botón
+                   del casino centrado + el saldo del cliente.) */
                 #homePanel.collapsed > *:not(.home-dash) { display:none !important; }
-                #homePanel.collapsed .home-dash > *:not(.dash-top) { display:none !important; }
+                #homePanel.collapsed .home-dash > *:not(.dash-play) { display:none !important; }
                 /* Sin el margen de abajo el bloque queda pegado al botón. */
-                #homePanel.collapsed .dash-top { margin-bottom:0; }
+                #homePanel.collapsed .dash-play { margin-bottom:0; }
                 #homePanelToggle {
                     flex:0 0 auto; display:flex; align-items:center; justify-content:center;
                     gap:8px; margin:3px 8px 0; padding:5px 12px; cursor:pointer;
@@ -920,7 +927,7 @@
                         <span class="dash-user-name" id="dashUserName">Usuario</span>
                         <!-- CTA para que se note que el recuadro se toca: ahí adentro
                              está el nivel VIP y el detalle de los reembolsos. -->
-                        <span class="dash-user-cta">NIVEL Y REEMBOLSOS ▾</span>
+                        <span class="dash-user-cta">VER MÁS ▾</span>
                     </div>
                 </div>
 
@@ -968,23 +975,10 @@
 
             <!-- Ruleta diaria: la celda vive ahora dentro del panel dorado
                  (.dash-top), al lado de reembolsos. -->
-            <!-- Transparencia: últimos ganadores de hoy en la ruleta diaria.
-                 Render dinámico desde js/roulette.js. -->
-            <div id="rouletteRecentWinnersCard" style="max-width:560px;margin:8px auto 14px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,215,0,0.25);border-radius:12px;padding:12px;">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                    <span style="font-size:16px;">🏆</span>
-                    <span style="color:#ffd700;font-weight:900;font-size:11.5px;letter-spacing:1px;">GANADORES DE HOY · RULETA DIARIA</span>
-                    <span id="rouletteWinnersLive" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:#25d366;font-weight:700;">
-                        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#25d366;box-shadow:0 0 6px #25d366;animation:winners-pulse 1.4s ease-in-out infinite;"></span>
-                        EN VIVO
-                    </span>
-                </div>
-                <div id="rouletteWinnersList" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:12px;line-height:1.55;"></div>
-                <div id="rouletteWinnersEmpty" style="text-align:center;color:#888;font-size:11.5px;padding:14px 8px;">Todavía no hay ganadores hoy. Sé el primero — girá la ruleta.</div>
-                <div style="text-align:center;font-size:10.5px;color:#777;margin-top:8px;padding-top:7px;border-top:1px dashed rgba(255,255,255,0.10);">
-                    🔒 Los nombres están parcialmente ocultos por privacidad. Los premios son reales y se acreditan automáticamente.
-                </div>
-            </div>
+            <!-- 🪦 Acá estaba el recuadro "GANADORES DE HOY · RULETA DIARIA"
+                 (rouletteRecentWinnersCard + rouletteWinnersList/Empty/Live):
+                 ELIMINADO 2026-08-05 (owner: confundía en el inicio). La lista
+                 de ganadores DENTRO del modal de la ruleta sigue existiendo. -->
             </div><!-- /#homePanel -->
 
             <!-- Barra para subir/bajar el panel del home y agrandar el chat. -->
@@ -1064,6 +1058,10 @@
                          nadie lo encontraba). El ícono muestra a qué modo se cambia.
                          Sincronizado con el switch de Configuración (app.js applyWaDark). -->
                     <button class="theme-topbar-btn" id="themeToggleBtn" title="Cambiar modo claro / oscuro" aria-label="Cambiar modo claro u oscuro">🌙</button>
+                    <!-- Campanita de notificaciones (movida del menú ☰, owner 2026-08-05):
+                         solo ícono; el estado lo pinta el FCM inline (_updateNotisButton):
+                         🔔 verde = activadas, 🔕 rojo = bloqueadas, 🔔 = tocá para activar. -->
+                    <button class="notif-topbar-btn" id="notificationBtn" title="Tocá para activar notificaciones" aria-label="Notificaciones">🔔</button>
                     <!-- Fueguito (racha diaria): vive en la cabecera del chat, NO en la
                          barra de escribir (la barra es 100% estilo WhatsApp). El click lo
                          cablea app.js (#fireBtn) y fire.js actualiza #fireStreak. -->
@@ -2903,7 +2901,7 @@
                         if (_recoveryBtn) {
                             _recoveryBtn.disabled = false;
                             _recoveryBtn.classList.remove('active');
-                            _recoveryBtn.innerHTML = '🔔 Activar notificaciones';
+                            _recoveryBtn.innerHTML = '🔔';
                             _recoveryBtn.title = 'Tocá para activar notificaciones';
                         }
                     }
@@ -3739,12 +3737,12 @@
                     if (typeof showToast === 'function') {
                         showToast('⏳ Cargando Firebase... probá de nuevo en unos segundos.', 'warning');
                     }
-                    notificationBtn.innerHTML = '⏳ Cargando…';
+                    notificationBtn.innerHTML = '⏳';
                     setTimeout(function () {
                         if (window.__firebaseLoadState === 'ready') {
-                            notificationBtn.innerHTML = '🔔 Activar notificaciones';
+                            notificationBtn.innerHTML = '🔔';
                         } else {
-                            notificationBtn.innerHTML = '🔔 Activar notificaciones';
+                            notificationBtn.innerHTML = '🔔';
                         }
                         notificationBtn.disabled = false;
                     }, 3000);
@@ -3832,7 +3830,7 @@
                             notificationBtn.classList.add('compact');
                             notificationBtn.title = 'Notificaciones bloqueadas. Tocá para ver cómo activarlas.';
                         } else {
-                            notificationBtn.innerHTML = '🔕 Notificaciones bloqueadas';
+                            notificationBtn.innerHTML = '🔕';
                             notificationBtn.classList.remove('compact');
                             notificationBtn.title = 'Bloqueadas. Tocá el botón para ver cómo activarlas (mantené presionado el ícono de la app → Información → Notificaciones, o desinstalá y reinstalá la app).';
                             try { localStorage.setItem('notisLabelSeen:denied', '1'); } catch (_) {}
@@ -3848,7 +3846,7 @@
                             notificationBtn.classList.add('compact');
                             notificationBtn.title = 'Notificaciones activadas ✅ (tocá para renovar si no recibís)';
                         } else {
-                            notificationBtn.innerHTML = '🔔 Notificaciones activadas';
+                            notificationBtn.innerHTML = '🔔';
                             notificationBtn.classList.remove('compact');
                             notificationBtn.title = 'Notificaciones activadas ✅ (tocá para renovar si no recibís)';
                             try { localStorage.setItem('notisLabelSeen:granted', '1'); } catch (_) {}
@@ -3861,10 +3859,10 @@
                     notificationBtn.classList.remove('active');
                     notificationBtn.classList.remove('compact');
                     if (!fbReady) {
-                        notificationBtn.innerHTML = '⏳ Cargando…';
+                        notificationBtn.innerHTML = '⏳';
                         notificationBtn.title = 'Esperando que Firebase termine de cargar...';
                     } else {
-                        notificationBtn.innerHTML = '🔔 Activar notificaciones';
+                        notificationBtn.innerHTML = '🔔';
                         notificationBtn.title = 'Tocá para activar notificaciones';
                     }
                     notificationBtn.disabled = false;
