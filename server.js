@@ -9131,23 +9131,40 @@ async function initializeData() {
       logger.warn('⚠️ No se creó el admin inicial porque ADMIN_PASSWORD no está configurado. Crealo manualmente vía API o configura la variable de entorno.');
     } else {
       const adminPassword = await bcrypt.hash(adminInitialPassword, 12);
-      await User.create({
-        id: uuidv4(),
-        username: adminUsername,
-        password: adminPassword,
-        email: 'admin@saladejuegos.com',
-        phone: null,
-        role: 'admin',
-        accountNumber: 'ADMIN001',
-        balance: 0,
-        createdAt: new Date(),
-        lastLogin: null,
-        isActive: true,
-        jugayganaUserId: null,
-        jugayganaUsername: null,
-        jugayganaSyncStatus: 'not_applicable'
-      });
-      console.log(`✅ Admin creado: ${adminUsername}`);
+      // try/catch a propósito: si la base YA tiene un admin con accountNumber
+      // ADMIN001 pero OTRO username (típico: se cambió ADMIN_USERNAME en el env
+      // apuntando a una base ya sembrada), el create choca con E11000 y ANTES
+      // tumbaba el proceso entero → deploy en loop de crash (visto en Render
+      // 2026-08-05). El admin inicial es conveniencia, no puede voltear el boot.
+      try {
+        await User.create({
+          id: uuidv4(),
+          username: adminUsername,
+          password: adminPassword,
+          email: 'admin@saladejuegos.com',
+          phone: null,
+          role: 'admin',
+          accountNumber: 'ADMIN001',
+          balance: 0,
+          createdAt: new Date(),
+          lastLogin: null,
+          isActive: true,
+          jugayganaUserId: null,
+          jugayganaUsername: null,
+          jugayganaSyncStatus: 'not_applicable'
+        });
+        console.log(`✅ Admin creado: ${adminUsername}`);
+      } catch (adminSeedErr) {
+        if (adminSeedErr && adminSeedErr.code === 11000) {
+          logger.error(
+            `⛔ No se creó el admin inicial "${adminUsername}": ya existe OTRO admin con accountNumber ADMIN001 en esta base ` +
+            '(¿cambiaste ADMIN_USERNAME apuntando a una base ya sembrada?). El server sigue arrancando igual — ' +
+            'poné en ADMIN_USERNAME el username del admin existente, o usá una base nueva en MONGODB_URI.'
+          );
+        } else {
+          logger.error(`⛔ Error creando el admin inicial (el server sigue igual): ${adminSeedErr.message}`);
+        }
+      }
     }
   } else {
     // Admin ya existe: solo asegurar que sigue activo y con el rol correcto.

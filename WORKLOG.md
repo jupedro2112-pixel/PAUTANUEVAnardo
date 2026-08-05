@@ -8,6 +8,25 @@
 
 ## Sesión 2026-08-05
 
+### 123. FIX crash-loop de arranque: el seed del admin inicial ya no tumba el server (E11000 ADMIN001)
+- **Síntoma (Render):** deploys fallando en loop con `MongoServerError: E11000 ...
+  index: accountNumber_1 dup key: { accountNumber: "ADMIN001" }`. Causa: el seed
+  de `initializeData` busca el admin por `ADMIN_USERNAME` y si no lo encuentra lo
+  CREA con `accountNumber:'ADMIN001'` (único). Si la base ya tiene un admin con
+  ADMIN001 pero con OTRO username (típico: se cambió `ADMIN_USERNAME` en el env
+  apuntando a una base ya sembrada), el create chocaba y el rechazo no manejado
+  mataba el proceso → deploy en loop.
+- **Fix:** try/catch alrededor del create — con E11000 loguea un mensaje claro
+  (qué pasó y las 2 salidas: ADMIN_USERNAME = el admin existente, o base nueva en
+  MONGODB_URI) y el boot SIGUE. El admin inicial es conveniencia, no puede
+  voltear el server.
+- **Nota (no tocado):** en Render también aparece un `ValidationError
+  keyGeneratorIpFallback ... ERR_ERL_UNKNOWN_VALIDATION` de express-rate-limit:
+  es RUIDO no fatal (Render instaló otra versión de la lib que no reconoce esa
+  opción de validate; la lib loguea y sigue). En EB con el lockfile (7.5.1) la
+  opción es válida.
+- **Validado:** `node --check` OK. Back necesita redeploy.
+
 ### 122. Premios del FUEGUITO con ROLLOVER x5 (reemplaza el requisito de cargas)
 - **Pedido del owner:** cambiar cómo se pagan los premios del fueguito — antes el
   reclamo exigía actividad de cargas del período; ahora el premio se paga SIEMPRE
