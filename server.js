@@ -10191,28 +10191,60 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       return res.status(400).json({ error: 'El código no es válido. Fijate bien cómo aparece en la Comunidad.' });
     }
 
-    const amount = Math.max(0, Math.round(Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0));
+    // Tipo del bono (config): 'cash' = MONTO sorpresa acreditado AUTOMÁTICO
+    // (como BONO con rollover); 'next_charge' (default) = % EXTRA en la próxima
+    // carga, lo aplica el agente.
+    const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
+
+    // Valor según el tipo (owner 2026-08-05): cash = monto en $;
+    // next_charge = PORCENTAJE extra sobre la próxima carga (ej. 50 → +50%).
+    let amount;
+    if (bonusType === 'cash') {
+      amount = Math.max(0, Math.round(Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0));
+    } else {
+      amount = Math.max(0, Math.round(Number(await getConfig('communityWelcomePercent', 100)) || 0));
+    }
     if (amount <= 0) {
       return res.status(400).json({ error: 'El código todavía no tiene un bono configurado. Probá más tarde.' });
     }
-    // Tipo del bono (config): 'cash' = monto sorpresa acreditado AUTOMÁTICO;
-    // 'next_charge' (default) = bono extra en la próxima carga, lo aplica el agente.
-    const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
 
-    // GATE DE SALDO (owner 2026-08-05): el código es un salvavidas para el que
-    // se quedó corto — solo se puede canjear con el saldo REAL de la plataforma
-    // por DEBAJO del monto del bono. Va ANTES de la reserva atómica para no
-    // quemar el "una vez por cuenta" en un intento rechazado. Si el saldo no se
-    // puede leer, se rechaza (mejor reintentar que regalar con saldo alto).
-    const balCheck = await girox.getUserBalanceWithRetry(req.user.username);
-    if (!balCheck.success) {
-      return res.status(503).json({ error: 'No pudimos verificar tu saldo. Probá de nuevo en unos segundos.' });
+    // APP INSTALADA OBLIGATORIA (owner 2026-08-05, mismo criterio que el bono
+    // de instalación): token FCM registrado desde la app standalone. Va ANTES
+    // de la reserva atómica para no quemar el "una vez por cuenta".
+    const uDoc = await User.findOne({ id: req.user.userId })
+      .select('id username role fcmToken fcmTokens fcmTokenContext').lean();
+    if (!uDoc || uDoc.role !== 'user') {
+      return res.status(400).json({ error: 'Solo las cuentas de clientes pueden canjear el código.' });
     }
-    if (Number(balCheck.balance) >= amount) {
+    if (!_rouletteHasAppInstalled(uDoc)) {
       return res.status(400).json({
-        error: `El código es para cuando te quedás sin saldo: se puede canjear con menos de $${amount.toLocaleString('es-AR')} en tu cuenta.`,
-        code: 'BALANCE_TOO_HIGH'
+        error: 'Para canjear el código necesitás la APP INSTALADA con notificaciones activadas. Instalala desde el menú ☰ → "Instalar App" y volvé a intentar.',
+        code: 'NOT_STANDALONE'
       });
+    }
+
+    if (bonusType === 'cash') {
+      // GATE DE SALDO (solo tipo cash): el código es un salvavidas para el que
+      // se quedó corto — solo canjeable con el saldo REAL por DEBAJO del monto.
+      // También antes de la reserva. Si el saldo no se puede leer, se rechaza.
+      const balCheck = await girox.getUserBalanceWithRetry(req.user.username);
+      if (!balCheck.success) {
+        return res.status(503).json({ error: 'No pudimos verificar tu saldo. Probá de nuevo en unos segundos.' });
+      }
+      if (Number(balCheck.balance) >= amount) {
+        return res.status(400).json({
+          error: `El código es para cuando te quedás sin saldo: se puede canjear con menos de $${amount.toLocaleString('es-AR')} en tu cuenta.`,
+          code: 'BALANCE_TOO_HIGH'
+        });
+      }
+      // GUARD bono-sobre-bono (v1.7): otorgar un bono a quien ya tiene uno
+      // activo lo PISA y le debita el resto → mejor rechazar sin quemar el canje.
+      const pInfo = await girox.getUserInfoByName(uDoc.username);
+      if (pInfo && (Number(pInfo.bonusLocked) > 0 || Number(pInfo.claimableTotal) > 0)) {
+        return res.status(400).json({
+          error: 'Tenés un bono activo (o sin reclamar) en el casino. Terminalo y después canjeá tu código.'
+        });
+      }
     }
 
     // Reserva atómica: UNA vez por cuenta PARA SIEMPRE (aunque el código cambie).
@@ -10234,22 +10266,21 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       return res.status(400).json({ error: 'Ya usaste tu código de bienvenida. Es una sola vez por cuenta.', code: 'ALREADY_CLAIMED' });
     }
 
-    const montoFmt = amount.toLocaleString('es-AR');
+    // cash → "$5.000"; next_charge → "50" (se muestra como "50% EXTRA").
+    const montoFmt = bonusType === 'cash' ? amount.toLocaleString('es-AR') : String(amount);
 
     // ============ TIPO CASH: acreditación AUTOMÁTICA ============
     if (bonusType === 'cash') {
       // Reference por usuario: el bono es uno por cuenta para siempre → aunque
       // esto se reintente, la plataforma nunca paga dos veces (duplicate:true).
-      // ROLLOVER AUTOMÁTICO (owner 2026-08-05, editable en el panel): depósito
-      // con multiplier X — la plata entra JUGABLE al instante pero para
-      // retirarla hay que apostar X× el bono (candado de la plataforma).
-      // Con X=0 va como depósito libre (sin rollover).
+      // COMO BONO DE VERDAD (owner 2026-08-05): va por POST /players/{u}/bonus
+      // con el ROLLOVER elegido en el panel (bonus.multipliers permite 0 = sin
+      // rollover) → en el panel de 1girox figura como Bono, no como Carga.
+      // claim_required=true en la config del sitio → auto-claim más abajo.
       const _welcomeRolloverX = await getWelcomeCodeRolloverX();
-      const credit = await girox.depositToUser(
-        user.username, amount,
-        'Bono sorpresa — código de bienvenida de la Comunidad',
-        `vip-welcome-${user.id}`,
-        _welcomeRolloverX > 0 ? { multiplier: _welcomeRolloverX } : null
+      const credit = await girox.creditUserBalance(
+        user.username, amount, `vip-welcome-${user.id}`,
+        { multiplier: _welcomeRolloverX, description: 'Bono sorpresa — código de bienvenida de la Comunidad' }
       );
       if (!credit.success) {
         // Restaurar la reserva (guard en 'pending') para que pueda reintentar.
@@ -10259,6 +10290,16 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
         ).catch(() => {});
         logger.warn(`[welcome-code] crédito cash falló para ${user.username}: ${credit.error || 's/detalle'}`);
         return res.status(502).json({ error: 'No pudimos acreditar el bono en este momento. Probá de nuevo en unos minutos.' });
+      }
+
+      // v1.7: liberar el bono YA (sin esto queda "a reclamar" en el casino).
+      try {
+        const _claimRes = await girox.claimPendingBonus(user.username);
+        if (!_claimRes.success) {
+          logger.warn(`[welcome-code] auto-claim falló para ${user.username}: ${_claimRes.error} — el cliente puede reclamarlo desde el casino`);
+        }
+      } catch (claimErr) {
+        logger.warn(`[welcome-code] auto-claim excepción para ${user.username}: ${claimErr.message}`);
       }
 
       await User.updateOne(
@@ -10306,16 +10347,18 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
         success: true,
         status: 'credited',
         amount,
+        type: bonusType,
         message: `¡Código válido! Tu bono sorpresa de $${montoFmt} ya está acreditado en tu cuenta. 🎰`
       });
     }
 
-    // ============ TIPO NEXT_CHARGE: lo aplica el agente ============
-    // Mensaje al cliente en el chat (editable desde COMANDOS /sys_welcome_code).
+    // ============ TIPO NEXT_CHARGE: % EXTRA, lo aplica el agente ============
+    // Mensaje al cliente en el chat (editable desde COMANDOS /sys_welcome_code;
+    // {amount} ahora es el PORCENTAJE — ej. 50 — no un monto en pesos).
     const content = await renderSystemCommand(
       '/sys_welcome_code',
       '🎉 ¡Código de bienvenida canjeado, {username}!\n\n' +
-      '🎁 Tenés un BONO SORPRESA de ${amount} para tu PRÓXIMA CARGA.\n\n' +
+      '🎁 Tenés un {amount}% EXTRA para tu PRÓXIMA CARGA.\n\n' +
       'Cuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento. 🥳\n\n' +
       '⚠️ Es por única vez.',
       { username: user.username, amount: montoFmt }
@@ -10338,16 +10381,17 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     await _emitAdminOnlyChatNote(
       user.id,
       user.username,
-      `🎁 BONO SORPRESA PENDIENTE ($${montoFmt}) — este cliente canjeó el código de bienvenida de la Comunidad de Telegram.\n` +
-      `👉 En su PRÓXIMA CARGA, sumale $${montoFmt} y después marcalo como usado desde el botón del chat. Es por única vez.`
+      `🎁 BONO SORPRESA PENDIENTE (+${montoFmt}% EXTRA) — este cliente canjeó el código de bienvenida de la Comunidad de Telegram.\n` +
+      `👉 En su PRÓXIMA CARGA, sumale un ${montoFmt}% extra y después marcalo como usado desde el botón del chat. Es por única vez.`
     ).catch(() => {});
 
-    logger.info(`[welcome-code] ${user.username} canjeó el código — bono $${amount} pendiente`);
+    logger.info(`[welcome-code] ${user.username} canjeó el código — bono ${amount}% pendiente`);
     res.json({
       success: true,
       status: 'pending',
       amount,
-      message: `¡Código válido! Tenés un bono sorpresa de $${montoFmt} para tu próxima carga.`
+      type: bonusType,
+      message: `¡Código válido! Tenés un ${montoFmt}% EXTRA para tu próxima carga.`
     });
   } catch (error) {
     logger.error(`Error canjeando código de bienvenida: ${error.message}`);
@@ -10409,8 +10453,10 @@ app.get('/api/admin/community-code', authMiddleware, adminMiddleware, async (req
     const amount = Math.max(0, Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0);
     const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
     const rolloverX = await getWelcomeCodeRolloverX();
+    const percent = Math.max(0, Math.round(Number(await getConfig('communityWelcomePercent', 100)) || 0));
     res.json({
       amount,
+      percent,
       bonusType,
       rolloverX,
       hasCode: !!code.trim(),
@@ -10450,11 +10496,21 @@ app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (re
       logger.info(`[welcome-code] tipo del bono sorpresa → ${b.bonusType} (por ${req.user.username})`);
     }
 
+    // Porcentaje del tipo "próxima carga": admin general y depositor.
+    if (b.percent !== undefined) {
+      const pc = Number(b.percent);
+      if (!Number.isFinite(pc) || pc < 1 || pc > 200) {
+        return res.status(400).json({ error: 'El porcentaje debe ser un número entre 1 y 200.' });
+      }
+      await setConfig('communityWelcomePercent', Math.round(pc));
+      logger.info(`[welcome-code] % extra próxima carga → ${Math.round(pc)}% (por ${req.user.username})`);
+    }
+
     // Rollover del bono cash: admin general y depositor (misma regla que el
-    // monto). 0 = sin rollover (plata libre). Se valida contra los
-    // multiplicadores de DEPÓSITO permitidos por 1girox (rollover.multipliers)
-    // — si se guardara uno inválido, el canje fallaría recién en la cara del
-    // cliente.
+    // monto). 0 = sin rollover (plata libre). El cash ahora se acredita COMO
+    // BONO (/bonus), así que se valida contra los multiplicadores de BONOS de
+    // 1girox (`bonus.multipliers` — NO los de depósito) para que el canje
+    // jamás falle en la cara del cliente.
     if (b.rolloverX !== undefined) {
       const rx = Number(b.rolloverX);
       if (!Number.isFinite(rx) || rx < 0 || rx > 50) {
@@ -10462,10 +10518,10 @@ app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (re
       }
       try {
         const cfg = await girox.getPlatformConfig();
-        const allowed = cfg.success && cfg.config && cfg.config.rollover && cfg.config.rollover.multipliers;
+        const allowed = cfg.success && cfg.config && cfg.config.bonus && cfg.config.bonus.multipliers;
         if (Array.isArray(allowed) && allowed.length && !allowed.map(Number).includes(rx)) {
           return res.status(400).json({
-            error: `La plataforma solo permite estos multiplicadores: ${allowed.join(', ')}. Elegí uno de esos.`
+            error: `La plataforma solo permite estos multiplicadores para bonos: ${allowed.join(', ')}. Elegí uno de esos.`
           });
         }
       } catch (_) { /* config no disponible: se guarda igual (rango 0-50 ya validado) */ }

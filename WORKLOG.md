@@ -8,6 +8,31 @@
 
 ## Sesión 2026-08-05
 
+### 148. Código de bienvenida v3: APP OBLIGATORIA, tipo bono = % en próxima carga, cash acreditado COMO BONO
+- **Pedido del owner (3 cambios sobre #142/#143):**
+  1. **App instalada SÍ o SÍ** para canjear (mismo criterio que el bono de
+     instalación): gate `_rouletteHasAppInstalled` (token FCM standalone),
+     ANTES de la reserva atómica — un rechazo no quema el una-vez-por-cuenta.
+     Aplica a los DOS tipos.
+  2. **Tipo "próxima carga" pasa de monto fijo a PORCENTAJE** (config nueva
+     `communityWelcomePercent`, default 100, rango 1-200, editable por admin
+     general y depositor): el agente ve "+X% EXTRA" en el banner del chat y se
+     lo suma a la carga. `User.welcomeCodeBonusAmount` congela el % en este
+     tipo (el campo guarda monto O % según welcomeCodeBonusType). Mensajes
+     (/sys_welcome_code fallback, nota admin, respuesta, modal PWA) en %.
+  3. **Tipo cash se acredita COMO BONO** (`creditUserBalance` con multiplier →
+     POST /players/{u}/bonus) con el ROLLOVER elegido en el panel → figura como
+     Bono en 1girox. Auto-claim (claim_required=true) + guard bono-sobre-bono
+     ANTES de la reserva. La validación del rollover en el panel ahora usa
+     **bonus.multipliers** ([0,2,5,10,20,40]) — no los de depósito.
+- **Gate de saldo (#142) quedó SOLO para el tipo cash** (comparar saldo contra
+  un porcentaje no tiene sentido). Reference `vip-welcome-{userId}` intacta.
+- **Panel:** card con campo nuevo "% extra en la PRÓXIMA CARGA" + labels que
+  aclaran qué campo aplica a qué tipo. **Validado:** `node --check` OK + parse
+  inline. SW a **v93**. Back necesita redeploy. PROBAR: canje sin app → error
+  claro; tipo % → banner del agente "+50% EXTRA"; tipo cash → en 1girox figura
+  como Bono con el rollover.
+
 ### 147. Config de Comunidad CACHEADA en el dispositivo (el pill ya no arranca en canal-proximamente)
 - **Síntoma (owner):** al abrir la app, el pill del canal apuntaba primero a
   /canal-proximamente y recién al abrir el menú tomaba el link real. Causa: la

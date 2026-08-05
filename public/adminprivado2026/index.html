@@ -652,9 +652,14 @@ document.addEventListener('change', function (ev) {
                                 <small style="color:#aaa;font-size:11px;">Cambiarlo NO afecta a quienes ya canjearon. Vacío = canje desactivado.</small>
                             </div>
                             <div class="form-group">
-                                <label>Monto del bono sorpresa ($):</label>
+                                <label>Monto del bono sorpresa ($) — tipo MONTO AUTOMÁTICO:</label>
                                 <input type="number" id="welcomeCodeAmount" min="0" max="10000000" step="100" style="width:100%;">
-                                <small style="color:#aaa;font-size:11px;">Lo pueden cambiar el admin general y los depositors. El monto queda CONGELADO para cada cliente al momento de canjear.</small>
+                                <small style="color:#aaa;font-size:11px;">Solo aplica al tipo "Monto sorpresa AUTOMÁTICO": se acredita solo, COMO BONO, con el rollover de abajo. Queda CONGELADO por cliente al canjear.</small>
+                            </div>
+                            <div class="form-group">
+                                <label>% extra en la PRÓXIMA CARGA — tipo BONO:</label>
+                                <input type="number" id="welcomeCodePercent" min="1" max="200" step="5" placeholder="100" style="width:100%;">
+                                <small style="color:#aaa;font-size:11px;">Solo aplica al tipo "Bono extra en la PRÓXIMA CARGA": el agente le suma este % a la carga (ej. 50 = un 50% extra) y lo marca como usado. También queda congelado por cliente al canjear.</small>
                             </div>
                             <div class="form-group">
                                 <label>Tipo de bono:</label>

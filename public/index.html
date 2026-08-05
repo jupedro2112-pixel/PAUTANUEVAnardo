@@ -4105,20 +4105,26 @@
                 '<button type="button" id="welcomeCodeSubmitBtn" class="btn btn-primary" style="width:100%;" onclick="submitWelcomeCode()">🎁 Canjear mi código</button>';
         }
 
-        function _renderPending(amount) {
+        // Tipo next_charge: `amount` es un PORCENTAJE (ej. 50 → "+50% EXTRA");
+        // tipo cash: es un monto en pesos.
+        function _fmtVal(amount, type) {
+            return type === 'next_charge' ? ('un +' + (Number(amount) || 0) + '% EXTRA') : ('un bono de ' + _money(amount));
+        }
+
+        function _renderPending(amount, type) {
             _body().innerHTML =
                 '<div style="background:linear-gradient(135deg,#1e5799,#2989d8);border-radius:12px;padding:16px;text-align:center;color:#fff;">' +
                     '<div style="font-size:34px;margin-bottom:6px;">🎁</div>' +
-                    '<div style="font-size:15px;font-weight:900;margin-bottom:6px;">¡Tenés un bono sorpresa de ' + _money(amount) + '!</div>' +
+                    '<div style="font-size:15px;font-weight:900;margin-bottom:6px;">¡Tenés ' + _fmtVal(amount, type) + '!</div>' +
                     '<div style="font-size:12.5px;line-height:1.5;opacity:.95;">Te espera en tu <strong>PRÓXIMA CARGA</strong>: ' +
                     'cuando vayas a cargar, avisale al agente que tenés el bono de bienvenida de la Comunidad y te lo suma en el momento.</div>' +
                 '</div>';
         }
 
-        function _renderUsed(amount) {
+        function _renderUsed(amount, type) {
             _body().innerHTML =
                 '<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;text-align:center;color:#999;font-size:12.5px;line-height:1.5;">' +
-                    '✅ Ya usaste tu código de bienvenida' + (amount ? ' (' + _money(amount) + ')' : '') + '.<br>Es una sola vez por cuenta — ¡pero seguí atento a la Comunidad por más sorpresas! 🎉' +
+                    '✅ Ya usaste tu código de bienvenida' + (amount ? ' (' + (type === 'next_charge' ? '+' + amount + '% extra' : _money(amount)) + ')' : '') + '.<br>Es una sola vez por cuenta — ¡pero seguí atento a la Comunidad por más sorpresas! 🎉' +
                 '</div>';
         }
 
@@ -4141,9 +4147,9 @@
                 });
                 const d = await r.json();
                 if (!r.ok) { _renderInput(''); return; }
-                if (d.status === 'pending') return _renderPending(d.amount);
+                if (d.status === 'pending') return _renderPending(d.amount, d.type);
                 if (d.status === 'credited') return _renderCredited(d.amount);
-                if (d.status === 'used') return _renderUsed(d.amount);
+                if (d.status === 'used') return _renderUsed(d.amount, d.type);
                 _renderInput(d.available ? '' : 'Todavía no hay un código activo — unite a la Comunidad para no perdértelo cuando salga.');
             } catch (e) {
                 _renderInput('');
@@ -4170,7 +4176,7 @@
                         // La plata ya está en el saldo → refrescar el header.
                         if (window.VIP && VIP.ui && VIP.ui.syncBalance) VIP.ui.syncBalance();
                     } else {
-                        _renderPending(d.amount);
+                        _renderPending(d.amount, d.type);
                     }
                     if (window.VIP && VIP.ui && VIP.ui.showToast) VIP.ui.showToast('✅ ' + d.message, 'success');
                 } else {

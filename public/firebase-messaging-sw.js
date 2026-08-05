@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v92'; // v92: config de Comunidad cacheada en el dispositivo (el pill nunca arranca en el fallback)
+const CACHE_VERSION = 'v93'; // v93: código de bienvenida — app obligatoria, % en próxima carga, cash como BONO
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

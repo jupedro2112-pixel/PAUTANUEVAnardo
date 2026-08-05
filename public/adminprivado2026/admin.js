@@ -4364,7 +4364,11 @@ function renderWelcomeCodeBonusBanner(user) {
     const banner = document.getElementById('chatWelcomeCodeBanner');
     if (!banner) return;
     const status = user && user.welcomeCodeBonusStatus;
-    const monto = '$' + Number(user && user.welcomeCodeBonusAmount || 0).toLocaleString('es-AR');
+    // Tipo next_charge: el valor congelado es un PORCENTAJE (ej. 50 → "+50%
+    // EXTRA"); tipo cash: es un monto en pesos.
+    const _wcVal = Number(user && user.welcomeCodeBonusAmount || 0);
+    const _wcEsPct = (user && user.welcomeCodeBonusType) === 'next_charge';
+    const monto = _wcEsPct ? ('+' + _wcVal + '% EXTRA') : ('$' + _wcVal.toLocaleString('es-AR'));
 
     if (status === 'pending') {
         banner.style.display = '';
@@ -4375,7 +4379,7 @@ function renderWelcomeCodeBonusBanner(user) {
                 '<div style="flex:1;min-width:180px;">' +
                     '<strong style="font-size:13px;display:block;">BONO SORPRESA PENDIENTE — ' + monto + '</strong>' +
                     '<span style="font-size:11.5px;opacity:.92;">Canjeó el código de bienvenida de la Comunidad. ' +
-                    'En su próxima carga, sumale ' + monto + ' y marcalo como usado — es por única vez.</span>' +
+                    'En su próxima carga, ' + (_wcEsPct ? 'sumale un ' + _wcVal + '% extra' : 'sumale ' + monto) + ' y marcalo como usado — es por única vez.</span>' +
                 '</div>' +
                 '<button onclick="markWelcomeCodeBonusUsed(\'' + escapeHtml(user.id) + '\')" ' +
                     'style="background:#0b2545;color:#8ecdf7;border:1px solid rgba(255,255,255,0.3);' +
@@ -6060,6 +6064,8 @@ async function loadWelcomeCodeConfig() {
         const j = await r.json();
         const amountInput = document.getElementById('welcomeCodeAmount');
         if (amountInput && j.amount != null) amountInput.value = j.amount;
+        const percentInput = document.getElementById('welcomeCodePercent');
+        if (percentInput && j.percent != null) percentInput.value = j.percent;
         const typeSelect = document.getElementById('welcomeCodeType');
         if (typeSelect && j.bonusType) typeSelect.value = j.bonusType;
         const rolloverInput = document.getElementById('welcomeCodeRolloverX');
@@ -6085,8 +6091,10 @@ async function saveWelcomeCodeConfig() {
     const codeInput = document.getElementById('welcomeCodeInput');
     const typeSelect = document.getElementById('welcomeCodeType');
     const rolloverInput = document.getElementById('welcomeCodeRolloverX');
+    const percentInput = document.getElementById('welcomeCodePercent');
     const body = {
         amount: amountInput ? amountInput.value : undefined,
+        percent: percentInput && percentInput.value !== '' ? Number(percentInput.value) : undefined,
         bonusType: typeSelect ? typeSelect.value : undefined,
         rolloverX: rolloverInput && rolloverInput.value !== '' ? Number(rolloverInput.value) : undefined
     };
