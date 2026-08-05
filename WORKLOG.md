@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-05
 
+### 121. Branding v2: íconos TRANSPARENTES, banner de inicio definitivo y logo 1GIROX fijo en el soporte
+- **Pedido del owner:** (a) íconos de la PWA con fondo transparente; (b) el banner
+  del login pasa a ser `bannerinicio.png` (arte con deportes + ruleta + cartas, no
+  el de SLOTS); (c) el logo del chat de soporte seguía sin verse → que quede
+  puesto directo desde el código.
+- **Íconos:** regenerados los 10 con **alfa real** (badge "1G" al 96% sobre
+  transparente). ⚠️ Caveats estándar: iOS pinta NEGRO detrás del
+  apple-touch-icon transparente y algunos launchers Android le ponen su propio
+  fondo — con branding oscuro se ve bien igual.
+- **Login:** `public/images/banner-inicio-1girox.jpg` (800x200, 44KB) reemplaza a
+  `slots-1girox.jpg` (ELIMINADO — duró una sesión, #120).
+- **Soporte:** el `src` DEFAULT de `#chatTopbarAvatar` (index.html) ahora es
+  **`public/images/soporte-1girox.png`** (cuadrado 256px, logo 1GIROX horizontal
+  centrado sobre oscuro, pensado para el recorte circular con object-fit:cover)
+  — ya no depende de la config del panel para verse; si el panel carga un logo
+  (Comunidad), chat.js lo sigue pisando. Sobre el "no se cambia": el guardado
+  del panel quedó OK en la base (la preview persiste); la PWA lo aplica al
+  ARRANCAR sesión — sospecha de SW/recarga vieja en el emulador del owner. Con
+  el default hardcodeado el look deseado queda garantizado.
+- **Validado:** íconos y avatar verificados visualmente. SW a **v80**. Solo
+  front/assets. PROBAR: reinstalar la PWA → ícono 1G sin placa de fondo; login
+  con el banner nuevo; chat con el logo 1GIROX en la cabecera.
+
 ### 120. BRANDING 1girox: íconos de la app nuevos + banner SLOTS en el login
 - **Pedido del owner:** reemplazar el logo tipográfico "♛ V I P / VIPCARGAS" del
   login por el arte de 1girox, y cambiar los íconos de la PWA instalada por el

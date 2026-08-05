@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v79'; // v79: branding 1girox (íconos PWA nuevos + banner SLOTS en el login)
+const CACHE_VERSION = 'v80'; // v80: íconos transparentes, banner de inicio nuevo y logo 1GIROX en el soporte
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
