@@ -530,7 +530,7 @@
                 </span><span class="menu-item-label">Soporte 24/7 <span style="font-weight:600;color:#53bdeb;font-size:11px;">(Telegram)</span></span>
             </a>
             <button class="menu-item notification-btn" id="notificationBtn" title="Activar Notificaciones" role="menuitem">
-                <span class="menu-item-icon">🔔</span><span class="menu-item-label">Notificaciones</span>
+                <span class="menu-item-icon">🔔</span><span class="menu-item-label">Activar notificaciones</span>
             </button>
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
@@ -2888,7 +2888,7 @@
                         if (_recoveryBtn) {
                             _recoveryBtn.disabled = false;
                             _recoveryBtn.classList.remove('active');
-                            _recoveryBtn.innerHTML = '🔔 NOTIS';
+                            _recoveryBtn.innerHTML = '🔔 Activar notificaciones';
                             _recoveryBtn.title = 'Tocá para activar notificaciones';
                         }
                     }
@@ -2991,7 +2991,7 @@
                 // El loader sigue reintentando en background — el usuario sólo
                 // tiene que esperar y reintentar. Mensaje friendly, no rojo.
                 if (typeof showToast === 'function') {
-                    showToast('⏳ Notificaciones aún cargando. Volvé a tocar NOTIS en unos segundos.', 'warning');
+                    showToast('⏳ Notificaciones aún cargando. Volvé a tocar "Activar notificaciones" en unos segundos.', 'warning');
                 }
                 // Re-disparar retry para no quedar atascado.
                 if (typeof window.__firebaseRetryNow === 'function') {
@@ -3467,25 +3467,39 @@
         // MOSTRAR BOTÓN DE INSTALACIÓN
         // ============================================
         function showInstallButton() {
+            // Si el usuario lo cerró con la ✕, respetarlo por 3 días (el botón le
+            // tapaba contenido y molestaba a quien no quiere instalar todavía).
+            try {
+                const _dismissedAt = Number(localStorage.getItem('pwaInstallDismissedAt') || 0);
+                if (_dismissedAt && (Date.now() - _dismissedAt) < 3 * 24 * 60 * 60 * 1000) return;
+            } catch (_) {}
             // Crear botón si no existe
             let installBtn = document.getElementById('pwaInstallButton');
             if (!installBtn) {
                 installBtn = document.createElement('button');
                 installBtn.id = 'pwaInstallButton';
                 installBtn.className = 'pwa-install-btn';
-                installBtn.innerHTML = '📱 Instalar App';
+                // El texto va en un span propio para que el modo iOS no pise la ✕.
+                installBtn.innerHTML = '<span id="pwaInstallLabel">📱 Instalar App</span><span id="pwaInstallClose" title="Ocultar">✕</span>';
                 document.body.appendChild(installBtn);
-                
+
                 // Agregar evento click
                 installBtn.addEventListener('click', handleInstallClick);
+                const _closeEl = installBtn.querySelector('#pwaInstallClose');
+                if (_closeEl) _closeEl.addEventListener('click', function (ev) {
+                    ev.stopPropagation(); // que no dispare la instalación
+                    try { localStorage.setItem('pwaInstallDismissedAt', String(Date.now())); } catch (_) {}
+                    hideInstallButton();
+                });
             }
-            
+
             // Mostrar el botón
             installBtn.style.display = 'flex';
-            
+
             // Si es iOS, mostrar instrucciones especiales
             if (isIOS) {
-                installBtn.innerHTML = '📱 Agregar a Inicio';
+                const _lbl = installBtn.querySelector('#pwaInstallLabel');
+                if (_lbl) _lbl.textContent = '📱 Agregar a Inicio';
             }
         }
         
@@ -3592,14 +3606,17 @@
         pwaStyles.textContent = `
             .pwa-install-btn {
                 position: fixed;
-                bottom: 20px;
-                right: 20px;
+                /* ⚠️ NO bajarlo a bottom:20px: ahí tapa la cámara y el enviar de la
+                   barra del chat (los que navegan sin la app no podían mandar el
+                   comprobante). Va ARRIBA de la barra de escribir, más chico. */
+                bottom: 86px;
+                right: 10px;
                 background: linear-gradient(135deg, #d4af37 0%, #00cc6a 100%);
                 color: #000;
                 border: none;
                 border-radius: 50px;
-                padding: 15px 25px;
-                font-size: 16px;
+                padding: 9px 14px;
+                font-size: 13px;
                 font-weight: bold;
                 cursor: pointer;
                 box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
@@ -3608,6 +3625,15 @@
                 align-items: center;
                 gap: 8px;
                 animation: slideUp 0.3s ease;
+            }
+
+            #pwaInstallClose {
+                opacity: 0.65;
+                font-size: 13px;
+                font-weight: 900;
+                padding: 2px 2px 2px 6px;
+                border-left: 1px solid rgba(0, 0, 0, 0.25);
+                line-height: 1;
             }
             
             @keyframes slideUp {
@@ -3701,9 +3727,9 @@
                     notificationBtn.innerHTML = '⏳ Cargando…';
                     setTimeout(function () {
                         if (window.__firebaseLoadState === 'ready') {
-                            notificationBtn.innerHTML = '🔔 NOTIS';
+                            notificationBtn.innerHTML = '🔔 Activar notificaciones';
                         } else {
-                            notificationBtn.innerHTML = '🔔 NOTIS';
+                            notificationBtn.innerHTML = '🔔 Activar notificaciones';
                         }
                         notificationBtn.disabled = false;
                     }, 3000);
@@ -3791,7 +3817,7 @@
                             notificationBtn.classList.add('compact');
                             notificationBtn.title = 'Notificaciones bloqueadas. Tocá para ver cómo activarlas.';
                         } else {
-                            notificationBtn.innerHTML = '🔕 NOTIS BLOQUEADAS';
+                            notificationBtn.innerHTML = '🔕 Notificaciones bloqueadas';
                             notificationBtn.classList.remove('compact');
                             notificationBtn.title = 'Bloqueadas. Tocá el botón para ver cómo activarlas (mantené presionado el ícono de la app → Información → Notificaciones, o desinstalá y reinstalá la app).';
                             try { localStorage.setItem('notisLabelSeen:denied', '1'); } catch (_) {}
@@ -3807,7 +3833,7 @@
                             notificationBtn.classList.add('compact');
                             notificationBtn.title = 'Notificaciones activadas ✅ (tocá para renovar si no recibís)';
                         } else {
-                            notificationBtn.innerHTML = '🔔 NOTIS ACTIVADAS';
+                            notificationBtn.innerHTML = '🔔 Notificaciones activadas';
                             notificationBtn.classList.remove('compact');
                             notificationBtn.title = 'Notificaciones activadas ✅ (tocá para renovar si no recibís)';
                             try { localStorage.setItem('notisLabelSeen:granted', '1'); } catch (_) {}
@@ -3823,7 +3849,7 @@
                         notificationBtn.innerHTML = '⏳ Cargando…';
                         notificationBtn.title = 'Esperando que Firebase termine de cargar...';
                     } else {
-                        notificationBtn.innerHTML = '🔔 NOTIS';
+                        notificationBtn.innerHTML = '🔔 Activar notificaciones';
                         notificationBtn.title = 'Tocá para activar notificaciones';
                     }
                     notificationBtn.disabled = false;

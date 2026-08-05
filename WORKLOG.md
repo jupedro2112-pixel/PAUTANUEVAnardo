@@ -8,6 +8,32 @@
 
 ## Sesión 2026-08-05
 
+### 119. "Activar notificaciones" + el botón flotante "Instalar App" ya no tapa la cámara del chat
+- **Pedido del owner:** (a) el botón "NOTIS" pasa a decir "Activar notificaciones";
+  (b) el cartel flotante "📱 Instalar App" (a los que navegan SIN la app instalada
+  les aparece fijo abajo a la derecha) tapaba la CÁMARA y el enviar de la barra del
+  chat → los que no tienen la app no podían mandar el comprobante ni fotos.
+- **Textos de notificaciones (index.html):** los 5 estados del botón
+  ('🔔 NOTIS' → '🔔 Activar notificaciones', '🔕 NOTIS BLOQUEADAS' → '🔕
+  Notificaciones bloqueadas', '🔔 NOTIS ACTIVADAS' → '🔔 Notificaciones
+  activadas'), el toast de "Firebase cargando" y la etiqueta estática del menú ☰.
+  El modo COMPACTO (solo emoji tras la primera vez) queda igual. Los console.log
+  internos que dicen NOTIS no se tocaron (no los ve el usuario).
+- **Botón flotante de instalación (`.pwa-install-btn`):** estaba en `bottom:20px;
+  right:20px` con z-index 9999 — exactamente arriba de la cámara/enviar de la
+  barra estilo WhatsApp. Ahora: **`bottom:86px`** (queda ARRIBA de la barra de
+  escribir), más chico (padding 9/14, font 13px), con comentario-advertencia en el
+  CSS para que nadie lo vuelva a bajar. Además se le agregó una **✕ para
+  ocultarlo** (guarda `pwaInstallDismissedAt` en localStorage y no reaparece por
+  3 días; `stopPropagation` para que cerrar no dispare la instalación). El texto
+  va en un span propio (`pwaInstallLabel`) para que el modo iOS ("Agregar a
+  Inicio") no pise la ✕. El ítem "Instalar App" del menú ☰ sigue siempre
+  disponible.
+- **Validado:** parse OK de los scripts inline (7/7). SW a **v78**. Solo front —
+  no necesita redeploy del back (pero puede ir junto). PROBAR en un celular SIN
+  la app: el cartel aparece arriba de la barra, la cámara y el enviar quedan
+  libres, la ✕ lo oculta y no vuelve al recargar.
+
 ### 118. RANGOS de reembolso EDITABLES desde el panel, con escalera PROPIA por período
 - **Pedido del owner:** que los rangos (% según pérdida del período) se puedan
   cambiar desde el panel; que el diario, el semanal y el mensual puedan tener

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v77'; // v77: rangos de reembolso editables por período (perfil + info)
+const CACHE_VERSION = 'v78'; // v78: "Activar notificaciones" + botón Instalar App corrido (no tapa la cámara)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
