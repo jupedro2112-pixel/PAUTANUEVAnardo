@@ -8,6 +8,24 @@
 
 ## Sesión 2026-08-05
 
+### 145. DIAGNÓSTICO: tiempo real muerto en el entorno AWS nuevo (chats no aparecen sin refresh)
+- **Reclamo de los agentes:** los chats nuevos no aparecen sin refresh; todo
+  carga más lento que en la vieja vipcargas. Del lado del cliente, ídem.
+- **Diagnóstico (probado en vivo contra cargas1girox.com):** el handshake de
+  Socket.IO falla — 2ª request del polling → `"Session ID unknown"` (cayó en
+  la OTRA instancia). El entorno NUEVOgirox corre **2 instancias SIN sticky
+  sessions en el ALB** y **SIN REDIS_URL** en /1girox/prod (el adapter de
+  Socket.IO queda en "single-instance mode", warning en el log). Sin tiempo
+  real: cliente cae al poll de 30s y el panel a la reconciliación de 180s —
+  exactamente el síntoma. NO es bug de código: es infra que el entorno viejo
+  tenía y este no.
+- **Fix inmediato (indicado al owner):** bajar el entorno a **1 instancia**
+  (min=max=1) → sockets instantáneos sin más requisitos.
+- **Para escalar a 2+ instancias (futuro):** (1) stickiness en el load
+  balancer, y (2) un Redis PROPIO del entorno en `/1girox/prod/REDIS_URL`
+  (el server activa el adapter solo). ⚠️ No compartir el Redis con la vieja
+  vipcargas: los adapters se cruzarían los eventos.
+
 ### 144. CASO ASENTADO: retiro de $85.000 (giroxWalter354) descontado pero NO visible en "Cargas y Retiros" de 1girox
 - **Hechos (owner, 2026-08-05 ~10:00 ART, capturas p1/p2):** retiro
   autogestionado de $85.000 de giroxWalter354 (usuario del publicista
