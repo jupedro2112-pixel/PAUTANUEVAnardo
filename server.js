@@ -10163,6 +10163,17 @@ app.get('/api/community-code/status', authMiddleware, async (req, res) => {
   }
 });
 
+// Rollover del bono cash del código de bienvenida — EDITABLE desde el panel
+// (Config['communityWelcomeRolloverX'], default x2 pedido por el owner
+// 2026-08-05; 0 = sin rollover). Sin cache (multi-instancia, ver #91).
+async function getWelcomeCodeRolloverX() {
+  try {
+    const v = Number(await getConfig('communityWelcomeRolloverX', 2));
+    if (Number.isFinite(v) && v >= 0 && v <= 50) return v;
+  } catch (_) {}
+  return 2;
+}
+
 app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, res) => {
   try {
     const attempt = String((req.body && req.body.code) || '').trim();
@@ -10228,14 +10239,16 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
     if (bonusType === 'cash') {
       // Reference por usuario: el bono es uno por cuenta para siempre → aunque
       // esto se reintente, la plataforma nunca paga dos veces (duplicate:true).
-      // ROLLOVER x2 AUTOMÁTICO (owner 2026-08-05): depósito con multiplier 2 —
-      // la plata entra JUGABLE al instante pero para retirarla hay que apostar
-      // 2× el bono (candado de la plataforma, x2 está permitido en su config).
+      // ROLLOVER AUTOMÁTICO (owner 2026-08-05, editable en el panel): depósito
+      // con multiplier X — la plata entra JUGABLE al instante pero para
+      // retirarla hay que apostar X× el bono (candado de la plataforma).
+      // Con X=0 va como depósito libre (sin rollover).
+      const _welcomeRolloverX = await getWelcomeCodeRolloverX();
       const credit = await girox.depositToUser(
         user.username, amount,
         'Bono sorpresa — código de bienvenida de la Comunidad',
         `vip-welcome-${user.id}`,
-        { multiplier: 2 }
+        _welcomeRolloverX > 0 ? { multiplier: _welcomeRolloverX } : null
       );
       if (!credit.success) {
         // Restaurar la reserva (guard en 'pending') para que pueda reintentar.
@@ -10394,9 +10407,11 @@ app.get('/api/admin/community-code', authMiddleware, adminMiddleware, async (req
     const code = String((await getConfig('communityWelcomeCode', '')) || '');
     const amount = Math.max(0, Number(await getConfig('communityWelcomeBonusAmount', 0)) || 0);
     const bonusType = (await getConfig('communityWelcomeBonusType', 'next_charge')) === 'cash' ? 'cash' : 'next_charge';
+    const rolloverX = await getWelcomeCodeRolloverX();
     res.json({
       amount,
       bonusType,
+      rolloverX,
       hasCode: !!code.trim(),
       // El código en claro sólo lo ve el admin general.
       ...(req.user.role === 'admin' ? { code } : {})
@@ -10432,6 +10447,29 @@ app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (re
       }
       await setConfig('communityWelcomeBonusType', b.bonusType);
       logger.info(`[welcome-code] tipo del bono sorpresa → ${b.bonusType} (por ${req.user.username})`);
+    }
+
+    // Rollover del bono cash: admin general y depositor (misma regla que el
+    // monto). 0 = sin rollover (plata libre). Se valida contra los
+    // multiplicadores de DEPÓSITO permitidos por 1girox (rollover.multipliers)
+    // — si se guardara uno inválido, el canje fallaría recién en la cara del
+    // cliente.
+    if (b.rolloverX !== undefined) {
+      const rx = Number(b.rolloverX);
+      if (!Number.isFinite(rx) || rx < 0 || rx > 50) {
+        return res.status(400).json({ error: 'El rollover debe ser un número entre 0 y 50 (0 = sin rollover).' });
+      }
+      try {
+        const cfg = await girox.getPlatformConfig();
+        const allowed = cfg.success && cfg.config && cfg.config.rollover && cfg.config.rollover.multipliers;
+        if (Array.isArray(allowed) && allowed.length && !allowed.map(Number).includes(rx)) {
+          return res.status(400).json({
+            error: `La plataforma solo permite estos multiplicadores: ${allowed.join(', ')}. Elegí uno de esos.`
+          });
+        }
+      } catch (_) { /* config no disponible: se guarda igual (rango 0-50 ya validado) */ }
+      await setConfig('communityWelcomeRolloverX', rx);
+      logger.info(`[welcome-code] rollover del bono cash → x${rx} (por ${req.user.username})`);
     }
 
     // Código: SOLO admin general. Vacío = desactivar el canje.

@@ -6062,6 +6062,8 @@ async function loadWelcomeCodeConfig() {
         if (amountInput && j.amount != null) amountInput.value = j.amount;
         const typeSelect = document.getElementById('welcomeCodeType');
         if (typeSelect && j.bonusType) typeSelect.value = j.bonusType;
+        const rolloverInput = document.getElementById('welcomeCodeRolloverX');
+        if (rolloverInput && j.rolloverX != null) rolloverInput.value = j.rolloverX;
         const codeGroup = document.getElementById('welcomeCodeCodeGroup');
         const codeInput = document.getElementById('welcomeCodeInput');
         if (j.code !== undefined) {
@@ -6082,9 +6084,11 @@ async function saveWelcomeCodeConfig() {
     const codeGroup = document.getElementById('welcomeCodeCodeGroup');
     const codeInput = document.getElementById('welcomeCodeInput');
     const typeSelect = document.getElementById('welcomeCodeType');
+    const rolloverInput = document.getElementById('welcomeCodeRolloverX');
     const body = {
         amount: amountInput ? amountInput.value : undefined,
-        bonusType: typeSelect ? typeSelect.value : undefined
+        bonusType: typeSelect ? typeSelect.value : undefined,
+        rolloverX: rolloverInput && rolloverInput.value !== '' ? Number(rolloverInput.value) : undefined
     };
     // El código solo viaja si el campo está visible (admin general).
     if (codeInput && codeGroup && codeGroup.style.display !== 'none') {

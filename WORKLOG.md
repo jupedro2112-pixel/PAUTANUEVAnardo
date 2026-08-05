@@ -8,6 +8,18 @@
 
 ## Sesión 2026-08-05
 
+### 143. El rollover del bono del código de Comunidad ahora es EDITABLE desde el panel
+- **Pedido del owner (sobre #142):** el x2 fijo pasa a config. Nuevo
+  `Config['communityWelcomeRolloverX']` (default **2**, 0 = sin rollover),
+  helper `getWelcomeCodeRolloverX()` sin cache. El canje tipo cash acredita con
+  ese multiplier (0 → depósito libre).
+- **Panel (card "🎁 Código de bienvenida"):** input "🎯 Rollover del bono cash
+  (x)" — lo editan admin general y depositor (misma regla que el monto). El
+  POST valida el valor contra los multiplicadores de DEPÓSITO permitidos por
+  1girox (`rollover.multipliers`, hoy [0,1,2,5,10]) y rechaza con la lista si
+  no está permitido — así el canje nunca falla en la cara del cliente.
+- **Validado:** `node --check` OK. Back necesita redeploy; panel, recargar.
+
 ### 142. Lote de UI del owner + código de Comunidad con gate de saldo y rollover x2
 - **"Ocultar menú"**: el colapsado ahora deja SOLO `.dash-play` (botón "PÁGINA
   CASINO AQUÍ" + TU SALDO) — antes dejaba `.dash-top` (reembolsos + usuario).
