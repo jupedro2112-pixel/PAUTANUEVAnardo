@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-05
 
+### 126. Los publisher_admin ahora generan LINKS DE ACCESO (al crear y regenerable)
+- **Pedido del owner:** el alta de usuarios del publicista no entregaba el link
+  de acceso de un solo uso (#111 era exclusivo de admin general/depositor) y
+  tampoco se podía regenerar para un usuario ya creado.
+- **Backend:** helper **`issueAccessLinkFor(userId)`** (extraído del endpoint del
+  admin, misma lógica: token 192 bits, solo se guarda el sha256, regenerar pisa
+  el anterior). Lo usan: (a) el endpoint del admin/depositor (refactor, mismo
+  comportamiento); (b) **`POST /api/admin/publisher-admin/users/:userId/access-link`**
+  (NUEVO) — con el mismo doble check que change-password: SOLO usuarios que ese
+  publisher_admin creó (`createdByEmployeeId`), role 'user', no bloqueados; cae
+  bajo el prefijo del lockdown así que no se tocó PUBLISHER_ADMIN_ALLOWED_PATHS;
+  (c) **`create-user` del publicista** — genera el link en el alta y lo devuelve
+  (`accessLink`; si falla, el usuario igual queda creado y se regenera después).
+- **Panel (vista publisher_admin):** al crear un usuario se abre el MISMO modal
+  del link del flujo admin (#111, showAccessLinkModal) con botón copiar; en "Mis
+  usuarios" cada fila tiene el botón **"🔗 Link"** (confirm + modal). El ok del
+  alta avisa que el link está en el recuadro.
+- **Validado:** `node --check` OK (server.js, admin.js). Back necesita redeploy;
+  panel, recargar. PROBAR logueado como publisher_admin: crear usuario → modal
+  con link; abrirlo en incógnito → entra logueado y pide contraseña; "🔗 Link"
+  sobre un usuario viejo → regenera; intentar el endpoint con un usuario de OTRO
+  publicista → 403.
+
 ### 125. Variable {escalera} en la bienvenida: los rangos de reembolso se insertan solos
 - **Contexto (owner):** la bienvenida guardada decía "DIARIO 20% / SEMANAL 10% /
   MENSUAL 5%" — porcentajes de la era JUGAYGANA, mal para todos. Con los rangos

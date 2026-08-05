@@ -754,9 +754,10 @@ async function loadPaUsers(page = 1, search = '') {
             const infBadge = u.acquisitionInfluencer
                 ? `<span style="color:#6cf;font-size:10px;background:rgba(108,170,255,0.12);padding:1px 6px;border-radius:4px;margin-left:6px;white-space:nowrap;">🎬 ${_paSafe(u.acquisitionInfluencer)}</span>`
                 : '';
-            return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:#1a1a2e;border-radius:6px;font-size:13px;">
+            return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#1a1a2e;border-radius:6px;font-size:13px;">
                 <span style="color:#fff;font-weight:600;">${_paSafe(u.username)}${infBadge}</span>
                 <span style="color:#888;font-size:11px;white-space:nowrap;">${_paSafe(dateStr)}</span>
+                <button onclick="paGenerateAccessLink('${_paSafe(u.id)}','${_paSafe(u.username)}')" title="Generar link de acceso (un solo uso — loguea al cliente automáticamente)" style="padding:6px 12px;background:rgba(0,255,136,0.10);border:1px solid #00c853;color:#7fe07f;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;">🔗 Link</button>
                 <button onclick="openPaChangePwdModal('${_paSafe(u.id)}','${_paSafe(u.username)}')" style="padding:6px 12px;background:rgba(212,175,55,0.15);border:1px solid #d4af37;color:#d4af37;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;">🔑 Contraseña</button>
             </div>`;
         }).join('');
@@ -788,6 +789,27 @@ function paUsersClearSearch() {
     const input = document.getElementById('paUsersSearch');
     if (input) input.value = '';
     loadPaUsers(1, '');
+}
+
+// (Re)genera el link de acceso de un solo uso de un usuario del publicista.
+// Reusa el modal del flujo del admin general (showAccessLinkModal).
+async function paGenerateAccessLink(userId, username) {
+    if (!confirm(`¿Generar un link de acceso de UN SOLO USO para "${username}"?\n\nSi ya existía un link sin usar, el anterior deja de servir.`)) return;
+    try {
+        const r = await fetch(`${API_URL}/api/admin/publisher-admin/users/${encodeURIComponent(userId)}/access-link`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+            showToast(j.error || 'No se pudo generar el link', 'error');
+            return;
+        }
+        showAccessLinkModal(j.link, username, '');
+    } catch (e) {
+        showToast('Error de conexión', 'error');
+    }
 }
 
 function openPaChangePwdModal(userId, username) {
@@ -926,8 +948,16 @@ async function paCreateUser() {
             return;
         }
         if (okBox) {
-            okBox.textContent = `✓ Usuario "${data.user.username}" creado correctamente. Pasale los datos por WhatsApp.`;
+            okBox.textContent = data.accessLink
+                ? `✓ Usuario "${data.user.username}" creado correctamente. Pasale el LINK DE ACCESO (se abrió en el recuadro).`
+                : `✓ Usuario "${data.user.username}" creado correctamente. Pasale los datos por WhatsApp.`;
             okBox.style.display = 'block';
+        }
+        // Link de acceso de un solo uso generado en el alta: mostrarlo para
+        // copiar (mismo modal que usa el alta del admin general, #111).
+        if (data.accessLink) {
+            showAccessLinkModal(data.accessLink, data.user.username,
+                'Usuario creado ✅ — pasale este link: entra logueado automático y crea su contraseña.');
         }
         usernameEl.value = '';
         passwordEl.value = '';
