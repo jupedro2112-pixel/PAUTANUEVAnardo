@@ -5352,10 +5352,14 @@ function renderCommands(commands) {
                 <p class="command-response">${escapeHtml(cmd.response || 'Sin respuesta')}</p>
             </div>
             <div class="command-actions">
-                <button class="btn-small" onclick="editCommand('${cmd.name}')">
+                <!-- 🔒 XSS: el nombre va por JSON.stringify (comillas dobles) +
+                     escapeHtml (neutraliza el ' delimitador). Con escapeHtml solo
+                     NO alcanza: &#39; se decodifica antes de que el parser JS lea
+                     el handler y rompería el string igual. Fix 2026-08-06. -->
+                <button class="btn-small" onclick='editCommand(${escapeHtml(JSON.stringify(cmd.name))})'>
                     <span class="icon icon-edit"></span>
                 </button>
-                ${cmd.isSystem ? '' : `<button class="btn-small btn-danger" onclick="deleteCommand('${cmd.name}')">
+                ${cmd.isSystem ? '' : `<button class="btn-small btn-danger" onclick='deleteCommand(${escapeHtml(JSON.stringify(cmd.name))})'>
                     <span class="icon icon-trash"></span>
                 </button>`}
             </div>

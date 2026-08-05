@@ -150,8 +150,17 @@ const generalLimiter = rateLimit({
   // NO comparten el límite y no se 429-ean entre ellos. Los clientes de la PWA
   // (que se autentican por header Bearer, sin esa cookie) siguen limitados por IP.
   keyGenerator: (req) => {
+    // 🔒 La cookie se VERIFICA antes de usarla como clave (fix 2026-08-06):
+    // antes se aceptaba tal cual, así que mandando un valor random distinto en
+    // cada request se conseguía un balde nuevo y el límite global no existía.
     const sess = getAdminApiSessionCookie(req);
-    return sess ? ('sess:' + sess) : req.ip;
+    if (sess) {
+      try {
+        const d = jwt.verify(sess, JWT_SECRET, { algorithms: ['HS256'] });
+        if (d && d.userId) return 'sess:' + d.userId;
+      } catch (_) { /* cookie inválida → se limita por IP */ }
+    }
+    return req.ip;
   },
   // Desactiva la validación de IPv6-fallback de la lib: usamos cookie para admins
   // e IP para clientes a propósito (no necesitamos el helper de IPv6 acá).
@@ -312,6 +321,12 @@ const CSP_HEADER_VALUE = [
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "object-src 'none'",
+  // Endurecimiento 2026-08-06: base-uri impide que un <base> inyectado
+  // secuestre la carga de scripts; form-action impide que un form inyectado
+  // postee credenciales afuera; frame-ancestors refuerza el X-Frame-Options.
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
   "media-src 'self' data: blob:"
 ].join('; ');
 
@@ -689,6 +704,7 @@ app.use('/api/', generalLimiter);
 // Guardamos el body CRUDO (Buffer) en req.rawBody para poder validar firmas
 // HMAC de webhooks (ej. hgcash) sobre los bytes exactos. No cambia el parseo
 // normal: req.body sigue siendo el JSON parseado.
+app.disable('x-powered-by'); // no anunciar el stack (fix 2026-08-06)
 app.use(express.json({
   limit: '10mb',
   verify: (req, _res, buf) => { req.rawBody = buf; }
@@ -765,7 +781,18 @@ app.use(['/api/auth', '/api/admin', '/api/users/me'], (req, res, next) => {
 // ADMIN_HOST: if set, admin pages are ONLY served when the request Host matches.
 // Configuring this env var is the primary server-side control to prevent the
 // public domain from ever serving the admin panel.
-const ADMIN_HOST = process.env.ADMIN_HOST || null;
+//
+// ⚠️ GETTER LAZY, NO const (fix de seguridad 2026-08-06): en AWS EB esta env
+// llega desde SSM en el bootstrap ASYNC, DESPUÉS del require de este archivo.
+// Con una const, ADMIN_HOST quedaba en null aunque el parámetro existiera →
+// `adminHostCheck` hacía `if (!ADMIN_HOST) return next()` y el panel admin
+// quedaba servido en TODOS los hosts, incluido el dominio público de clientes
+// (exactamente lo que esta protección existe para impedir). Misma trampa que
+// PUBLIC_BASE_URL (#130) y los lazy getters de JWT_SECRET. NO volver a const.
+function getAdminHost() {
+  const v = (process.env.ADMIN_HOST || '').trim();
+  return v || null;
+}
 
 // Legacy / debug HTML files that must never be served publicly.
 // Use a Set for O(1) look-ups on every request.
@@ -826,8 +853,9 @@ function buildAdminSessionCookieHeaders(token) {
 // Middleware: check ADMIN_HOST restriction.
 // Returns 404 (not 403) to avoid revealing that an admin endpoint exists.
 function adminHostCheck(req, res, next) {
-  if (!ADMIN_HOST) return next();
-  if (parseRequestHost(req) !== ADMIN_HOST.toLowerCase()) {
+  const adminHost = getAdminHost();
+  if (!adminHost) return next();
+  if (parseRequestHost(req) !== adminHost.toLowerCase()) {
     return res.status(404).send('Not found');
   }
   next();
@@ -3533,14 +3561,36 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       const gxUser = await girox.getUserInfoByName(username);
 
       if (gxUser) {
-        logger.debug('User found in 1girox, creating locally...');
+        // 🔒 AUTENTICACIÓN REAL CONTRA LA PLATAFORMA (fix crítico 2026-08-06).
+        // ANTES: la cuenta local se creaba con la contraseña FIJA 'asd123' y el
+        // bcrypt.compare de más abajo la aceptaba → CUALQUIERA que supiera (o
+        // adivinara con /api/auth/check-username) el username de un jugador de
+        // 1girox que todavía no hubiera entrado a VIPCARGAS, entraba a SU cuenta
+        // mandando {username, password:'asd123'} y podía pedir retiros de su
+        // plata a un CBU propio. Robo de dinero directo, sin explotar nada más.
+        // AHORA: se valida usuario+contraseña contra 1girox (POST /players/validate)
+        // y la cuenta local se crea con LA CONTRASEÑA REAL del jugador; si no
+        // valida, se corta acá con el mismo error genérico del login (no se crea
+        // nada ni se revela si el usuario existe en la plataforma).
+        const gxAuth = await girox.validateCredentials(username, password);
+        if (!gxAuth.success) {
+          logger.warn(`[login] no se pudo validar contra 1girox a ${username}: ${gxAuth.error || 's/detalle'}`);
+          return res.status(503).json({ error: 'La plataforma está demorada. Reintentá en unos segundos.' });
+        }
+        if (!gxAuth.valid) {
+          logger.info(`[login] credenciales inválidas contra 1girox para ${username} (no se crea la cuenta local)`);
+          return res.status(401).json({ error: 'Credenciales inválidas' });
+        }
+
+        logger.debug('User found in 1girox and credentials validated, creating locally...');
 
         const userId = uuidv4();
 
         user = await User.create({
           id: userId,
           username: gxUser.username,
-          password: 'asd123',
+          // Contraseña REAL del jugador (validada arriba), no una fija.
+          password: password,
           email: gxUser.email || null,
           phone: null, // la Partner API no devuelve el teléfono
           role: 'user',
@@ -3653,19 +3703,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         logger.error(`Error comparing password for ${loginIdentifier}: ${bcryptError.message}`);
       }
 
-      // Fallback SOLO para usuarios auto-importados desde JUGAYGANA que aún no cambiaron
-      // su contraseña real (la inicial real es "asd123"). Para evitar backdoor:
-      //  - Sólo aplica si source === 'jugaygana' Y nunca cambió contraseña.
-      //  - Sólo aplica para role=user (admins nunca tienen contraparte en JUGAYGANA).
-      //  - Valida que el hash almacenado realmente corresponda a "asd123";
-      //    si la DB guarda otro hash, NO se acepta "asd123" como atajo.
-      if (!isValidPassword && password === 'asd123' && !userObj.passwordChangedAt && userObj.source === 'jugaygana' && !isAdminRole(userObj.role)) {
-        try {
-          isValidPassword = await bcrypt.compare('asd123', userObj.password);
-        } catch (bcryptError) {
-          logger.error(`Error verifying JUGAYGANA default password: ${bcryptError.message}`);
-        }
-      }
+      // 🪦 Acá vivía el "fallback asd123" para usuarios auto-importados de
+      // JUGAYGANA: ELIMINADO 2026-08-06 (auditoría de seguridad). Era una
+      // contraseña conocida y publicada en este repo público que abría las
+      // cuentas importadas que nunca cambiaron su clave — y el auto-import del
+      // login las creaba justamente con esa clave. Ahora el import valida la
+      // contraseña REAL contra 1girox (ver arriba) y las cuentas importadas
+      // viejas que sigan con ese hash quedan cubiertas por la migración
+      // `migration_kill_asd123_done` (initializeData), que les fuerza el
+      // cambio de contraseña.
     }
     
     if (!isValidPassword) {
@@ -5666,7 +5712,15 @@ app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
     }
 
     // Handle password separately (hash it)
+    // 🔒 SOLO ADMIN GENERAL (fix crítico 2026-08-06): antes CUALQUIER rol de
+    // staff (depositor/withdrawer/comunidad) podía mandar {"password":"x"} con
+    // el id del ADMIN GENERAL y quedarse con su cuenta → escalada total en un
+    // request. El cambio de ROL ya estaba protegido; el de contraseña no.
+    // Verificado que el panel NO usa este endpoint (usa /api/admin/change-password).
     if (req.body.password) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo el administrador principal puede cambiar contraseñas desde acá' });
+      }
       updates.password = await bcrypt.hash(String(req.body.password), 10);
       updates.passwordChangedAt = new Date();
     }
@@ -5676,9 +5730,11 @@ app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
     }
     
     const updateDoc = { $set: updates };
-    // Si cambia el rol, invalidar las sesiones (subir tokenVersion) para que un usuario
-    // degradado no conserve sus privilegios con el token viejo hasta que venza.
-    if (updates.role !== undefined) {
+    // Si cambia el rol O la contraseña, invalidar las sesiones (subir
+    // tokenVersion): un usuario degradado no conserva privilegios con el token
+    // viejo, y una cuenta comprometida se recupera de verdad al cambiarle la
+    // clave (antes el atacante seguía operando con su JWT hasta 30-90 días).
+    if (updates.role !== undefined || updates.password !== undefined) {
       updateDoc.$inc = { tokenVersion: 1 };
     }
     const user = await User.findOneAndUpdate(
@@ -5712,7 +5768,11 @@ app.post('/api/users/:id/sync-jugaygana', authMiddleware, adminMiddleware, async
     
     const result = await girox.syncUserToPlatform({
       username: user.username,
-      password: 'asd123'
+      // 🔒 Contraseña ALEATORIA (fix crítico 2026-08-06): antes se creaba el
+      // jugador en 1girox.com con la clave fija 'asd123' —publicada en este
+      // repo público— así que cualquiera entraba al CASINO como ese jugador y
+      // le jugaba el saldo. Nadie necesita conocerla: al casino se entra por SSO.
+      password: crypto.randomBytes(18).toString('base64url')
     });
     
     if (result.success) {
@@ -9024,6 +9084,45 @@ async function initializeData() {
     logger.error(`[startup-migration] Falló limpieza one-shot de mustChangePassword: ${e.message}`);
   }
 
+  // 🔒 One-shot de SEGURIDAD (2026-08-06): neutralizar las cuentas importadas
+  // que quedaron con la contraseña conocida 'asd123'. El auto-import del login
+  // las creaba así y el fallback las aceptaba → cualquiera con el username
+  // entraba a la cuenta. El código ya no las crea ni acepta ese atajo; esto
+  // cubre las que YA existen en la base: se les fuerza el cambio de contraseña
+  // y se les suben las sesiones (tokenVersion), de modo que un atacante que ya
+  // hubiera entrado queda afuera. El cliente legítimo entra por recuperación
+  // por SMS o con un link de acceso del agente.
+  try {
+    const flag = await Config.findOne({ key: 'migration_kill_asd123_done' }).lean();
+    if (!flag || flag.value !== true) {
+      const candidatos = await User.find({
+        role: 'user',
+        source: 'jugaygana',
+        passwordChangedAt: null
+      }).select('id password').lean();
+      let afectados = 0;
+      for (const u of candidatos) {
+        try {
+          if (u.password && await bcrypt.compare('asd123', u.password)) {
+            await User.updateOne(
+              { id: u.id },
+              { $set: { mustChangePassword: true }, $inc: { tokenVersion: 1 } }
+            );
+            afectados++;
+          }
+        } catch (_) { /* hash ilegible: se ignora */ }
+      }
+      logger.info(`[startup-migration] asd123: ${afectados} cuentas importadas neutralizadas (de ${candidatos.length} candidatas)`);
+      await Config.findOneAndUpdate(
+        { key: 'migration_kill_asd123_done' },
+        { key: 'migration_kill_asd123_done', value: true },
+        { upsert: true }
+      );
+    }
+  } catch (e) {
+    logger.error(`[startup-migration] falló la neutralización de asd123 (reintenta al próximo arranque): ${e.message}`);
+  }
+
   // One-shot (2026-08-05, #132): backfill de `giroxOwnerCampaign` para los
   // usuarios que un publisher_admin creó ANTES del fix de ruteo por dueño.
   // Esos jugadores viven bajo el sub-agente en 1girox pero no tienen la marca →
@@ -10479,18 +10578,27 @@ app.post('/api/admin/community-code', authMiddleware, adminMiddleware, async (re
     // Monto: admin general y depositor.
     if (b.amount !== undefined) {
       const amount = Number(b.amount);
-      if (!Number.isFinite(amount) || amount < 0 || amount > 10000000) {
-        return res.status(400).json({ error: 'El monto debe ser un número entre 0 y 10.000.000.' });
+      // 🔒 Tope bajado de 10.000.000 a 500.000 (fix 2026-08-06): es un bono de
+      // bienvenida que se acredita SOLO; con el tope viejo, una config maliciosa
+      // (o un error de tipeo) regalaba millones por canje.
+      if (!Number.isFinite(amount) || amount < 0 || amount > 500000) {
+        return res.status(400).json({ error: 'El monto debe ser un número entre 0 y 500.000.' });
       }
       await setConfig('communityWelcomeBonusAmount', Math.round(amount));
       logger.info(`[welcome-code] monto del bono sorpresa → $${Math.round(amount)} (por ${req.user.username})`);
     }
 
-    // Tipo del bono: admin general y depositor (misma regla que el monto).
-    // 'cash' = se acredita solo al canjear; 'next_charge' = lo aplica el agente.
+    // Tipo del bono: 'cash' = se acredita SOLO (plata real, automática);
+    // 'next_charge' = lo aplica el agente a mano.
+    // 🔒 El tipo CASH lo elige SOLO el admin general (fix 2026-08-06): un
+    // depositor podía poner cash + monto alto + rollover 0 y cobrarlo con una
+    // cuenta propia. El depositor sigue pudiendo ajustar el % de next_charge.
     if (b.bonusType !== undefined) {
       if (!['cash', 'next_charge'].includes(b.bonusType)) {
         return res.status(400).json({ error: 'Tipo de bono inválido.' });
+      }
+      if (b.bonusType === 'cash' && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo el administrador general puede activar el bono de acreditación automática.' });
       }
       await setConfig('communityWelcomeBonusType', b.bonusType);
       logger.info(`[welcome-code] tipo del bono sorpresa → ${b.bonusType} (por ${req.user.username})`);
@@ -11218,6 +11326,13 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
       || null;
     let pubApiKey = null;
     if (rawKey) {
+      // 🔒 SOLO ADMIN GENERAL (fix 2026-08-06): esta key define bajo qué agente
+      // de 1girox caen los jugadores y con qué key se firman TODAS sus
+      // operaciones (alta, carga, retiro, saldo, SSO). Un cajero podía apuntarla
+      // a una cuenta suya y quedarse con los jugadores nuevos y sus saldos.
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
+      }
       if (!rawKey.startsWith('pk_')) {
         return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
       }
@@ -11313,6 +11428,10 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
         || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
         || null;
       if (rawKey) {
+        // 🔒 SOLO ADMIN GENERAL (mismo motivo que en el alta de campaña).
+        if (req.user.role !== 'admin') {
+          return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
+        }
         if (!rawKey.startsWith('pk_')) {
           return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
         }
@@ -13410,16 +13529,23 @@ app.post('/api/admin/change-password', authMiddleware, adminMiddleware, async (r
     // - Admin depositor: puede cambiar contraseña de usuarios pero NO de admins
     // - Admin withdrawer: NO puede cambiar contraseñas
     
-    if (adminRole === 'withdrawer') {
+    // 🔒 LISTA BLANCA, no lista negra (fix crítico 2026-08-06): antes se
+    // enumeraban 'withdrawer' y 'depositor', y el rol 'comunidad' —creado
+    // después— caía al else SIN restricción → podía cambiarle la contraseña al
+    // ADMIN GENERAL y tomar la sala. Ahora solo pasan los roles previstos.
+    if (adminRole !== 'admin' && adminRole !== 'depositor') {
       return res.status(403).json({ error: 'No tienes permiso para cambiar contraseñas' });
     }
-    
-    if (adminRole === 'depositor' && user.role !== 'user') {
+
+    if (adminRole !== 'admin' && user.role !== 'user') {
       return res.status(403).json({ error: 'Solo puedes cambiar contraseñas de usuarios, no de administradores' });
     }
-    
+
     user.password = newPassword;
     user.passwordChangedAt = new Date();
+    // Corta las sesiones vivas del target: sin esto, una cuenta comprometida
+    // seguía operando con su JWT viejo (30-90 días) pese al cambio de clave.
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
     
     // Solo enviar mensaje y sincronizar con JUGAYGANA si el objetivo es un usuario regular (no admin)
@@ -13601,6 +13727,13 @@ app.post('/api/admin/users/:id/verify-phone', authMiddleware, adminMiddleware, a
 // Activa/desactiva el inicio de sesión sin clave ni SMS para un cliente.
 // Con esto activado, el cliente entra solo escribiendo su usuario.
 app.post('/api/admin/users/:id/login-without-password', authMiddleware, adminMiddleware, async (req, res) => {
+  // 🔒 Solo admin general y depositor (fix 2026-08-06, mismo criterio que
+  // access-link): esto DESACTIVA la contraseña de un cliente. Un withdrawer o
+  // comunidad podía activarlo, entrar como ese cliente y pedir un retiro a su
+  // propio CBU.
+  if (!['admin', 'depositor'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'No tenés permiso para habilitar el inicio sin clave.' });
+  }
   try {
     const { id } = req.params;
     const enabled = req.body && req.body.enabled === true;
@@ -14141,8 +14274,16 @@ app.get('/api/admin/cbu', authMiddleware, adminMiddleware, async (req, res) => {
 // Actualizar CBU
 app.post('/api/admin/cbu', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // 🔒 SOLO ADMIN GENERAL (fix crítico 2026-08-06): este endpoint escribe la
+    // MISMA config que `PUT /api/admin/config/cbu` (que sí tenía el guard), y
+    // ese CBU es el que se le muestra a TODOS los clientes para transferir. Sin
+    // esto, un depositor/withdrawer/comunidad lo cambiaba por el suyo y se
+    // llevaba toda la recaudación sin tocar una sola transacción.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el administrador principal puede modificar el CBU' });
+    }
     const { bank, titular, number, alias } = req.body;
-    
+
     if (!number || number.length < 10) {
       return res.status(400).json({ error: 'CBU inválido' });
     }
@@ -14572,7 +14713,16 @@ app.post('/api/admin/payouts/:id/pay', authMiddleware, withdrawerMiddleware, asy
     // se jugó las fichas (saldo insuficiente) o no se puede confirmar el descuento → NO
     // se paga. Solo si el descuento se confirma sigue el cash-out. (Pagos viejos ya tenían
     // las fichas descontadas al solicitar → no entran acá.)
-    if (claimed.deductAtPay === true) {
+    // 🔒 GUARD `debitConfirmed !== true` (fix crítico 2026-08-06): este endpoint
+    // acepta reintentar un pago en estado `failed` (cash-out rechazado por el
+    // banco), y ahí las fichas YA estaban descontadas. Sin este guard, el
+    // segundo click de "Pagar" volvía a entrar al descuento y, como el saldo ya
+    // había bajado, el resultado era `insufficient` (o la verificación
+    // anti-fantasma fallaba) → el payout quedaba marcado `debitConfirmed:false`
+    // PISANDO el true anterior. Consecuencia: al rechazarlo después, /cancel
+    // creía que nunca se descontó y NO devolvía las fichas → el cliente perdía
+    // la plata y no cobraba. `pay-other-bank` ya tenía este mismo guard.
+    if (claimed.deductAtPay === true && claimed.debitConfirmed !== true) {
       const ded = await _deductChipsAtConfirm(claimed, req.user);
       if (!ded.ok) {
         if (ded.insufficient) {
@@ -15195,7 +15345,24 @@ app.get('/api/admin/commands', authMiddleware, adminMiddleware, async (req, res)
 app.post('/api/admin/commands', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { name, description, response } = req.body;
-    
+
+    // 🔒 SOLO ADMIN GENERAL para los comandos del SISTEMA (fix 2026-08-06):
+    // los /sys_* son los mensajes automáticos al cliente — entre ellos
+    // /sys_cbu, que lleva los datos de transferencia. Sin este gate, cualquier
+    // cajero reescribía esa plantilla con SU CBU y desviaba la recaudación
+    // (sin tocar la config de CBU, así que era casi indetectable).
+    if (req.user.role !== 'admin' && String(name || '').startsWith('/sys_')) {
+      return res.status(403).json({ error: 'Solo el administrador general puede editar los comandos del sistema.' });
+    }
+
+    // 🔒 FORMATO ESTRICTO (anti-XSS almacenado): el nombre se interpola en los
+    // onclick de la tabla del panel. Sin esta regex se podía inyectar un
+    // atributo HTML y robarle el token de sesión al admin general apenas
+    // abriera la sección COMANDOS.
+    if (typeof name !== 'string' || !/^\/[a-zA-Z0-9_]{1,40}$/.test(name)) {
+      return res.status(400).json({ error: 'Nombre de comando inválido: / seguido de 1 a 40 letras, números o guion bajo.' });
+    }
+
     if (!name || !name.startsWith('/')) {
       return res.status(400).json({ error: 'El comando debe empezar con /' });
     }
@@ -15428,6 +15595,12 @@ app.get('/api/admin/roulette/budget', authMiddleware, adminMiddleware, async (re
 // PUT /api/admin/roulette/budget — actualizar config del budget diario.
 app.put('/api/admin/roulette/budget', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // 🔒 SOLO ADMIN GENERAL (fix 2026-08-06): con adminMiddleware solo, un
+    // cajero podía tocar esto. El presupuesto diario controla cuánta plata reparte la ruleta.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el administrador general puede hacer esto.' });
+    }
+
     const { enabled, dailyBudgetARS } = req.body || {};
     const budget = Math.max(0, Math.round(Number(dailyBudgetARS) || 0));
     const value = {
@@ -15449,6 +15622,12 @@ app.put('/api/admin/roulette/budget', authMiddleware, adminMiddleware, async (re
 // (la plata ya está en JUGAYGANA); solo se borran los registros de hoy.
 app.post('/api/admin/roulette/reset-daily', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // 🔒 SOLO ADMIN GENERAL (fix 2026-08-06): con adminMiddleware solo, un
+    // cajero podía tocar esto. Borrar los giros del día hace que TODOS vuelvan a girar y cada premio nuevo lleva reference nueva → la plataforma paga de nuevo.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el administrador general puede hacer esto.' });
+    }
+
     const dateKey = _rouletteDateKeyART();
     const r = await DailyRouletteSpin.deleteMany({ dateKey });
     const deleted = (r && r.deletedCount) || 0;

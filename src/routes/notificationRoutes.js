@@ -163,6 +163,21 @@ async function requireAdmin(req, res, next) {
       _dlog('[NOTIF-ADMIN] requireAdmin — user not found or inactive for userId:', decoded.userId);
       return res.status(401).json({ error: 'Usuario desactivado o no encontrado' });
     }
+    // 🔒 PARIDAD CON authMiddleware (fix 2026-08-06): antes acá NO se
+    // chequeaba `tokenVersion` ni `isBlocked`, y el rol se leía del JWT y no de
+    // la DB. Resultado: a un agente degradado o bloqueado se le cerraba TODO el
+    // panel menos /api/notifications/*, donde su token viejo seguía valiendo
+    // hasta 30 días → podía mandar push masivas a toda la base (phishing con la
+    // marca del sitio) y reescribir plantillas.
+    if ((decoded.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
+      return res.status(401).json({ error: 'Sesión expirada. Volvé a iniciar sesión.' });
+    }
+    if (user.isBlocked === true) {
+      return res.status(403).json({ error: 'Cuenta bloqueada.' });
+    }
+    if (!adminRoles.includes(user.role)) {
+      return res.status(403).json({ error: 'No tienes permisos de administrador' });
+    }
     _dlog('[NOTIF-ADMIN] requireAdmin — authenticated:', decoded.username, '(role:', decoded.role + ')');
   } catch (dbError) {
     console.error('[NOTIF-ADMIN] requireAdmin — DB error:', dbError.message);
@@ -616,13 +631,29 @@ router.post('/send-all', requireAdmin, async (req, res) => {
     }
 
     console.log('[FCM] Iniciando envío masivo...');
-    
+
+    // 🔒 LISTA BLANCA del filtro (fix 2026-08-06): `filter` se esparcía CRUDO
+    // dentro del query de Mongo (`{...filter}`), así que el cliente controlaba
+    // la FORMA del query y no solo un valor. Hoy lo frena mongoSanitize (borra
+    // las claves $), pero el día que se toque esa capa sería inyección directa.
+    // Solo se aceptan claves conocidas con valores primitivos.
+    const ALLOWED_FILTER_KEYS = ['notificationPlan', 'isActive', 'role'];
+    const safeFilter = {};
+    if (filter && typeof filter === 'object' && !Array.isArray(filter)) {
+      for (const k of ALLOWED_FILTER_KEYS) {
+        const v = filter[k];
+        if (v !== undefined && (typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number')) {
+          safeFilter[k] = v;
+        }
+      }
+    }
+
     const result = await sendNotificationToAllUsers(
-      User, 
-      title, 
-      body, 
-      data || {}, 
-      filter || {}
+      User,
+      title,
+      body,
+      data || {},
+      safeFilter
     );
     
     if (result.success) {

@@ -8,6 +8,60 @@
 
 ## Sesión 2026-08-05
 
+### 149. AUDITORÍA DE SEGURIDAD COMPLETA — 15 fixes aplicados (4 críticos de robo de plata)
+- **Pedido del owner:** auditoría integral ("que sea imposible que me roben").
+  Se corrió con 4 auditores en paralelo (auth/roles, flujos de plata,
+  inyección/XSS, superficie pública/secretos) + verificación propia de cada
+  hallazgo leyendo el código antes de tocar nada.
+- **⚠️ Los detalles de lo NO parcheado NO se documentan acá a propósito** (repo
+  público — mismo criterio que #96). El owner los tiene en la conversación.
+- **CRÍTICOS cerrados (robo de plata directo, todos verificados explotables):**
+  1. **Login con contraseña fija**: el auto-import creaba la cuenta local con
+     una clave conocida y el login la aceptaba → se entraba a la cuenta de
+     cualquier jugador de la plataforma que no hubiera pasado por la app.
+     Ahora se valida usuario+contraseña **contra 1girox** (`validateCredentials`)
+     y la cuenta se crea con la clave REAL. Fallback de la clave fija ELIMINADO
+     + migración one-shot `migration_kill_asd123_done` que neutraliza las
+     cuentas ya creadas así (fuerza cambio de clave + sube tokenVersion).
+  2. **Alta en la plataforma con la misma clave fija** (`sync-jugaygana`) →
+     ahora random (al casino se entra por SSO, nadie necesita esa clave).
+  3. **Escalada de privilegios**: `PUT /api/users/:id` dejaba a CUALQUIER rol
+     de staff cambiar la contraseña del ADMIN GENERAL. Y `change-password`
+     estaba escrito como lista NEGRA, así que el rol `comunidad` (creado
+     después) no estaba contemplado y podía hacer lo mismo. Ambos cerrados.
+  4. **Desvío de la recaudación**: `POST /api/admin/cbu` (sin gate de rol,
+     mientras su gemelo `PUT /api/admin/config/cbu` sí lo tenía) y los comandos
+     `/sys_*` (un cajero reescribía la plantilla `/sys_cbu` con su CBU). Ambos
+     ahora exigen admin general.
+  5. **Doble descuento en retiros**: `POST /payouts/:id/pay` aceptaba reintentar
+     un pago `failed` y volvía a entrar al descuento SIN el guard
+     `debitConfirmed !== true` (que su gemelo `pay-other-bank` sí tenía) →
+     dejaba el payout marcado como "nunca descontado" y el `/cancel` posterior
+     NO devolvía las fichas: el cliente perdía la plata y no cobraba.
+  6. **Panel admin expuesto en el dominio público**: `ADMIN_HOST` era una const
+     evaluada al require y la env llega por SSM DESPUÉS → la protección nunca
+     se aplicaba. Ahora es getter lazy (misma trampa que #130).
+- **ALTOS/MEDIOS cerrados:** API key de publicista solo admin general (definía
+  bajo qué agente caen jugadores y saldos); `login-without-password` limitado a
+  admin/depositor; `tokenVersion` ahora sube en TODOS los cambios de contraseña
+  administrativos (una cuenta comprometida ya no sobrevive al cambio de clave);
+  `requireAdmin` de notificaciones con paridad de authMiddleware (tokenVersion,
+  isBlocked, rol de DB); rate limit global ya no se evade con una cookie
+  inventada; filtro de push masivas con lista blanca; ruleta (reset-daily y
+  budget) solo admin general; bono cash del código de bienvenida solo admin
+  general y tope 10M→500k; XSS almacenado en la tabla de COMANDOS del panel
+  (nombre interpolado en onclick, robaba el token del admin) cerrado en las dos
+  capas (regex server-side + escapado en el render); CSP con `base-uri`,
+  `form-action` y `frame-ancestors`; `x-powered-by` desactivado.
+- **Confirmado limpio:** sin secretos en el repo ni en los 322 commits del
+  historial; idempotencia por `reference` correcta en todos los flujos de plata;
+  reservas atómicas OK en reembolsos, ruleta, fueguito, rakeback y código de
+  bienvenida; webhook hgcash con HMAC fail-closed; sin IDOR; lockdown de
+  publisher_admin sólido; OTP y recuperación por SMS bien implementados.
+- **Validado:** `node --check` OK (server, notificationRoutes, admin.js) y
+  verificado que el panel no usa los endpoints que cambiaron de permisos.
+  **Back necesita redeploy** (corre además la migración one-shot).
+
 ### 148. Código de bienvenida v3: APP OBLIGATORIA, tipo bono = % en próxima carga, cash acreditado COMO BONO
 - **Pedido del owner (3 cambios sobre #142/#143):**
   1. **App instalada SÍ o SÍ** para canjear (mismo criterio que el bono de
