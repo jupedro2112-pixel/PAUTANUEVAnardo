@@ -8,6 +8,31 @@
 
 ## Sesión 2026-08-05
 
+### 120. BRANDING 1girox: íconos de la app nuevos + banner SLOTS en el login
+- **Pedido del owner:** reemplazar el logo tipográfico "♛ V I P / VIPCARGAS" del
+  login por el arte de 1girox, y cambiar los íconos de la PWA instalada por el
+  badge "1G" dorado.
+- **Íconos PWA:** regenerados los 10 `public/icons/icon-*.png` (32→512) desde el
+  arte fuente (badge "1G" 3000x3000): recorte automático al contenido + centrado
+  al 90% sobre fondo oscuro #0d0a14, con PIL. **Mismos nombres de archivo** → no
+  hubo que tocar manifest.json, los <link> del head, las notificaciones push
+  (icon/badge) ni el avatar default del chat (`/icons/icon-96x96.png`) — todo
+  apunta a las rutas de siempre y toma el arte nuevo solo. El SW precachea 192 y
+  512 → bump a **v79** purga los viejos.
+- **Login:** el bloque corona/VIP/VIPCARGAS (entre Reseñas y Regalos) fue
+  reemplazado (con lápida) por `public/images/slots-1girox.jpg` (banner SLOTS de
+  1girox, 800px, 47KB, borde dorado suave). `public/images/` es carpeta nueva.
+- **Sobre "cambio el logo del chat y no se ve":** el guardado del panel FUNCIONA
+  (la vista previa persiste tras recargar = quedó en la config). La PWA lo aplica
+  en `loadCanalInformativoUrl` que corre EN EL ARRANQUE de la sesión (auth.js) —
+  el cliente lo ve al RECARGAR la app (con SW puede necesitar 2 recargas). No es
+  bug; es el momento de aplicación. El default del avatar además ahora ya es el
+  ícono 1G nuevo.
+- **Validado:** íconos verificados visualmente (512px). Solo front + assets — no
+  necesita redeploy del back. PROBAR: login con el banner nuevo; reinstalar la
+  PWA (o esperar que el SO refresque el ícono) → ícono "1G"; recargar la app del
+  cliente → avatar del chat con el logo subido desde el panel.
+
 ### 119. "Activar notificaciones" + el botón flotante "Instalar App" ya no tapa la cámara del chat
 - **Pedido del owner:** (a) el botón "NOTIS" pasa a decir "Activar notificaciones";
   (b) el cartel flotante "📱 Instalar App" (a los que navegan SIN la app instalada

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v78'; // v78: "Activar notificaciones" + botón Instalar App corrido (no tapa la cámara)
+const CACHE_VERSION = 'v79'; // v79: branding 1girox (íconos PWA nuevos + banner SLOTS en el login)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
