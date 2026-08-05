@@ -8,6 +8,14 @@
 
 ## Sesión 2026-08-05
 
+### 124. La app pasa a llamarse "CARGAS 1GIROX"
+- **Pedido del owner:** cambiar el nombre visible de la app por "CARGAS 1GIROX".
+- Cambiado en: `<title>` ("CARGAS 1GIROX | 24/7"), metas `apple-mobile-web-app-title`
+  y `application-name` (index.html) y `name`/`short_name`/`description` del
+  `manifest.json` → pestaña del navegador + nombre de la PWA instalada.
+  ⚠️ Los que YA tienen la app instalada pueden seguir viendo el nombre viejo
+  hasta reinstalar (Android cachea el nombre del WebAPK). SW a **v82**. Solo front.
+
 ### 123. FIX crash-loop de arranque: el seed del admin inicial ya no tumba el server (E11000 ADMIN001)
 - **Síntoma (Render):** deploys fallando en loop con `MongoServerError: E11000 ...
   index: accountNumber_1 dup key: { accountNumber: "ADMIN001" }`. Causa: el seed

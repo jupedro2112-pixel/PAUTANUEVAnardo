@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v81'; // v81: premios del fueguito con rollover x5 (avisos en el modal)
+const CACHE_VERSION = 'v82'; // v82: la app pasa a llamarse "CARGAS 1GIROX" (title + manifest)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
