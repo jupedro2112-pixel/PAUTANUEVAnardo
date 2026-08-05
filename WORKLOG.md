@@ -8,6 +8,23 @@
 
 ## Sesión 2026-08-05
 
+### 136. Config de Comunidad: reintento continuo + refresh al abrir el menú (los links ya no quedan clavados)
+- **Reporte del owner:** con la config de Comunidad BIEN guardada en el panel
+  (verificada en su captura: canal y soporte cargados), el cliente seguía
+  cayendo en canal-proximamente; y el Soporte 24/7 "también se rompió" — en
+  realidad era el MISMO síntoma (ambos fallbacks son 404 del dominio propio y
+  se ven iguales; antes soporte caía en el wa.link de METAWIN, que era peor).
+- **Causa:** la app aplicaba esa config UNA sola vez, en el arranque de la
+  sesión. La sesión del cliente era ANTERIOR al guardado de la config (y por
+  Tor la lectura además puede fallar) → hrefs clavados en los fallbacks hasta
+  recargar la página.
+- **Fix:** `loadCanalInformativoUrl` ahora (a) reintenta en background cada 60s
+  hasta lograr aplicar la config, y (b) se RE-EJECUTA al abrir el menú ☰
+  (throttled a 30s del último éxito) → un cambio guardado en el panel llega al
+  cliente sin recargar. Aclaración al owner: la card estaba bien cargada y SÍ
+  está en la sección Comandos del panel (corrección mía previa era errónea).
+- **Validado:** `node --check` OK (chat.js) + parse inline. SW a **v88**. Front.
+
 ### 135. Link de referidos con dominio real + INVITACIÓN AL CASINO al acreditarse una carga
 - **Link de referidos (fix):** `referralController` tenía
   `REFERRAL_BASE_URL='https://vipcargas.com/linkreferido'` como CONST hardcodeada

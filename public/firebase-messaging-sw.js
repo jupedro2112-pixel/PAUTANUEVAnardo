@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v87'; // v87: invitación al casino tras la carga (15s) + link de referidos con el dominio real
+const CACHE_VERSION = 'v88'; // v88: config de Comunidad con reintento continuo + refresh al abrir el menú ☰
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

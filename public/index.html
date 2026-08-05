@@ -569,7 +569,16 @@
             }
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
-                setOpen(menu.classList.contains('hidden'));
+                var opening = menu.classList.contains('hidden');
+                setOpen(opening);
+                // Al ABRIR el menú, refrescar la config de Comunidad (canal /
+                // soporte / logo): si la carga del arranque falló (Tor) o el
+                // admin la guardó DESPUÉS de que el cliente abriera la app, los
+                // links quedaban clavados en el fallback hasta recargar la
+                // página (fix 2026-08-05). Throttled adentro — no spamea.
+                if (opening && window.VIP && VIP.ui && VIP.ui.loadCanalInformativoUrl) {
+                    try { VIP.ui.loadCanalInformativoUrl(); } catch (err) {}
+                }
             });
             document.addEventListener('click', function (e) {
                 if (menu.classList.contains('hidden')) return;

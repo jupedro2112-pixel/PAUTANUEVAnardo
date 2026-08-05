@@ -672,11 +672,18 @@ VIP.chat = (function () {
         if (headerBtn) { headerBtn.href = href; headerBtn.style.display = 'flex'; }
     }
 
+    // Config de Comunidad (canal / soporte / logo): CON REINTENTOS y REFRESCO.
+    // Historia (2026-08-05): un solo fetch al arranque, sin retry → si fallaba
+    // (Tor/3G) o el admin guardaba la config DESPUÉS de que el cliente abriera
+    // la app, los links quedaban clavados en los fallbacks hasta recargar la
+    // página. Ahora: 3 intentos con backoff + reintento en background cada 60s
+    // hasta lograrlo + re-fetch al abrir el menú ☰ (throttled a 30s del último
+    // ÉXITO, así un cambio del panel llega rápido sin spamear el server).
+    let _communityCfgOkAt = 0;
+    let _communityCfgRetryTimer = null;
+
     async function loadCanalInformativoUrl() {
-        // CON REINTENTOS (fix 2026-08-05): un solo fallo de red acá (Tor/3G)
-        // dejaba los DEFAULTS puestos — el pill del canal en /canal-proximamente
-        // y el "Soporte 24/7" del menú con su href estático — aunque la config
-        // del panel estuviera perfecta. 3 intentos con backoff.
+        if (Date.now() - _communityCfgOkAt < 30000) return; // éxito fresco: nada que hacer
         for (let i = 0; i < 3; i++) {
             if (i) await new Promise((r) => setTimeout(r, i === 1 ? 2500 : 7000));
             try {
@@ -694,12 +701,20 @@ VIP.chat = (function () {
                 // Logo del chat de soporte, configurable desde el panel.
                 const avatar = document.getElementById('chatTopbarAvatar');
                 if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
+                _communityCfgOkAt = Date.now();
+                clearTimeout(_communityCfgRetryTimer);
                 return;
             } catch {
                 // red caída/lenta: reintenta con el próximo delay
             }
         }
+        // Los 3 intentos fallaron: fallback visible + seguir intentando en
+        // background — la config SIEMPRE termina llegando sin recargar la página.
         _applyCanalUrl('');
+        clearTimeout(_communityCfgRetryTimer);
+        _communityCfgRetryTimer = setTimeout(() => {
+            loadCanalInformativoUrl().catch(() => {});
+        }, 60000);
     }
 
     return {
