@@ -5579,6 +5579,8 @@ async function loadFireMilestones() {
         if (body) body.innerHTML = '';
         (j.milestones || []).forEach(m => addFireMilestoneRow(m));
         if (!(j.milestones || []).length) addFireMilestoneRow();
+        const rmInput = document.getElementById('fireRolloverMultiplier');
+        if (rmInput && j.rolloverMultiplier != null) rmInput.value = j.rolloverMultiplier;
     } catch (e) {
         if (form) form.style.display = 'none';
         if (header) header.style.display = 'none';
@@ -5612,13 +5614,16 @@ async function saveFireMilestones() {
         desc: ((tr.querySelector('.fm-desc') || {}).value || '').trim()
     })).filter(m => m.day > 0 && m.reward > 0);
     if (!milestones.length) { if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = 'Cargá al menos un premio con día y monto.'; } return; }
+    const rmInput = document.getElementById('fireRolloverMultiplier');
+    const rolloverMultiplier = rmInput && rmInput.value !== '' ? Number(rmInput.value) : undefined;
     try {
         const r = await authFetch('/api/admin/fire-milestones', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ milestones })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ milestones, rolloverMultiplier })
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) { if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = j.error || 'No se pudo guardar.'; } return; }
-        if (msg) { msg.style.color = '#7CFC00'; msg.textContent = 'Premios guardados ✅ (' + (j.milestones || []).length + ' premios).'; }
+        if (msg) { msg.style.color = '#7CFC00'; msg.textContent = 'Premios guardados ✅ (' + (j.milestones || []).length + ' premios, rollover x' + (j.rolloverMultiplier != null ? j.rolloverMultiplier : '?') + ').'; }
+        if (rmInput && j.rolloverMultiplier != null) rmInput.value = j.rolloverMultiplier;
         const body = document.getElementById('fireMilestonesRows');
         if (body) { body.innerHTML = ''; (j.milestones || []).forEach(m => addFireMilestoneRow(m)); }
         showToast('Premios del Fueguito actualizados', 'success');

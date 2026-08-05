@@ -299,10 +299,18 @@ reintento manda la misma reference y la plataforma responde `duplicate:true`.
   `POST /players/{username}/bonus` **ya no se libera solo** — ni con `multiplier: 0`.
   Queda BLOQUEADO hasta que el jugador entre al casino y lo RECLAME (aparece en
   `wagering.claimable`, es el "regalito" del header).
-  ➜ Por eso **reembolsos, ruleta, fueguito, bono de instalación y comisiones de
+  ➜ Por eso **reembolsos, ruleta, bono de instalación y comisiones de
   referidos se acreditan con DEPÓSITO LIBRE** (`creditUserBalance` sin `multiplier`
   cae en `depositToUser`), no con `/bonus`: si no, el usuario vería el mensaje
   "¡reembolso acreditado!" y nada en su saldo.
+  **Excepción — FUEGUITO (2026-08-05):** sus premios van con **DEPÓSITO CON
+  `multiplier`** (`girox.depositToUser(..., {multiplier: x})`, x editable en el
+  panel — Config['fireRolloverMultiplier'], default 5): la plata entra al saldo ya
+  (jugable) pero la plataforma exige apostar multiplier × premio para retirarla.
+  Sigue SIN usar `/bonus` (eso requeriría reclamo manual y pisa bonos activos). El
+  viejo requisito de cargas (milestone.requireDeposits) ya NO se chequea al
+  reclamar — quedó reemplazado por el rollover (los campos siguen en la config,
+  ignorados).
   Sólo se usa `/bonus` si explícitamente se pasa `opts.multiplier`. ⚠️ Y ahí ojo con
   "bono sobre bono": otorgar un bono a quien ya tiene uno activo PISA el anterior y le
   debita lo que le quedaba.

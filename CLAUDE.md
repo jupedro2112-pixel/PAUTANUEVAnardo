@@ -92,8 +92,11 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
 - **Reembolsos por RANGO** (Bronce 3% / Plata 6% / Oro 10%), según lo perdido EN EL
   PERÍODO que se reclama — no un acumulado. Ver `src/utils/refundTiers.js`.
 - **Bonos "a reclamar":** desde la v1.7 un bono no se libera solo. Por eso reembolsos,
-  ruleta, fueguito y bono de instalación se acreditan con **depósito libre**, no con
-  `/bonus`. Si alguna vez hiciera falta, está `girox.claimPendingBonus()`.
+  ruleta y bono de instalación se acreditan con **depósito libre**, no con `/bonus`.
+  El **fueguito** (2026-08-05) va con **depósito CON `multiplier`** (rollover x5
+  configurable en el panel): jugable al instante, retirable recién tras apostar
+  multiplier × premio — el candado lo aplica la plataforma, NO usar `/bonus` para esto.
+  Si alguna vez hiciera falta, está `girox.claimPendingBonus()`.
 - **Roles:** `user`, `admin` (todo), `depositor` (solo cargas), `withdrawer` (solo
   retiros), `publisher_admin` (solo crea usuarios de su publicista — lockdown via
   `PUBLISHER_ADMIN_ALLOWED_PATHS`).

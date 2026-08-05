@@ -8,6 +8,44 @@
 
 ## Sesión 2026-08-05
 
+### 122. Premios del FUEGUITO con ROLLOVER x5 (reemplaza el requisito de cargas)
+- **Pedido del owner:** cambiar cómo se pagan los premios del fueguito — antes el
+  reclamo exigía actividad de cargas del período; ahora el premio se paga SIEMPRE
+  pero con **rollover**: para retirarlo hay que apostar X veces el monto (ej.
+  premio $10.000 con x5 → apostar $50.000).
+- **Cómo se implementó (candado del lado de la PLATAFORMA, cero contabilidad
+  local):** el premio se acredita con `girox.depositToUser(..., {multiplier: x})`
+  — depósito CON objetivo de apuestas de 1girox. La plata entra al saldo al
+  instante (jugable) pero `wagering.available` no la incluye hasta apostar
+  multiplier × premio, y el retiro YA validaba contra `available` → no hubo que
+  tocar nada del flujo de retiros. ⚠️ NO se usó `/bonus` con multiplier a
+  propósito: esa vía queda "a reclamar" en el casino (v1.7) y pisa bonos activos.
+  La reference `vip-fire-...` es LA MISMA de siempre (se pasa explícita y
+  `_buildReference` no la toca) → idempotencia intacta.
+- **Multiplicador configurable:** `Config['fireRolloverMultiplier']` (default
+  **5**, rango 0-50, 0 = premio libre como antes), editable en la card "🔥
+  Premios del Fueguito" del panel (input nuevo, `Config.set` con username). Sin
+  cache (multi-instancia). GET/POST `/api/admin/fire-milestones` lo exponen.
+- **ELIMINADO (con lápida) el gate "Req 6"** de `/api/fire/claim-reward`
+  (requisito de cargas `milestone.requireDeposits` vía `getDepositsInPeriod`):
+  reemplazado por el rollover. Los campos de requisito siguen en la config y en
+  la tabla del panel pero YA NO se chequean al reclamar (el hint del panel lo
+  aclara). `getDepositsInPeriod` queda sin callers (se conserva).
+- **Avisos al cliente:** el recuadro del premio pendiente (fire.js) muestra
+  "🎯 Para poder retirarlo: apostá $X (rollover x5)" ANTES de reclamar; la lista
+  de hitos dice "(retiro con rollover x5)" (antes decía "requiere actividad del
+  mes", stale); el mensaje de éxito del server explica el objetivo y va también
+  al chat. `/api/fire/status` expone `rolloverMultiplier`.
+- **Nota sobre "en el mes":** el objetivo de apuestas lo administra 1girox y NO
+  tiene vencimiento mensual propio de nuestro lado — queda pendiente hasta
+  cumplirse (si la config de rollover de la plataforma define expiración, manda
+  esa). Si el owner quisiera un vencimiento calendario estricto habría que
+  llevar contabilidad local (se le explicó el trade-off).
+- **Validado:** `node --check` OK (server.js, fire.js, admin.js). SW a **v81**.
+  **Back necesita redeploy.** PROBAR: llegar a un hito → el recuadro avisa el
+  rollover → reclamar → saldo sube pero `wagering.available` no; intentar
+  retirar → la plataforma lo frena hasta apostar 5×; cambiar el x en el panel.
+
 ### 121. Branding v2: íconos TRANSPARENTES, banner de inicio definitivo y logo 1GIROX fijo en el soporte
 - **Pedido del owner:** (a) íconos de la PWA con fondo transparente; (b) el banner
   del login pasa a ser `bannerinicio.png` (arte con deportes + ruleta + cartas, no

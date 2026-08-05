@@ -90,10 +90,17 @@ VIP.fire = (function () {
         const pendingCashEl = document.getElementById('firePendingCashReward');
         if (pendingCashEl) {
             if (pendingCash > 0) {
+                // Aviso de rollover: el premio se juega ya, pero para RETIRARLO hay
+                // que apostar (multiplicador × premio) — lo exige la plataforma.
+                const _mult = VIP.state.fireStatus.rolloverMultiplier || 0;
+                const _rolloverNote = _mult > 0
+                    ? `<span style="font-size:11px;color:#ffb84d;">🎯 Para poder retirarlo: apostá $${Math.round(pendingCash * _mult).toLocaleString('es-AR')} (rollover x${_mult})</span><br>`
+                    : '';
                 pendingCashEl.style.display = 'block';
                 pendingCashEl.innerHTML = `
                     <strong style="color:#ffd700;">🏆 ¡Tenés $${pendingCash.toLocaleString('es-AR')} para reclamar!</strong><br>
                     <span style="font-size:12px;color:#ccc;">Premio de tu racha Fueguito día ${VIP.state.fireStatus.pendingCashRewardDay}</span><br>
+                    ${_rolloverNote}
                     <button id="claimFireRewardBtn" onclick="VIP.fire.claimFireReward()" style="margin-top:8px;background:linear-gradient(135deg,#d4af37,#ffd700);color:#000;border:none;padding:10px 20px;border-radius:20px;font-weight:900;font-size:14px;cursor:pointer;">💰 Reclamar $${pendingCash.toLocaleString('es-AR')}</button>
                 `;
             } else {
@@ -118,8 +125,12 @@ VIP.fire = (function () {
                 } else {
                     rewardText = m.reward ? `$${m.reward.toLocaleString('es-AR')}` : '-';
                 }
-                const depositNote = m.hasDepositRequirement
-                    ? ' <span style="font-size:10px;color:#ff8c00;">(requiere actividad del mes)</span>'
+                // 🪦 Antes acá se mostraba "(requiere actividad del mes)" según
+                // hasDepositRequirement: ese requisito fue reemplazado por el
+                // ROLLOVER (2026-08-05) — se avisa el objetivo de apuestas.
+                const _fsMult = VIP.state.fireStatus.rolloverMultiplier || 0;
+                const depositNote = (_fsMult > 0 && m.type === 'cash' && m.reward)
+                    ? ` <span style="font-size:10px;color:#ffb84d;">(retiro con rollover x${_fsMult})</span>`
                     : '';
                 return `<div class="milestone-item ${statusClass}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin:4px 0;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
                     <span>${statusIcon} <strong>Día ${m.day}</strong>: ${rewardText}${depositNote}</span>

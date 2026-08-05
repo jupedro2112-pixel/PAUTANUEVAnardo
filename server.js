@@ -10299,6 +10299,21 @@ async function getFireMilestones() {
   return FIRE_MILESTONES_DEFAULT;
 }
 
+// Rollover de los premios del fueguito (owner 2026-08-05): el premio se acredita
+// como DEPÓSITO CON `multiplier` en 1girox → la plata queda JUGABLE al instante
+// pero NO RETIRABLE hasta apostar (multiplier × premio); el retiro ya valida
+// contra `wagering.available`, así que el candado lo aplica la propia plataforma.
+// Editable desde el panel (card del Fueguito). 0 = sin rollover (depósito libre,
+// comportamiento anterior). Sin cache (multi-instancia, ver #91).
+const FIRE_ROLLOVER_DEFAULT = 5;
+async function getFireRolloverMultiplier() {
+  try {
+    const v = Number(await getConfig('fireRolloverMultiplier', FIRE_ROLLOVER_DEFAULT));
+    if (Number.isFinite(v) && v >= 0 && v <= 50) return Math.round(v * 10) / 10;
+  } catch (_) {}
+  return FIRE_ROLLOVER_DEFAULT;
+}
+
 app.get('/api/fire/status', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -10375,7 +10390,10 @@ app.get('/api/fire/status', authMiddleware, async (req, res) => {
       pendingCashRewardDay,
       pendingCashRewardDesc,
       milestones,
-      nextReward: (FIRE_MILESTONES.find(m => m.day > currentStreak) || {}).reward || 0
+      nextReward: (FIRE_MILESTONES.find(m => m.day > currentStreak) || {}).reward || 0,
+      // x del rollover con que se acreditan los premios (0 = libres). El front lo
+      // usa para avisar "para retirarlo apostá X×" antes de que el cliente reclame.
+      rolloverMultiplier: await getFireRolloverMultiplier()
     });
   } catch (error) {
     console.error('Error obteniendo estado del fueguito:', error);
@@ -10500,20 +10518,11 @@ app.post('/api/fire/claim-reward', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'La recompensa expiró. Solo podés reclamarla el mismo día que llegaste al hito.' });
     }
 
-    // Req 6: Verificar requisitos de actividad para este hito específico (premios editables)
-    const rewardDay = fireStreak.pendingCashRewardDay || 0;
-    const FIRE_MILESTONES = await getFireMilestones();
-    const milestone = FIRE_MILESTONES.find(m => m.day === rewardDay);
-    if (milestone && milestone.requireDeposits > 0) {
-      const daysBack = milestone.depositDays || 30;
-      const deposits = await getDepositsInPeriod(username, daysBack);
-      if (deposits < milestone.requireDeposits) {
-        return res.status(400).json({
-          error: `No cumplís los requisitos para esta recompensa. Se requiere actividad de cargas del mes (mínimo $${milestone.requireDeposits.toLocaleString('es-AR')}).`,
-          requirementNotMet: true
-        });
-      }
-    }
+    // 🪦 Acá estaba el "Req 6": el premio exigía actividad de CARGAS del período
+    // (milestone.requireDeposits vía getDepositsInPeriod). ELIMINADO (owner
+    // 2026-08-05): el candado ahora es el ROLLOVER — el premio se acredita con
+    // objetivo de apuestas (x5 default) y la plataforma no deja retirarlo hasta
+    // cumplirlo, así que ya no hace falta gate previo para reclamar.
 
     // RESERVA ATÓMICA anti doble/N-cobro (TOCTOU): consumimos el premio pendiente
     // ANTES de acreditar. `findOneAndUpdate` con guard `pendingCashReward > 0` es
@@ -10551,7 +10560,19 @@ app.post('/api/fire/claim-reward', authMiddleware, async (req, res) => {
     // UTC ya cambió, así que un reclamo que falla falsamente a las 20:59 y se reintenta
     // a las 21:01 tendría otra reference → se pagaría dos veces.
     const _fireRef = `vip-fire-${userId}-d${reserved.pendingCashRewardDay}-${periodRanges.getTodayRangeArgentinaEpoch().dateStr}`;
-    const bonusResult = await girox.creditUserBalance(username, rewardAmount, _fireRef, { description: rewardDesc });
+    // Acreditación CON ROLLOVER (owner 2026-08-05): depósito con `multiplier` → la
+    // plata entra al saldo YA (jugable), pero la plataforma exige apostar
+    // (multiplier × premio) antes de poder retirarla (el retiro valida contra
+    // wagering.available). Con multiplier 0 vuelve al depósito libre de antes.
+    // ⚠️ Se usa depositToUser (deposito con multiplier), NO creditUserBalance con
+    // multiplier: esa rama va por /bonus, que desde la v1.7 queda "a reclamar" en
+    // el casino y encima pisa un bono activo previo. La reference es la MISMA de
+    // siempre (se pasa explícita y _buildReference no la toca) → idempotencia intacta.
+    const _fireMult = await getFireRolloverMultiplier();
+    const bonusResult = await girox.depositToUser(
+      username, rewardAmount, rewardDesc, _fireRef,
+      _fireMult > 0 ? { multiplier: _fireMult } : null
+    );
 
     if (!bonusResult.success) {
       // La acreditación falló → DEVOLVER el premio a pendiente para que el cliente
@@ -10599,10 +10620,15 @@ app.post('/api/fire/claim-reward', authMiddleware, async (req, res) => {
 
     logger.info(`[FIRE_REWARD] claim-reward OK userId=${userId} username=${username} amount=${rewardAmount}`);
 
+    const _rolloverMsg = _fireMult > 0
+      ? ` Para poder RETIRARLOS tenés que apostar $${Math.round(rewardAmount * _fireMult).toLocaleString('es-AR')} (rollover x${_fireMult}). ¡Ya podés jugarlos!`
+      : '';
     res.json({
       success: true,
       reward: rewardAmount,
-      message: `🎉 ¡$${rewardAmount.toLocaleString()} acreditados en tu cuenta!`
+      rolloverMultiplier: _fireMult,
+      rolloverTarget: _fireMult > 0 ? Math.round(rewardAmount * _fireMult) : 0,
+      message: `🎉 ¡$${rewardAmount.toLocaleString()} acreditados en tu cuenta!${_rolloverMsg}`
     });
   } catch (error) {
     console.error('Error reclamando recompensa Fueguito:', error);
@@ -10695,7 +10721,10 @@ app.get('/api/admin/fire-milestones', authMiddleware, adminMiddleware, async (re
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin general' });
     const milestones = await getFireMilestones();
-    res.json({ success: true, milestones, defaults: FIRE_MILESTONES_DEFAULT });
+    res.json({
+      success: true, milestones, defaults: FIRE_MILESTONES_DEFAULT,
+      rolloverMultiplier: await getFireRolloverMultiplier()
+    });
   } catch (e) {
     logger.warn(`[fire-milestones] GET falló: ${e.message}`);
     res.status(500).json({ error: 'Error del servidor' });
@@ -10722,9 +10751,21 @@ app.post('/api/admin/fire-milestones', authMiddleware, adminMiddleware, async (r
     .map(m => ({ ...m, desc: m.desc || ('Recompensa Fueguito ' + m.day + ' días') }));
     if (!norm.length) return res.status(400).json({ error: 'Cargá al menos un premio válido (día y monto mayores a 0).' });
     if (norm.length > 30) return res.status(400).json({ error: 'Máximo 30 premios.' });
+    // Rollover de los premios: número 0-50 (0 = premios libres, sin objetivo).
+    let rolloverMultiplier;
+    if (req.body.rolloverMultiplier !== undefined && req.body.rolloverMultiplier !== null && req.body.rolloverMultiplier !== '') {
+      const rm = Number(req.body.rolloverMultiplier);
+      if (!Number.isFinite(rm) || rm < 0 || rm > 50) {
+        return res.status(400).json({ error: 'El rollover tiene que ser un número entre 0 y 50 (0 = sin rollover).' });
+      }
+      rolloverMultiplier = Math.round(rm * 10) / 10;
+      await Config.set('fireRolloverMultiplier', rolloverMultiplier, req.user.username);
+    } else {
+      rolloverMultiplier = await getFireRolloverMultiplier();
+    }
     await setConfig('fireMilestones', norm);
-    logger.info(`[fire-milestones] actualizados por ${req.user.username}: ${norm.length} premios`);
-    res.json({ success: true, milestones: norm });
+    logger.info(`[fire-milestones] actualizados por ${req.user.username}: ${norm.length} premios, rollover x${rolloverMultiplier}`);
+    res.json({ success: true, milestones: norm, rolloverMultiplier });
   } catch (e) {
     logger.warn(`[fire-milestones] POST falló: ${e.message}`);
     res.status(500).json({ error: 'Error del servidor' });
