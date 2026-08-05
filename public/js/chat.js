@@ -682,7 +682,28 @@ VIP.chat = (function () {
     let _communityCfgOkAt = 0;
     let _communityCfgRetryTimer = null;
 
+    // Aplica una config de Comunidad a los 3 lugares (pill del canal, Soporte
+    // 24/7 del menú, logo del chat).
+    function _applyCommunityCfg(data) {
+        if (!data) return;
+        _applyCanalUrl(data.channelUrl || '');
+        const supportBtn = document.getElementById('menuSupportBtn');
+        if (supportBtn && data.supportUrl) supportBtn.href = data.supportUrl;
+        const avatar = document.getElementById('chatTopbarAvatar');
+        if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
+    }
+
     async function loadCanalInformativoUrl() {
+        // 0) CACHE PRIMERO (fix 2026-08-05): aplicar YA la última config
+        // conocida (localStorage) — sin esto, mientras el fetch tardaba (Tor),
+        // el pill quedaba apuntando al fallback y un click temprano llevaba a
+        // /canal-proximamente aunque la config estuviera perfecta. La red de
+        // abajo solo REFRESCA por si el panel cambió algo.
+        try {
+            const cached = JSON.parse(localStorage.getItem('communityCfgCache') || 'null');
+            if (cached) _applyCommunityCfg(cached);
+        } catch (e) { /* cache corrupto: se ignora */ }
+
         if (Date.now() - _communityCfgOkAt < 30000) return; // éxito fresco: nada que hacer
         for (let i = 0; i < 3; i++) {
             if (i) await new Promise((r) => setTimeout(r, i === 1 ? 2500 : 7000));
@@ -692,15 +713,14 @@ VIP.chat = (function () {
                 });
                 if (!response.ok) continue;
                 const data = await response.json();
-                _applyCanalUrl(data.channelUrl || '');
-                // Soporte 24/7 del menú ☰: si hay URL configurada (Comunidad →
-                // supportUrl) apunta ahí; si no, conserva el href por defecto del
-                // HTML (el botón aparece SIEMPRE).
-                const supportBtn = document.getElementById('menuSupportBtn');
-                if (supportBtn && data.supportUrl) supportBtn.href = data.supportUrl;
-                // Logo del chat de soporte, configurable desde el panel.
-                const avatar = document.getElementById('chatTopbarAvatar');
-                if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
+                _applyCommunityCfg(data);
+                try {
+                    localStorage.setItem('communityCfgCache', JSON.stringify({
+                        channelUrl: data.channelUrl || '',
+                        supportUrl: data.supportUrl || '',
+                        chatLogoUrl: data.chatLogoUrl || ''
+                    }));
+                } catch (e) { /* storage lleno: no es crítico */ }
                 _communityCfgOkAt = Date.now();
                 clearTimeout(_communityCfgRetryTimer);
                 return;
@@ -708,9 +728,10 @@ VIP.chat = (function () {
                 // red caída/lenta: reintenta con el próximo delay
             }
         }
-        // Los 3 intentos fallaron: fallback visible + seguir intentando en
-        // background — la config SIEMPRE termina llegando sin recargar la página.
-        _applyCanalUrl('');
+        // Los 3 intentos fallaron: si había cache quedó aplicada (arriba); si
+        // no, fallback visible. Se sigue intentando en background — la config
+        // SIEMPRE termina llegando sin recargar la página.
+        if (!localStorage.getItem('communityCfgCache')) _applyCanalUrl('');
         clearTimeout(_communityCfgRetryTimer);
         _communityCfgRetryTimer = setTimeout(() => {
             loadCanalInformativoUrl().catch(() => {});

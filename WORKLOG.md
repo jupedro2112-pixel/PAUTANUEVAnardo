@@ -8,6 +8,19 @@
 
 ## Sesión 2026-08-05
 
+### 147. Config de Comunidad CACHEADA en el dispositivo (el pill ya no arranca en canal-proximamente)
+- **Síntoma (owner):** al abrir la app, el pill del canal apuntaba primero a
+  /canal-proximamente y recién al abrir el menú tomaba el link real. Causa: la
+  config se lee por RED al arrancar (por Tor tarda o falla) y hasta que llega,
+  los botones quedan con los defaults del HTML.
+- **Fix:** cada lectura exitosa guarda `{channelUrl, supportUrl, chatLogoUrl}`
+  en localStorage (`communityCfgCache`) y `loadCanalInformativoUrl` la APLICA
+  AL INSTANTE al arrancar, antes de tocar la red — la red queda solo para
+  refrescar cambios del panel. El fallback solo aparece en la primerísima
+  visita de un dispositivo (sin cache). Si los 3 intentos fallan, la cache
+  aplicada se conserva (ya no se pisa con el fallback).
+- **Validado:** `node --check` OK (chat.js). SW a **v92**. Solo front.
+
 ### 146. balance_updated por ROOM (fix multi-instancia) + mini-ENCUESTA de Comunidad en la invitación
 - **Fix real de multi-instancia:** los 6 emits de `balance_updated` usaban el
   Map LOCAL `connectedUsers` → si el cliente estaba en la OTRA instancia, el
