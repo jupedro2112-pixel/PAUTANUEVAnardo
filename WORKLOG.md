@@ -8,6 +8,22 @@
 
 ## Sesión 2026-08-05
 
+### 139. FIX del #138: multiplicador de bono VÁLIDO elegido desde la config de la plataforma
+- **Errores reportados por el owner al probar #138:** carga con bonus → "The
+  bonus multiplier field is required when bonus percent / bonus amount is
+  present" (la API EXIGE `bonus_multiplier` junto con `bonus_amount`); bono
+  directo → "The selected multiplier is invalid" (el x1 default NO está entre
+  los multiplicadores permitidos de su config de 1girox).
+- **Fix:** helper **`getGiroxBonusMultiplier()`** — lee los multiplicadores
+  permitidos de `GET /config` (via `girox.getPlatformConfig()`, cache 10 min) y
+  elige: `GIROX_BONUS_MULTIPLIER` (env/SSM) si la plataforma lo permite; si no,
+  el MENOR permitido (rollover más suave); último recurso 1. Usado en los DOS
+  flujos: el depósito con bonus ahora manda `bonusMultiplier` siempre, y el
+  bono directo usa el multiplicador válido.
+- **Validado:** `node --check` OK. Back necesita redeploy. PROBAR: carga con
+  bonus y bono directo — ambos deben acreditar sin error y verse como Bono en
+  el panel de 1girox.
+
 ### 138. Carga con bonus y bono directo NATIVOS: en el panel de 1girox ya se distinguen de las cargas
 - **Reporte del owner (con capturas del panel 1girox):** una "carga con bonus"
   aparecía como DOS operaciones tipo "Carga" (+$1000 y +$1000, refs vip-dep y

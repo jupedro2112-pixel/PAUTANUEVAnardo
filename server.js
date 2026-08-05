@@ -7507,6 +7507,29 @@ app.get('/api/movements', authMiddleware, async (req, res) => {
   }
 });
 
+// Multiplicador de rollover a usar en los BONOS (carga con bonus y bono directo).
+// La Partner API EXIGE `bonus_multiplier` junto con `bonus_amount`, y solo acepta
+// los multiplicadores de la config del sitio (GET /config → rollover.multipliers;
+// x1 puede NO estar permitido — visto 2026-08-05: "The selected multiplier is
+// invalid"). Prioridad: GIROX_BONUS_MULTIPLIER (env/SSM) si la plataforma lo
+// permite; si no, el MENOR permitido (el rollover más suave); último recurso 1.
+async function getGiroxBonusMultiplier() {
+  let allowed = null;
+  try {
+    const cfg = await girox.getPlatformConfig();
+    const raw = cfg.success && cfg.config && cfg.config.rollover && cfg.config.rollover.multipliers;
+    if (Array.isArray(raw) && raw.length) {
+      allowed = raw.map(Number).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+      if (!allowed.length) allowed = null;
+    }
+  } catch (_) { /* config no disponible: se sigue con la env */ }
+  const envVal = Number(process.env.GIROX_BONUS_MULTIPLIER);
+  const envOk = Number.isFinite(envVal) && envVal > 0;
+  if (envOk && (!allowed || allowed.includes(envVal))) return envVal;
+  if (allowed) return allowed[0];
+  return envOk ? envVal : 1;
+}
+
 app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, res) => {
   try {
     const { userId, username, amount, bonus = 0, description } = req.body;
@@ -7545,9 +7568,12 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
     // en silencio contable).
     const bonusRequested = parseFloat(bonus) > 0;
     const _depTxId = uuidv4();
+    // bonusMultiplier OBLIGATORIO cuando va bonus_amount (lo exige la API).
     const result = await girox.depositToUser(
       user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`,
-      bonusRequested ? { bonusAmount: parseFloat(bonus) } : null
+      bonusRequested
+        ? { bonusAmount: parseFloat(bonus), bonusMultiplier: await getGiroxBonusMultiplier() }
+        : null
     );
 
     if (result.success) {
@@ -8169,7 +8195,8 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
       bonusAmount,
       `vip-bonus-${_bonusTxId}`,
       {
-        multiplier: Number(process.env.GIROX_BONUS_MULTIPLIER || 1),
+        // Elige un multiplicador VÁLIDO para la plataforma (x1 puede no estarlo).
+        multiplier: await getGiroxBonusMultiplier(),
         description: 'Bonificación otorgada'
       }
     );
