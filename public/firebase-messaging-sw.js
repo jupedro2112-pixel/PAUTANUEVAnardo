@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v85'; // v85: bienvenida con reintentos (chat vacío al entrar por link en red lenta)
+const CACHE_VERSION = 'v86'; // v86: soporte unificado (chau wa.link/metawin y botón violeta), fallbacks al dominio nuevo
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

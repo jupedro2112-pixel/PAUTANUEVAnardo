@@ -16928,6 +16928,15 @@ app.get('/api/config/soporte-vip', async (req, res) => {
     // Soporta el formato viejo {handle,url} (solo Telegram) y el nuevo
     // {telegram,whatsapp}, así no se pierde la config previa tras el deploy.
     const telegram = c.telegram || { handle: c.handle || '', url: c.url || '' };
+    // UNIFICACIÓN (owner 2026-08-05): si la card "Soporte VIP" no tiene URL,
+    // hereda el supportUrl de COMUNIDAD — así el soporte se configura en UN
+    // solo lugar y el botón del login no queda muerto.
+    if (!telegram.url) {
+      try {
+        const community = (await getConfig('communityConfig')) || {};
+        if (community.supportUrl) telegram.url = community.supportUrl;
+      } catch (_) { /* sin fallback */ }
+    }
     const whatsapp = c.whatsapp || { number: '', url: '' };
     res.json({
       telegram: telegram,

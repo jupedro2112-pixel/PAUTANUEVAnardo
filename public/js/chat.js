@@ -662,7 +662,7 @@ VIP.chat = (function () {
     // página inexistente del propio dominio (404) — se eligió el dominio propio y
     // no un t.me inventado para que nadie pueda registrar ese canal y quedarse con
     // los clicks.
-    const CANAL_FALLBACK_URL = 'https://vipcargas.com/canal-proximamente';
+    const CANAL_FALLBACK_URL = 'https://cargas1girox.com/canal-proximamente';
 
     function _applyCanalUrl(url) {
         const href = url || CANAL_FALLBACK_URL;
@@ -673,24 +673,33 @@ VIP.chat = (function () {
     }
 
     async function loadCanalInformativoUrl() {
-        try {
-            const response = await fetch(`${VIP.config.API_URL}/api/config/community`, {
-                headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
-            });
-            if (!response.ok) return;
-            const data = await response.json();
-            _applyCanalUrl(data.channelUrl || '');
-            // Soporte 24/7 del menú ☰: si hay URL configurada (Comunidad →
-            // supportUrl) apunta ahí; si no, conserva el href por defecto del HTML
-            // (el botón aparece SIEMPRE).
-            const supportBtn = document.getElementById('menuSupportBtn');
-            if (supportBtn && data.supportUrl) supportBtn.href = data.supportUrl;
-            // Logo del chat de soporte, configurable desde el panel.
-            const avatar = document.getElementById('chatTopbarAvatar');
-            if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
-        } catch {
-            _applyCanalUrl('');
+        // CON REINTENTOS (fix 2026-08-05): un solo fallo de red acá (Tor/3G)
+        // dejaba los DEFAULTS puestos — el pill del canal en /canal-proximamente
+        // y el "Soporte 24/7" del menú con su href estático — aunque la config
+        // del panel estuviera perfecta. 3 intentos con backoff.
+        for (let i = 0; i < 3; i++) {
+            if (i) await new Promise((r) => setTimeout(r, i === 1 ? 2500 : 7000));
+            try {
+                const response = await fetch(`${VIP.config.API_URL}/api/config/community`, {
+                    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+                });
+                if (!response.ok) continue;
+                const data = await response.json();
+                _applyCanalUrl(data.channelUrl || '');
+                // Soporte 24/7 del menú ☰: si hay URL configurada (Comunidad →
+                // supportUrl) apunta ahí; si no, conserva el href por defecto del
+                // HTML (el botón aparece SIEMPRE).
+                const supportBtn = document.getElementById('menuSupportBtn');
+                if (supportBtn && data.supportUrl) supportBtn.href = data.supportUrl;
+                // Logo del chat de soporte, configurable desde el panel.
+                const avatar = document.getElementById('chatTopbarAvatar');
+                if (avatar && data.chatLogoUrl) avatar.src = data.chatLogoUrl;
+                return;
+            } catch {
+                // red caída/lenta: reintenta con el próximo delay
+            }
         }
+        _applyCanalUrl('');
     }
 
     return {

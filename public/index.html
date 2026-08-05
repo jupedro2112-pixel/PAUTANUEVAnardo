@@ -485,7 +485,7 @@
                  Canal de Telegram). El botón aparece SIEMPRE: sin URL configurada
                  lleva al fallback 404 del dominio propio (ver chat.js
                  CANAL_FALLBACK_URL, que también setea la URL real al loguear). -->
-            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="https://vipcargas.com/canal-proximamente" target="_blank" rel="noopener noreferrer" title="Unite a la Comunidad de Telegram">
+            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="https://cargas1girox.com/canal-proximamente" target="_blank" rel="noopener noreferrer" title="Unite a la Comunidad de Telegram">
                 <span class="tb-telegram-icon">📣</span>
                 <span class="tb-telegram-text">Unite a la Comunidad de Telegram</span>
             </a>
@@ -521,7 +521,10 @@
                  sale de la config de Comunidad (supportUrl) — chat.js la setea al
                  loguear; si no está configurada queda este href por defecto, así el
                  botón SIEMPRE aparece y siempre lleva a algún lado. -->
-            <a class="menu-item support-btn" id="menuSupportBtn" href="https://wa.link/metawin2026" target="_blank" rel="noopener" title="Soporte por Telegram" role="menuitem">
+            <!-- Default = 404 del dominio PROPIO (mismo criterio que el canal, #106):
+                 el href viejo era un wa.link de METAWIN que no correspondía. chat.js
+                 lo pisa con Comunidad → supportUrl apenas carga la config. -->
+            <a class="menu-item support-btn" id="menuSupportBtn" href="https://cargas1girox.com/soporte-proximamente" target="_blank" rel="noopener" title="Soporte por Telegram" role="menuitem">
                 <span class="menu-item-icon menu-item-svg">
                     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                         <circle cx="12" cy="12" r="12" fill="#29a9eb"/>
@@ -535,7 +538,7 @@
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
             </button>
-            <a id="canalInformativoBtn" href="https://vipcargas.com/canal-proximamente" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite a la Comunidad de Telegram" role="menuitem">
+            <a id="canalInformativoBtn" href="https://cargas1girox.com/canal-proximamente" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite a la Comunidad de Telegram" role="menuitem">
                 <span class="menu-item-icon">📣</span><span class="menu-item-label" style="color:#53bdeb;">Unite a la Comunidad de Telegram</span>
             </a>
             <!-- Código de bienvenida de la Comunidad: canje del bono sorpresa. -->
@@ -925,41 +928,11 @@
                      botón "Canal Exclusivo" (communityChannelBtn): se ELIMINÓ porque
                      duplicaba el pill "Unite al canal de Telegram" del header — el
                      canal es UNO solo (owner 2026-08-03) y su botón vive arriba. -->
-                <div class="dash-community" id="communitySection" style="display:none;">
-                    <a id="communitySupportBtn" href="#" target="_blank" rel="noopener" class="dash-tg-btn dash-tg-support" style="display:none;">
-                        <span class="dash-tg-emoji">💬</span>
-                        <span class="dash-tg-text">
-                            <strong>Soporte</strong>
-                            <span>Telegram</span>
-                        </span>
-                    </a>
-                </div>
+                <!-- 🪦 Acá estaba el botón violeta "💬 Soporte Telegram" del dashboard
+                     (communitySection/communitySupportBtn + su script inline):
+                     ELIMINADO 2026-08-05 (owner: el soporte de Telegram vive SOLO
+                     en el menú ☰ — "Soporte 24/7"). -->
             </div>
-            <script>
-            (function () {
-                function loadCommunity() {
-                    if (!window.VIP || !VIP.state || !VIP.state.currentToken || !VIP.config) return;
-                    fetch(VIP.config.API_URL + '/api/config/community', {
-                        headers: { 'Authorization': 'Bearer ' + VIP.state.currentToken }
-                    }).then(function (r) { return r.ok ? r.json() : null; })
-                      .then(function (d) {
-                          if (!d) return;
-                          var sec = document.getElementById('communitySection');
-                          var sup = document.getElementById('communitySupportBtn');
-                          var any = false;
-                          if (sup && d.supportUrl) { sup.href = d.supportUrl; sup.style.display = ''; any = true; }
-                          if (sec && any) sec.style.display = '';
-                      }).catch(function () {});
-                }
-                document.addEventListener('DOMContentLoaded', function () {
-                    var t = 0;
-                    var iv = setInterval(function () {
-                        if (window.VIP && VIP.state && VIP.state.currentToken) { clearInterval(iv); loadCommunity(); }
-                        else if (++t > 25) { clearInterval(iv); }
-                    }, 1000);
-                });
-            })();
-            </script>
             <!-- ===== /DASHBOARD ===== -->
             <!-- Cartel del bono por instalar la app: visible hasta que se reclama -->
             <div id="installBonusBanner" style="display:none; background: linear-gradient(135deg, #d4af37 0%, #ffd700 50%, #d4af37 100%); color: #000; padding: 11px 14px; border-radius: 12px; margin: 8px 8px 0; box-shadow: 0 4px 18px rgba(212,175,55,0.55); border: 2px solid #ffd700;">

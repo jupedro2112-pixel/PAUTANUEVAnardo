@@ -8,6 +8,30 @@
 
 ## Sesión 2026-08-05
 
+### 134. Soporte/canal saneados: chau wa.link de METAWIN, botón violeta eliminado, fallbacks al dominio nuevo, login unificado
+- **Reportes del owner (verificados los 4):**
+  1. "Soporte 24/7" del menú ☰ derivaba a `wa.link/metawin2026` — era el HREF
+     DEFAULT hardcodeado en el HTML (resto de la era WhatsApp/metawin); chat.js
+     lo pisa con Comunidad→supportUrl, pero si esa carga fallaba (Tor) quedaba
+     el default. Nuevo default: `cargas1girox.com/soporte-proximamente` (404 del
+     dominio propio, mismo criterio que el canal #106).
+  2. El pill "Unite a la Comunidad" caía en `vipcargas.com/canal-proximamente`
+     con la config bien cargada → mismo motivo: UN solo fetch sin retry que
+     falló por Tor dejó el fallback. `loadCanalInformativoUrl` ahora hace **3
+     intentos con backoff** (patrón #133) y los 3 fallbacks del canal pasaron a
+     `cargas1girox.com/...`. ⚠️ Aclarado al owner: el canal se configura en la
+     card "📣 Comunidad / Canal de Telegram" del panel (channelUrl), NO en
+     COMANDOS.
+  3. **Botón violeta "💬 Soporte Telegram" del dashboard ELIMINADO** (con
+     lápida): communitySection + communitySupportBtn + su script inline. El
+     soporte vive SOLO en el menú ☰ (decisión owner).
+  4. **Soporte del login unificado:** `GET /api/config/soporte-vip` (público,
+     lo usa el botón del login) ahora HEREDA `communityConfig.supportUrl` si la
+     card "Soporte VIP" no tiene URL propia → el soporte se configura en UN
+     lugar (Comunidad) y alimenta login + menú ☰.
+- **Validado:** `node --check` OK (server, chat.js) + parse inline (7 scripts).
+  SW a **v86**. El punto 4 necesita redeploy del back; el resto es front.
+
 ### 133. FIX bienvenida perdida: reintentos (chat vacío al entrar por link en red lenta)
 - **Síntoma (owner, probando por Tor):** entró con el link de acceso y el chat
   quedó VACÍO (sin bienvenida) y el chat tampoco aparecía del lado del admin
