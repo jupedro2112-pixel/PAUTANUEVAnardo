@@ -483,8 +483,18 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   rangos en hora ART de `src/utils/periodRanges.js`, NETWIN real de
   `girox.getPlayerStats(username, …)` (**sólo casino**, ver §4.6; por username, sin
   gate de ID). El % sale del RANGO por pérdida del período
-  (`src/utils/refundTiers.js`: 3/6/10% — los viejos Config['refundPercents'] quedaron
-  `enUso:false`). **El RefundClaim se CREA antes de acreditar** (el índice único
+  (`src/utils/refundTiers.js`). **Desde 2026-08-05 los rangos son EDITABLES desde
+  el panel y CADA PERÍODO tiene su propia escalera** (diario ≠ semanal ≠ mensual):
+  `Config['refundTiersByPeriod']` (`{daily/weekly/monthly: [{name,pct,max}]}`),
+  leída SIN cache por `getRefundTiersByPeriod()` (server.js) con fallback a
+  `DEFAULT_TIERS` (3/6/10%) por período si falta/es inválida. Validación en
+  `refundTiers.normalizeTiers` (1-6 rangos, % 0-100, umbrales crecientes, último
+  sin techo). Endpoints `GET/POST /api/admin/refund-tiers` (solo admin general);
+  el POST devuelve `commandWarnings` = comandos `/sys_*` cuyo texto menciona
+  porcentajes (esos se editan A MANO desde COMANDOS). El status manda
+  `tiersByPeriod` (+ `tiers` legacy = la del diario). Los viejos
+  Config['refundPercents'] quedaron `enUso:false` y su card del panel fue
+  reemplazada por el editor de rangos. **El RefundClaim se CREA antes de acreditar** (el índice único
   `userId+type+periodKey` es el candado atómico contra doble cobro; si el crédito
   falla se borra la reserva). El crédito va por `creditUserBalance` = **depósito
   libre** (no `/bonus`: quedaría a reclamar) con la reference derivada del período.

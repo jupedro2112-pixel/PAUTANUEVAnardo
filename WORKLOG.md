@@ -8,6 +8,58 @@
 
 ## Sesión 2026-08-05
 
+### 118. RANGOS de reembolso EDITABLES desde el panel, con escalera PROPIA por período
+- **Pedido del owner:** que los rangos (% según pérdida del período) se puedan
+  cambiar desde el panel; que el diario, el semanal y el mensual puedan tener
+  escaleras DISTINTAS (no las 3 iguales sí o sí); todo personalizable; y que al
+  cambiarlos se actualice todo lo que los muestra — con AVISO de lo que hay que
+  tocar a mano (los comandos).
+- **`src/utils/refundTiers.js` generalizado:** `getRefundTier`/`calcRefund`/
+  `listTiers` ahora aceptan una escalera como parámetro (default = la histórica
+  Bronce 3% / Plata 6% / Oro 10%, renombrada `DEFAULT_TIERS`; alias
+  `REFUND_TIERS` queda por compat). Nuevo **`normalizeTiers(raw)`**: valida y
+  normaliza una escalera cruda (1-6 rangos, % 0-100 con 1 decimal, umbrales
+  enteros ESTRICTAMENTE crecientes, solo el último sin techo — si ninguno es
+  "sin techo" se lo fuerza al último; ordena por umbral así el panel no depende
+  del orden) y TIRA errores en castellano para mostrarle al admin.
+  Emoji/color salen de la POSICIÓN (`TIER_STYLES`, hasta 6: 🥉🥈🥇💠💎👑).
+- **Config:** `Config['refundTiersByPeriod']` = `{daily:[{name,pct,max}],
+  weekly:[...], monthly:[...]}` (solo lo editable; min/emoji/color se derivan al
+  leer). Helper `getRefundTiersByPeriod()` en server.js — **sin cache a
+  propósito** (multi-instancia EB, misma razón que getConfig #91); escalera
+  inválida/ausente cae a `DEFAULT_TIERS` por período (una config corrupta jamás
+  rompe un reclamo).
+- **Aplicado en los 4 lugares:** `/api/refunds/status` (los 3 cálculos, cada uno
+  con SU escalera) y los 3 `POST /api/refunds/claim/*`. El status ahora manda
+  **`tiersByPeriod`** (las 3 tablas) y conserva `tiers` (= la del diario) por
+  compat con PWAs cacheadas viejas.
+- **Endpoints nuevos `GET/POST /api/admin/refund-tiers`** (patrón refund-percents:
+  adminMiddleware + re-check `role==='admin'`). El POST valida los 3 períodos
+  (todo-o-nada), guarda con `Config.set(..., username)` (queda QUIÉN lo cambió) y
+  devuelve **`commandWarnings`**: los comandos `/sys_*` activos cuyo TEXTO
+  menciona porcentajes (`\d%`) o "reembolso" (`_scanRefundTextCommands`) — esos
+  NO se actualizan solos y el panel se los lista al admin para editarlos a mano.
+- **Panel:** la card vieja "🎁 Porcentajes de reembolso" (refundPercents, sin uso
+  desde #99) fue REEMPLAZADA (con lápida) por **"🏅 Rangos de reembolso"**: 3
+  editores (Diario/Semanal/Mensual) con filas Nombre | pérdida hasta $ | %,
+  agregar/quitar fila (máx 6, viene del backend), botón **"📋 Copiar Diario →
+  Semanal y Mensual"**, confirm al guardar, y `alert` con los comandos a revisar
+  si hay `commandWarnings`. Solo admin general (403 → card oculta). Los
+  endpoints refund-percents del backend quedan (deprecados, nadie los llama).
+- **PWA (refunds.js + index.html):** el modal de perfil muestra la escalera POR
+  PERÍODO cuando son distintas (si las 3 son iguales, una sola tabla como
+  siempre; backend viejo → fallback a `tiers`). Los textos hardcodeados
+  "Reembolsos hasta 10%" / "3, 6 o hasta 10%" de infoModal/adServiceModal se
+  GENERICIZARON y ahora `updateRefundLabels()` los completa con el % MÁXIMO real
+  (`infoRefundsTitle`/`adRefundsTitle`).
+- **Validado:** `node --check` OK (server, refundTiers, refunds.js, admin.js) +
+  prueba en frío de normalizeTiers (cortes 30000/30001/100000/100001, escalera
+  custom de 4 desordenada, errores de validación, auto-sin-techo). SW a **v77**.
+  Back necesita redeploy. PROBAR: card nueva en el panel (solo admin general),
+  cambiar la escalera de UN período y ver que el perfil de la PWA muestra 3
+  tablas distintas y el % del botón cambia; guardar con umbrales repetidos →
+  error claro; el alert de comandos lista los /sys_* con %.
+
 ### 117. Login solo con Soporte Telegram + logo del chat de soporte subible como IMAGEN
 - **Pedido del owner:** (a) sacar el botón "Soporte WhatsApp" del login (el soporte
   por WhatsApp ya no existe; queda solo Telegram); (b) el "Logo del chat de soporte"

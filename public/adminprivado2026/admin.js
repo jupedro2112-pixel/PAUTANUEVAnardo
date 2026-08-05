@@ -5353,7 +5353,7 @@ async function loadCBUConfig() {
     // Cargar la config del banco automático (hgcash)
     loadHgcashConfig();
     // Cargar los porcentajes de reembolso (solo admin general)
-    loadRefundPercents();
+    loadRefundTiers();
     // Cargar el estado de los niveles VIP (solo admin general)
     loadVipLevelsConfig();
     // Cargar los premios del fueguito (solo admin general)
@@ -5433,12 +5433,81 @@ async function toggleVipLevels() {
     }
 }
 
-// ====== Porcentajes de reembolso (solo admin general) ======
-async function loadRefundPercents() {
-    const form = document.getElementById('refundPercentsForm');
-    const header = document.getElementById('refundPercentsHeader');
+// ====== Rangos de reembolso (solo admin general) ======
+// 🪦 Acá vivían loadRefundPercents/saveRefundPercents (% fijos por período, sin
+// uso desde #99): REEMPLAZADAS el 2026-08-05 por este editor de rangos por
+// pérdida, con escalera PROPIA por período (diario/semanal/mensual distintas).
+const REFUND_TIER_PERIODS = [
+    { key: 'daily', label: '📅 Diario' },
+    { key: 'weekly', label: '📆 Semanal' },
+    { key: 'monthly', label: '🗓️ Mensual' }
+];
+let _refundTiersMaxRows = 6;
+
+function _refundTierRowHtml(t) {
+    const name = t && t.name ? String(t.name).replace(/"/g, '&quot;') : '';
+    const max = t && t.max != null ? t.max : '';
+    const pct = t && t.pct != null ? t.pct : '';
+    return `<div class="refund-tier-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+        <input type="text" class="rt-name" placeholder="Nombre (ej. Bronce)" value="${name}" maxlength="20" style="flex:1.2;min-width:90px;">
+        <span style="color:#888;font-size:11px;white-space:nowrap;">pérdida hasta $</span>
+        <input type="number" class="rt-max" placeholder="sin techo" value="${max}" min="1" step="1" style="flex:1;min-width:90px;">
+        <input type="number" class="rt-pct" placeholder="%" value="${pct}" min="0" max="100" step="0.1" style="width:70px;">
+        <span style="color:#888;font-size:11px;">%</span>
+        <button type="button" onclick="this.parentElement.remove()" title="Quitar rango"
+            style="background:none;border:none;color:#ff6b6b;font-size:16px;cursor:pointer;line-height:1;">✕</button>
+    </div>`;
+}
+
+function renderRefundTiersEditor(tiersByPeriod) {
+    const cont = document.getElementById('refundTiersEditors');
+    if (!cont) return;
+    cont.innerHTML = REFUND_TIER_PERIODS.map((p) => {
+        const tiers = (tiersByPeriod && tiersByPeriod[p.key]) || [];
+        return `<div style="margin-bottom:14px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;">
+            <div style="font-weight:bold;font-size:13px;margin-bottom:8px;">${p.label}</div>
+            <div id="refundTiersRows_${p.key}">${tiers.map(_refundTierRowHtml).join('')}</div>
+            <button type="button" class="btn-secondary" onclick="addRefundTierRow('${p.key}')" style="font-size:12px;">➕ Agregar rango</button>
+            <div style="color:#777;font-size:10.5px;margin-top:5px;">El ÚLTIMO rango dejalo con "hasta $" vacío = "más de" el anterior. Máx ${_refundTiersMaxRows} rangos.</div>
+        </div>`;
+    }).join('');
+}
+
+function addRefundTierRow(period) {
+    const rows = document.getElementById(`refundTiersRows_${period}`);
+    if (!rows) return;
+    if (rows.querySelectorAll('.refund-tier-row').length >= _refundTiersMaxRows) {
+        showToast(`Máximo ${_refundTiersMaxRows} rangos por período`, 'error');
+        return;
+    }
+    rows.insertAdjacentHTML('beforeend', _refundTierRowHtml(null));
+}
+
+function _collectRefundTiers(period) {
+    const rows = document.getElementById(`refundTiersRows_${period}`);
+    if (!rows) return [];
+    return Array.from(rows.querySelectorAll('.refund-tier-row')).map((row) => ({
+        name: row.querySelector('.rt-name').value.trim(),
+        max: row.querySelector('.rt-max').value === '' ? null : Number(row.querySelector('.rt-max').value),
+        pct: Number(row.querySelector('.rt-pct').value)
+    }));
+}
+
+function copyDailyTiersToOthers() {
+    const daily = _collectRefundTiers('daily');
+    if (!daily.length) { showToast('El Diario no tiene rangos para copiar', 'error'); return; }
+    for (const period of ['weekly', 'monthly']) {
+        const rows = document.getElementById(`refundTiersRows_${period}`);
+        if (rows) rows.innerHTML = daily.map(_refundTierRowHtml).join('');
+    }
+    showToast('Escalera del Diario copiada a Semanal y Mensual — tocá "Guardar rangos" para aplicar', 'info');
+}
+
+async function loadRefundTiers() {
+    const form = document.getElementById('refundTiersForm');
+    const header = document.getElementById('refundTiersHeader');
     try {
-        const r = await authFetch('/api/admin/refund-percents');
+        const r = await authFetch('/api/admin/refund-tiers');
         if (!r.ok) {
             // Sólo admin general puede verlo: si no, ocultamos la card.
             if (form) form.style.display = 'none';
@@ -5448,40 +5517,45 @@ async function loadRefundPercents() {
         if (form) form.style.display = '';
         if (header) header.style.display = '';
         const j = await r.json();
-        const p = j.percents || {};
-        const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
-        set('refundPctDaily', p.daily);
-        set('refundPctWeekly', p.weekly);
-        set('refundPctMonthly', p.monthly);
+        if (j.maxTiers) _refundTiersMaxRows = j.maxTiers;
+        renderRefundTiersEditor(j.tiersByPeriod || {});
     } catch (e) {
-        console.error('Error cargando porcentajes de reembolso:', e);
+        console.error('Error cargando rangos de reembolso:', e);
     }
 }
 
-async function saveRefundPercents() {
-    const msg = document.getElementById('refundPctMsg');
-    const num = (id) => {
-        const el = document.getElementById(id);
-        return el ? el.value : '';
-    };
+async function saveRefundTiers() {
+    const msg = document.getElementById('refundTiersMsg');
     const body = {
-        daily: num('refundPctDaily'),
-        weekly: num('refundPctWeekly'),
-        monthly: num('refundPctMonthly')
+        daily: _collectRefundTiers('daily'),
+        weekly: _collectRefundTiers('weekly'),
+        monthly: _collectRefundTiers('monthly')
     };
+    if (!confirm('¿Guardar los rangos de reembolso? Se aplican AL INSTANTE a los reclamos nuevos y a lo que el cliente ve en su perfil.')) return;
     try {
-        const r = await authFetch('/api/admin/refund-percents', {
+        const r = await authFetch('/api/admin/refund-tiers', {
             method: 'POST',
             body: JSON.stringify(body)
         });
         const j = await r.json();
         if (!r.ok) {
             if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = j.error || 'No se pudo guardar.'; }
+            showToast(j.error || 'No se pudo guardar', 'error');
             return;
         }
-        const p = j.percents || {};
-        if (msg) { msg.style.color = '#00c853'; msg.textContent = `✅ Guardado: diario ${p.daily}% · semanal ${p.weekly}% · mensual ${p.monthly}%`; }
-        showToast('Porcentajes de reembolso actualizados', 'success');
+        renderRefundTiersEditor(j.tiersByPeriod || {});
+        const resumen = REFUND_TIER_PERIODS.map((p) => {
+            const ts = (j.tiersByPeriod && j.tiersByPeriod[p.key]) || [];
+            return `${p.label.split(' ')[1]}: ${ts.map((t) => `${t.pct}%`).join('/')}`;
+        }).join(' · ');
+        if (msg) { msg.style.color = '#00c853'; msg.textContent = `✅ Guardado — ${resumen}`; }
+        showToast('Rangos de reembolso actualizados', 'success');
+        // Los COMANDOS /sys_* con porcentajes en el texto NO se actualizan solos:
+        // el server nos manda cuáles mencionan % o reembolsos para revisarlos a mano.
+        const warns = j.commandWarnings || [];
+        if (warns.length) {
+            alert('⚠️ OJO: estos mensajes automáticos (sección COMANDOS) mencionan porcentajes o reembolsos en su TEXTO y NO se actualizan solos.\n\nSi los nuevos rangos cambian los números, editalos a mano:\n\n' + warns.join('\n'));
+        }
     } catch (e) {
         if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = 'Error de conexión.'; }
     }

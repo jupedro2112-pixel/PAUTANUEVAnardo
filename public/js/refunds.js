@@ -116,6 +116,23 @@ VIP.refunds = (function () {
         pctSpan('unifiedDailyPct', 'daily');
         pctSpan('unifiedWeeklyPct', 'weekly');
         pctSpan('unifiedMonthlyPct', 'monthly');
+
+        // "Información del servicio": el tope de reembolso ya no va hardcodeado
+        // en el HTML (los rangos se editan desde el panel) — acá se completa con
+        // el % MÁXIMO real de las escaleras que mandó el backend.
+        const ladders = s.tiersByPeriod
+            ? [s.tiersByPeriod.daily, s.tiersByPeriod.weekly, s.tiersByPeriod.monthly]
+            : [s.tiers];
+        let maxPct = 0;
+        ladders.forEach((ts) => (ts || []).forEach((t) => { if (t && t.pct > maxPct) maxPct = t.pct; }));
+        if (maxPct > 0) {
+            const setTxt = (id, txt) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = txt;
+            };
+            setTxt('infoRefundsTitle', `Reembolsos hasta ${maxPct}%`);
+            setTxt('adRefundsTitle', `Reembolsos hasta ${maxPct}%`);
+        }
     }
 
     function updateRefundButton(type, data) {
@@ -541,8 +558,10 @@ VIP.refunds = (function () {
         // Reembolsos por período (muestran SOLO el %: los nombres de
         // rango quedaron exclusivos del nivel VIP)
         // ==========================================================
-        const tiers = (s && s.tiers) || [];
-        const tiersHtml = tiers.map((t) => {
+        // Escaleras: desde 2026-08-05 cada período puede tener la SUYA (editable
+        // en el panel). Si el backend nuevo manda tiersByPeriod se usan esas; si
+        // no (backend viejo cacheado), cae a la única `tiers` de siempre.
+        const _tierRows = (tiers) => (tiers || []).map((t) => {
             const rango = t.max === null
                 ? `más de ${money(t.max === null ? t.min : t.max)}`
                 : (t.min === 0 ? `hasta ${money(t.max)}` : `${money(t.min)} a ${money(t.max)}`);
@@ -553,6 +572,23 @@ VIP.refunds = (function () {
                         <span style="font-size:14px;font-weight:900;color:${t.color};">${t.pct}%</span>
                     </div>`;
         }).join('');
+        const tbp = (s && s.tiersByPeriod) || null;
+        const _sameLadder = tbp &&
+            JSON.stringify(tbp.daily) === JSON.stringify(tbp.weekly) &&
+            JSON.stringify(tbp.daily) === JSON.stringify(tbp.monthly);
+        let tiersHtml;
+        if (!tbp || _sameLadder) {
+            // Una sola tabla (las 3 escaleras son iguales o backend viejo).
+            tiersHtml = _tierRows((tbp && tbp.daily) || (s && s.tiers) || []);
+        } else {
+            // Escaleras distintas: una mini-tabla por período.
+            const bloque = (label, tiers) =>
+                `<div style="font-size:11px;font-weight:800;color:#d4af37;margin:4px 0 2px;">${label}</div>` +
+                _tierRows(tiers);
+            tiersHtml = bloque('📅 Diario', tbp.daily) +
+                bloque('🗓️ Semanal', tbp.weekly) +
+                bloque('📆 Mensual', tbp.monthly);
+        }
 
         // Estado por período: % actual + cuánto falta para el % siguiente.
         const periodo = (label, d) => {

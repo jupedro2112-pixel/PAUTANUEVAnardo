@@ -662,33 +662,31 @@ document.addEventListener('change', function (ev) {
                             </button>
                             <div id="welcomeCodeMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
                         </div>
-                        <!-- Porcentajes de reembolso (solo admin general) -->
-                        <div class="panel-subheader" style="margin-top: 24px;" id="refundPercentsHeader">
-                            <h3>🎁 Porcentajes de reembolso</h3>
+                        <!-- Rangos de reembolso (solo admin general).
+                             🪦 Acá estaba la card "Porcentajes de reembolso" (refundPercents,
+                             % fijo por período): sin uso desde #99 y REEMPLAZADA el 2026-08-05
+                             por este editor de rangos por pérdida, con escalera PROPIA por período. -->
+                        <div class="panel-subheader" style="margin-top: 24px;" id="refundTiersHeader">
+                            <h3>🏅 Rangos de reembolso (% según pérdida)</h3>
                         </div>
-                        <div class="cbu-form" id="refundPercentsForm">
+                        <div class="cbu-form" id="refundTiersForm">
                             <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
-                                Porcentaje que se le devuelve al cliente sobre su <b>pérdida neta</b> (cargas − retiros) de cada período.
-                                Solo el admin general puede modificarlos. Se aplican al instante a los reembolsos nuevos.
+                                Cuanto más pierde el cliente en el período, mayor el % que se le devuelve. Cada fila es un rango:
+                                <b>"Pérdida hasta $X → tanto %"</b>; el último rango va sin techo (= "más de $X"). Cada período
+                                (diario / semanal / mensual) tiene su <b>propia escalera</b> — pueden ser distintas entre sí.
+                                Los cambios se aplican <b>al instante</b> a los reembolsos nuevos y a lo que el cliente ve en su
+                                perfil. Solo el admin general puede modificarlos.
                             </p>
-                            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
-                                <div class="form-group" style="flex:1;min-width:120px;">
-                                    <label>📅 Diario %</label>
-                                    <input type="number" id="refundPctDaily" min="0" max="100" step="0.1" style="width:100%;">
-                                </div>
-                                <div class="form-group" style="flex:1;min-width:120px;">
-                                    <label>📆 Semanal %</label>
-                                    <input type="number" id="refundPctWeekly" min="0" max="100" step="0.1" style="width:100%;">
-                                </div>
-                                <div class="form-group" style="flex:1;min-width:120px;">
-                                    <label>🗓️ Mensual %</label>
-                                    <input type="number" id="refundPctMonthly" min="0" max="100" step="0.1" style="width:100%;">
-                                </div>
+                            <div id="refundTiersEditors"><!-- lo arma renderRefundTiersEditor() --></div>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+                                <button class="btn-primary" onclick="saveRefundTiers()">
+                                    <span class="icon icon-save"></span> Guardar rangos
+                                </button>
+                                <button class="btn-secondary" onclick="copyDailyTiersToOthers()" title="Deja las 3 escaleras iguales a la del Diario">
+                                    📋 Copiar Diario → Semanal y Mensual
+                                </button>
                             </div>
-                            <button class="btn-primary" onclick="saveRefundPercents()">
-                                <span class="icon icon-save"></span> Guardar porcentajes
-                            </button>
-                            <div id="refundPctMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
+                            <div id="refundTiersMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
                         </div>
                         <!-- Niveles VIP: encendido/apagado (solo admin general) -->
                         <div class="panel-subheader" style="margin-top: 24px;" id="vipLevelsHeader">

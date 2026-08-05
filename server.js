@@ -6348,6 +6348,32 @@ async function getRefundPercents() {
   }
 }
 
+// ============================================================
+// RANGOS de reembolso (% según pérdida del período) — EDITABLES desde el panel
+// (solo admin general) vía Config['refundTiersByPeriod'], con escalera PROPIA
+// por período (diario ≠ semanal ≠ mensual, pedido del owner 2026-08-05).
+// Sin cache A PROPÓSITO: con multi-instancia en EB, un cache haría que un cambio
+// tarde en llegar a las otras instancias (misma razón que getConfig, ver #91).
+// Una escalera inválida/ausente cae a refundTiers.DEFAULT_TIERS (jamás rompe
+// un reclamo por config corrupta).
+// ============================================================
+const REFUND_TIERS_CONFIG_KEY = 'refundTiersByPeriod';
+async function getRefundTiersByPeriod() {
+  let cfg = null;
+  try {
+    cfg = await getConfig(REFUND_TIERS_CONFIG_KEY, null);
+  } catch (_) { /* fallback a defaults */ }
+  const out = {};
+  for (const period of ['daily', 'weekly', 'monthly']) {
+    try {
+      out[period] = refundTiers.normalizeTiers(cfg && cfg[period]);
+    } catch (_) {
+      out[period] = refundTiers.DEFAULT_TIERS;
+    }
+  }
+  return out;
+}
+
 /**
  * Llave de idempotencia del reembolso para 1girox.
  *
@@ -6418,13 +6444,14 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
 
     logger.info(`[REFUND] status — ${username} NETWIN(casino) daily:${dN.casinoNetwin}→${dailyNetLoss} weekly:${wN.casinoNetwin}→${weeklyNetLoss} monthly:${mN.casinoNetwin}→${monthlyNetLoss}`);
 
-    // RANGOS (Bronce/Plata/Oro): el porcentaje sale de cuánto perdió EN ESE PERÍODO,
-    // no de una config fija ni de un acumulado histórico. Ver src/utils/refundTiers.js.
-    // Por eso el rango se calcula por separado para cada reembolso: un mismo jugador
-    // puede ser Oro en el mensual y Bronce en el diario.
-    const dailyCalc = refundTiers.calcRefund(dailyNetLoss);
-    const weeklyCalc = refundTiers.calcRefund(weeklyNetLoss);
-    const monthlyCalc = refundTiers.calcRefund(monthlyNetLoss);
+    // RANGOS: el porcentaje sale de cuánto perdió EN ESE PERÍODO, no de una config
+    // fija ni de un acumulado histórico. Ver src/utils/refundTiers.js. Cada período
+    // tiene su PROPIA escalera (editable desde el panel): un mismo jugador puede
+    // estar en el tope del mensual y en el rango más bajo del diario.
+    const tiersByPeriod = await getRefundTiersByPeriod();
+    const dailyCalc = refundTiers.calcRefund(dailyNetLoss, tiersByPeriod.daily);
+    const weeklyCalc = refundTiers.calcRefund(weeklyNetLoss, tiersByPeriod.weekly);
+    const monthlyCalc = refundTiers.calcRefund(monthlyNetLoss, tiersByPeriod.monthly);
 
     // `tier` se manda entero (nombre, emoji, color, cuánto falta para subir y cuál es
     // el siguiente) para que el front lo muestre sin tener que duplicar la tabla.
@@ -6444,8 +6471,15 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
         currentBalance,
         jugayganaLinked: !!userInfo
       },
-      // Tabla de rangos, para la pantalla de perfil (así el front no la hardcodea).
-      tiers: refundTiers.listTiers(),
+      // Tablas de rangos, para la pantalla de perfil (así el front no las hardcodea).
+      // `tiers` (la del diario) queda por compat con PWAs cacheadas viejas que
+      // mostraban UNA sola escalera; el front nuevo usa `tiersByPeriod`.
+      tiers: refundTiers.listTiers(tiersByPeriod.daily),
+      tiersByPeriod: {
+        daily: refundTiers.listTiers(tiersByPeriod.daily),
+        weekly: refundTiers.listTiers(tiersByPeriod.weekly),
+        monthly: refundTiers.listTiers(tiersByPeriod.monthly)
+      },
       daily: {
         ...dailyStatus,
         potentialAmount: dailyCalc.amount,
@@ -6541,10 +6575,9 @@ app.post('/api/refunds/claim/daily', authMiddleware, async (req, res) => {
         });
       }
 
-      // Calcular monto del reembolso (% diario configurable, default 8%)
-      // El % sale del RANGO que le corresponde a la pérdida de ESTE período
-      // (Bronce 3% / Plata 6% / Oro 10%). Ver src/utils/refundTiers.js.
-      const _calc = refundTiers.calcRefund(netLoss);
+      // El % sale del RANGO que le corresponde a la pérdida de ESTE período,
+      // con la escalera del DIARIO (editable desde el panel). Ver refundTiers.js.
+      const _calc = refundTiers.calcRefund(netLoss, (await getRefundTiersByPeriod()).daily);
       const dailyPct = _calc.pct;
       const refundAmount = _calc.amount;
 
@@ -6690,8 +6723,8 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
         });
       }
 
-      // Calcular monto del reembolso (% semanal configurable, default 3%)
-      const _calc = refundTiers.calcRefund(netLoss);
+      // El % sale del rango de la pérdida con la escalera del SEMANAL (editable en el panel).
+      const _calc = refundTiers.calcRefund(netLoss, (await getRefundTiersByPeriod()).weekly);
       const weeklyPct = _calc.pct;
       const refundAmount = _calc.amount;
 
@@ -6833,8 +6866,8 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
         });
       }
 
-      // Calcular monto del reembolso (% mensual configurable, default 3%)
-      const _calc = refundTiers.calcRefund(netLoss);
+      // El % sale del rango de la pérdida con la escalera del MENSUAL (editable en el panel).
+      const _calc = refundTiers.calcRefund(netLoss, (await getRefundTiersByPeriod()).monthly);
       const monthlyPct = _calc.pct;
       const refundAmount = _calc.amount;
 
@@ -7155,8 +7188,8 @@ app.get('/api/admin/refund-percents', authMiddleware, adminMiddleware, async (re
       percents,
       defaults: REFUND_PCT_DEFAULTS,
       enUso: false,
-      aviso: 'Estos porcentajes ya NO se aplican. Los reembolsos usan rangos por pérdida: ' +
-             refundTiers.listTiers().map((t) => `${t.emoji} ${t.name} ${t.pct}%`).join(' · '),
+      aviso: 'Estos porcentajes ya NO se aplican. Los reembolsos usan RANGOS por pérdida, ' +
+             'editables desde la card "Rangos de reembolso" (endpoint /api/admin/refund-tiers).',
       tiers: refundTiers.listTiers()
     });
   } catch (error) {
@@ -7192,6 +7225,98 @@ app.post('/api/admin/refund-percents', authMiddleware, adminMiddleware, async (r
     res.json({ success: true, percents: next });
   } catch (error) {
     console.error('Error guardando porcentajes de reembolso:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================================
+// RANGOS DE REEMBOLSO editables (solo admin general) — la escalera de % según
+// pérdida, UNA POR PERÍODO (diario/semanal/mensual pueden ser distintas).
+// Reemplaza en el panel a la card vieja de "porcentajes fijos" (que quedó sin
+// uso desde #99). La PWA se actualiza sola (recibe las escaleras en el status);
+// lo que NO se actualiza solo son los COMANDOS /sys_* que mencionen porcentajes
+// en su texto → el POST devuelve `commandWarnings` para avisarle al admin.
+// ============================================================
+
+// Busca comandos /sys_* activos cuyo texto mencione porcentajes o reembolsos:
+// esos son los que el admin tiene que revisar A MANO tras cambiar los rangos.
+async function _scanRefundTextCommands() {
+  try {
+    const cmds = await Command.find({ name: /^\/sys_/, isActive: { $ne: false } })
+      .select('name response').lean();
+    return (cmds || [])
+      .filter((c) => {
+        const t = String(c.response || '');
+        return /\d\s*%/.test(t) || /reembolso/i.test(t);
+      })
+      .map((c) => c.name);
+  } catch (_) {
+    return [];
+  }
+}
+
+app.get('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el admin general puede ver los rangos de reembolso.' });
+    }
+    const tbp = await getRefundTiersByPeriod();
+    res.json({
+      tiersByPeriod: {
+        daily: refundTiers.listTiers(tbp.daily),
+        weekly: refundTiers.listTiers(tbp.weekly),
+        monthly: refundTiers.listTiers(tbp.monthly)
+      },
+      defaults: refundTiers.listTiers(refundTiers.DEFAULT_TIERS),
+      maxTiers: refundTiers.MAX_TIERS
+    });
+  } catch (error) {
+    console.error('Error obteniendo rangos de reembolso:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.post('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el admin general puede modificar los rangos de reembolso.' });
+    }
+    const b = req.body || {};
+    // Cada período se valida por separado; un error corta TODO el guardado (o se
+    // guardan las 3 escaleras válidas, o ninguna — nada de estados a medias).
+    const normalized = {};
+    for (const period of ['daily', 'weekly', 'monthly']) {
+      const label = { daily: 'Diario', weekly: 'Semanal', monthly: 'Mensual' }[period];
+      try {
+        normalized[period] = refundTiers.normalizeTiers(b[period]);
+      } catch (e) {
+        return res.status(400).json({ error: `${label}: ${e.message}` });
+      }
+    }
+    // Se guarda solo lo editable (name/pct/max); emoji/color/min se derivan al leer.
+    const toSave = {};
+    for (const period of ['daily', 'weekly', 'monthly']) {
+      toSave[period] = normalized[period].map((t) => ({ name: t.name, pct: t.pct, max: t.max }));
+    }
+    // Config.set (no setConfig) para dejar registrado QUIÉN lo cambió (updatedBy).
+    await Config.set(REFUND_TIERS_CONFIG_KEY, toSave, req.user.username);
+    logger.info(`[refund-tiers] actualizado por ${req.user.username}: ` +
+      ['daily', 'weekly', 'monthly'].map((p) =>
+        `${p}=[${normalized[p].map((t) => `${t.name} ${t.pct}%≤${t.max === null ? '∞' : t.max}`).join(', ')}]`).join(' · '));
+    // Aviso de mantenimiento manual: comandos /sys_* que mencionan % o reembolsos
+    // NO se tocan solos — el panel se los muestra al admin para que los revise.
+    const commandWarnings = await _scanRefundTextCommands();
+    res.json({
+      success: true,
+      tiersByPeriod: {
+        daily: refundTiers.listTiers(normalized.daily),
+        weekly: refundTiers.listTiers(normalized.weekly),
+        monthly: refundTiers.listTiers(normalized.monthly)
+      },
+      commandWarnings
+    });
+  } catch (error) {
+    console.error('Error guardando rangos de reembolso:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
