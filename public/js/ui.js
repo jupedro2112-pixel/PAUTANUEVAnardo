@@ -257,7 +257,9 @@ VIP.ui = (function () {
     function casinoInviteJoinCommunity() {
         try { localStorage.setItem('communitySurveyDone', '1'); } catch (e) {}
         const pill = document.getElementById('canalTelegramHeaderBtn');
-        const url = (pill && pill.href) || 'https://cargas1girox.com/canal-proximamente';
+        // Fallback /go/comunidad: el server redirige al link vigente de la config
+        // (owner 2026-08-06 — nunca más el 404 de canal-proximamente).
+        const url = (pill && pill.href) || '/go/comunidad';
         window.open(url, '_blank', 'noopener');
         const s = document.getElementById('casinoInviteSurvey');
         if (s) s.style.display = 'none';

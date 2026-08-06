@@ -4,7 +4,43 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-05**
+> **Última actualización: 2026-08-06**
+
+## Sesión 2026-08-06
+
+### 150. CHAU canal-proximamente PARA SIEMPRE: redirects del server /go/comunidad y /go/soporte
+- **Reclamo del owner (con video):** el pill "Unite a la Comunidad" y el botón
+  "SÍ, quiero entrar" de la encuesta post-carga seguían cayendo en el 404 de
+  /canal-proximamente a pesar de #134/#136/#147. En el video se ve el pill con
+  el fallback y el menú ☰ con el link real AL MISMO TIEMPO.
+- **Causa raíz (por qué los parches anteriores no alcanzaban):** los botones
+  arrancan con el fallback HARDCODEADO en el HTML y el link real llega recién
+  cuando el CLIENTE logra el fetch de la config (lento/fallando por Tor). El
+  cache en localStorage (#147) no ayuda al owner ni a testers porque **Tor
+  Browser borra localStorage en cada sesión** → cada sesión nueva reabre la
+  ventana de carrera, y la encuesta (ui.js) copia el href del pill en ese
+  estado. Era irresoluble del lado del cliente.
+- **Fix definitivo (resolución en el SERVER):** endpoints públicos nuevos
+  **`GET /go/comunidad`** y **`GET /go/soporte`** — leen la config VIGENTE
+  (`communityConfig.channelUrl`/`supportUrl`, con los mismos fallbacks de
+  lectura legacy que /api/config/community; soporte hereda de soporteVipTelegram
+  si falta) y responden 302 al link real EN EL MOMENTO DEL CLICK. Sin URL
+  configurada o DB caída → redirect a `/` (nunca más una página 404).
+- **Front:** los 3 hrefs estáticos pasan a los redirects (`/go/comunidad` en el
+  pill del header y el ítem del menú; `/go/soporte` en Soporte 24/7);
+  `CANAL_FALLBACK_URL` (chat.js) y el fallback de la encuesta (ui.js) ídem.
+  El pisado dinámico con el link directo cuando la config carga SE MANTIENE
+  (ahorra el hop del redirect) — pero ya no es crítico: el peor caso ahora es
+  un 302 al link correcto.
+- **Rutas verificadas sin colisión:** `/:code` (vanity de campañas) matchea un
+  solo segmento; express.static no tiene carpeta /go; el catch-all `app.get('*')`
+  está registrado después. Sin auth ni rate-limit (fuera de /api/) — es un
+  redirect barato (1 lectura de Config, sin cache a propósito: multi-instancia).
+- **Validado:** `node --check` OK (server.js, chat.js, ui.js, SW). SW a **v94**.
+  **Back necesita redeploy** (rutas nuevas). PROBAR: sesión NUEVA de Tor →
+  click INMEDIATO en el pill (antes de que cargue nada) → debe abrir el
+  Telegram real; ídem "SÍ, quiero entrar" de la encuesta; Soporte 24/7 del
+  menú; con la config vacía → va al inicio, no a un 404.
 
 ## Sesión 2026-08-05
 

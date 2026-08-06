@@ -658,11 +658,12 @@ VIP.chat = (function () {
     // Canal de Telegram = el canal de la COMUNIDAD (owner 2026-08-03: es UNO solo,
     // config única en el panel → Comunidad (Telegram) → "Canal Oficial"). Alimenta
     // los DOS botones: el pill celeste del header y la opción del menú hamburguesa.
-    // El botón aparece SIEMPRE: si todavía no hay URL configurada, lleva a una
-    // página inexistente del propio dominio (404) — se eligió el dominio propio y
-    // no un t.me inventado para que nadie pueda registrar ese canal y quedarse con
-    // los clicks.
-    const CANAL_FALLBACK_URL = 'https://cargas1girox.com/canal-proximamente';
+    // FALLBACK = /go/comunidad (owner 2026-08-06): redirect del SERVER al link
+    // vigente de la config — reemplaza al 404 de canal-proximamente, que se
+    // llevaba los clicks tempranos cuando este fetch tardaba (Tor) o el
+    // localStorage no sobrevivía (Tor Browser lo borra por sesión). Aplicar acá
+    // el link directo sigue valiendo: ahorra el hop del redirect.
+    const CANAL_FALLBACK_URL = '/go/comunidad';
 
     function _applyCanalUrl(url) {
         const href = url || CANAL_FALLBACK_URL;

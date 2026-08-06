@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v93'; // v93: código de bienvenida — app obligatoria, % en próxima carga, cash como BONO
+const CACHE_VERSION = 'v94'; // v94: chau canal-proximamente — botones a /go/comunidad y /go/soporte (redirect del server)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

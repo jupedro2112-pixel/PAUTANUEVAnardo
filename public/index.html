@@ -482,10 +482,12 @@
             </button>
             <!-- Canal de Telegram: pill celeste estilo Telegram (captura del owner,
                  2026-08-03). La URL se configura desde el panel admin (Config →
-                 Canal de Telegram). El botón aparece SIEMPRE: sin URL configurada
-                 lleva al fallback 404 del dominio propio (ver chat.js
-                 CANAL_FALLBACK_URL, que también setea la URL real al loguear). -->
-            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="https://cargas1girox.com/canal-proximamente" target="_blank" rel="noopener noreferrer" title="Unite a la Comunidad de Telegram">
+                 Canal de Telegram). El href estático es /go/comunidad: el SERVER
+                 redirige al link vigente de la config en el momento del click
+                 (owner 2026-08-06: chau canal-proximamente para siempre — un click
+                 temprano por Tor caía en ese 404). chat.js lo pisa con el link
+                 directo cuando la config carga (ahorra el redirect). -->
+            <a class="tb-telegram" id="canalTelegramHeaderBtn" href="/go/comunidad" target="_blank" rel="noopener noreferrer" title="Unite a la Comunidad de Telegram">
                 <span class="tb-telegram-icon">📣</span>
                 <span class="tb-telegram-text">Unite a la Comunidad de Telegram</span>
             </a>
@@ -521,10 +523,11 @@
                  sale de la config de Comunidad (supportUrl) — chat.js la setea al
                  loguear; si no está configurada queda este href por defecto, así el
                  botón SIEMPRE aparece y siempre lleva a algún lado. -->
-            <!-- Default = 404 del dominio PROPIO (mismo criterio que el canal, #106):
-                 el href viejo era un wa.link de METAWIN que no correspondía. chat.js
-                 lo pisa con Comunidad → supportUrl apenas carga la config. -->
-            <a class="menu-item support-btn" id="menuSupportBtn" href="https://cargas1girox.com/soporte-proximamente" target="_blank" rel="noopener" title="Soporte por Telegram" role="menuitem">
+            <!-- Href estático = /go/soporte: el server redirige al supportUrl
+                 vigente (owner 2026-08-06, mismo criterio que /go/comunidad — el
+                 404 de soporte-proximamente no existe más). chat.js lo pisa con el
+                 link directo apenas carga la config. -->
+            <a class="menu-item support-btn" id="menuSupportBtn" href="/go/soporte" target="_blank" rel="noopener" title="Soporte por Telegram" role="menuitem">
                 <span class="menu-item-icon menu-item-svg">
                     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                         <circle cx="12" cy="12" r="12" fill="#29a9eb"/>
@@ -538,7 +541,7 @@
             <button class="menu-item app-install-btn" id="appInstallBtn" title="Instalar App" role="menuitem">
                 <span class="menu-item-icon">📱</span><span class="menu-item-label">Instalar App</span>
             </button>
-            <a id="canalInformativoBtn" href="https://cargas1girox.com/canal-proximamente" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite a la Comunidad de Telegram" role="menuitem">
+            <a id="canalInformativoBtn" href="/go/comunidad" target="_blank" rel="noopener noreferrer" class="menu-item telegram-menu-item" title="Unite a la Comunidad de Telegram" role="menuitem">
                 <span class="menu-item-icon">📣</span><span class="menu-item-label" style="color:#53bdeb;">Unite a la Comunidad de Telegram</span>
             </a>
             <!-- Código de bienvenida de la Comunidad: canje del bono sorpresa. -->

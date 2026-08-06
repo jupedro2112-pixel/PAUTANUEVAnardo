@@ -17290,6 +17290,41 @@ app.get('/api/config/community', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================================
+// REDIRECTS PÚBLICOS /go/* (owner 2026-08-06: "sacá canal-proximamente
+// PARA SIEMPRE"). Historia: los botones de Comunidad/Soporte arrancaban con
+// un fallback 404 hardcodeado en el HTML y el link real llegaba recién con
+// un fetch del cliente — en Tor/red lenta (y con Tor Browser, que borra el
+// localStorage en cada sesión, el cache #147 nunca ayudaba) cualquier click
+// temprano caía en /canal-proximamente aunque la config estuviera perfecta.
+// Ahora los botones apuntan ESTÁTICAMENTE acá y el server redirige al link
+// VIGENTE de la config (la card Comunidad del panel) en el momento del click:
+// no hay carrera posible. Sin URL configurada (o DB caída) → redirige al
+// inicio del propio dominio, nunca más a una página inexistente.
+app.get('/go/comunidad', async (req, res) => {
+  let url = '';
+  try {
+    const c = (await getConfig('communityConfig')) || {};
+    url = c.channelUrl || c.url || (await getConfig('canalInformativoUrl', '')) || '';
+  } catch (_) { /* DB caída: cae al inicio */ }
+  res.redirect(302, /^https?:\/\//i.test(url) ? url : '/');
+});
+
+app.get('/go/soporte', async (req, res) => {
+  let url = '';
+  try {
+    const c = (await getConfig('communityConfig')) || {};
+    url = c.supportUrl || '';
+    if (!url) {
+      // Misma herencia que /api/config/soporte-vip pero al revés: si Comunidad
+      // no tiene soporte cargado, usa el de la card "Soporte VIP" del login.
+      const s = (await getConfig('soporteVipTelegram')) || {};
+      url = (s.telegram && s.telegram.url) || s.url || '';
+    }
+  } catch (_) { /* DB caída: cae al inicio */ }
+  res.redirect(302, /^https?:\/\//i.test(url) ? url : '/');
+});
+
 app.post('/api/admin/community', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     function _normUrl(v) {
