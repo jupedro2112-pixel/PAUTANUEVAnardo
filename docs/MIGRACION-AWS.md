@@ -38,15 +38,24 @@ Al subir los parámetros a SSM en la cuenta nueva, todo se copia igual SALVO:
 - **`PUBLIC_BASE_URL`** → el dominio PROPIO del clon (dos backends no pueden
   compartir cargas1girox.com; el clon necesita su dominio/Cloudflare propio).
 
-A CONFIRMAR con el owner antes de cargar (pueden ser iguales o propios del clon):
+DECIDIDO por el owner (2026-08-06) — el clon es 100% INDEPENDIENTE:
 
-- **hgcash** (`HGCASH_API_TOKEN` / `HGCASH_WEBHOOK_SECRET`): hgcash permite
-  UNA sola URL de webhook por cuenta (gotcha conocido, ver WORKLOG #94 — por
-  eso existe el fan-out a autoreembolsos). Si el clon usa la MISMA cuenta
-  hgcash, hay que encadenar el fan-out; si tiene cuenta propia, va directo.
-- **1girox** (`GIROX_API_URL` / API keys): ¿misma marca/agente o marca nueva
-  con key propia?
-- `ADMIN_HOST` (host del panel) y `HGCASH_FANOUT_URL`, si aplican al clon.
+- **Dominio:** propio y nuevo (con su propio Cloudflare). → `PUBLIC_BASE_URL`
+  y `ADMIN_HOST` nuevos.
+- **hgcash:** cuenta PROPIA → `HGCASH_API_TOKEN` y `HGCASH_WEBHOOK_SECRET`
+  nuevos (los genera el owner en el dashboard de SU cuenta hgcash nueva), y el
+  webhook de esa cuenta apunta al dominio del clon. SIN fan-out (cada cuenta
+  tiene su webhook directo). `HGCASH_FANOUT_URL` del clon: off/no cargar.
+- **1girox:** OTRA cuenta de agente → **API key nueva** (`GIROX_API_KEY` o el
+  nombre que use el SSM viejo; misma `GIROX_API_URL` porque la plataforma es
+  la misma). Jugadores y saldos separados por completo.
+- **JWT_SECRET:** generar uno NUEVO para el clon (la base arranca vacía, no
+  hay sesiones que preservar; no reusar el del viejo).
+- **Firebase/FCM:** se comparte el proyecto (la config está en el código) —
+  solo agregar el dominio nuevo a los "authorized domains" de Firebase cuando
+  exista. Si más adelante el owner quiere proyecto aparte, es otro laburo.
+- Otros tokens de negocio (Meta CAPI/ads, etc., si están en SSM): revisar
+  parámetro por parámetro al subir el SSM — el asistente pregunta en ese paso.
 
 ## Qué es común y no requiere nada (si se confirma que se comparte)
 
