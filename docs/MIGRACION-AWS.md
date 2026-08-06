@@ -12,8 +12,15 @@
 > son DOS entornos independientes corriendo a la vez; la única diferencia de
 > fondo del clon es que usa **OTRA base de datos MongoDB**.
 >
-> **Estado: FASE 1 en curso** (extracción de info de la cuenta vieja —
-> solo lectura). Actualizar esta línea a medida que se avanza.
+> **Estado (2026-08-06):** FASE 2 paso 1 HECHO — caso de soporte creado en la
+> cuenta NUEVA (Maiteabigailsosaaws, 220282357357): salida del sandbox SMS en
+> sa-east-1 + límite de gasto a 100 USD (con aclaración enviada de que NO se
+> piden short codes dedicados — el form había tomado ese resource type por
+> error). Esperando respuesta de AWS (24-48h; llega al mail + "Sus casos de
+> soporte"). ⚠️ Al aprobar: setear el límite en SNS → Text messaging
+> preferences → Account spend limit = 100 (la aprobación sube el techo, el
+> valor lo pone el owner). FASE 1 (extracción de la cuenta vieja) PENDIENTE.
+> Actualizar esta línea a medida que se avanza.
 
 ---
 
