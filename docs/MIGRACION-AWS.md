@@ -22,14 +22,20 @@
 
 ## Lo que falta y NO sale de AWS (lo gestiona el owner)
 
-- [ ] **Dominio nuevo** registrado + su cuenta de Cloudflare.
-- [ ] **Base MongoDB nueva** (cluster Atlas propio) → URI nueva. Network
-      Access: permitir 0.0.0.0/0 o las IPs del clon ANTES del primer arranque.
-- [ ] **Cuenta 1girox nueva** → API key nueva (misma GIROX_API_URL).
-      Confirmar con 1girox la URL de juego de la marca nueva (GIROX_PLAY_URL).
-- [ ] **Cuenta hgcash nueva** → token `cash_...` + webhook secret (se generan
-      en su dashboard; el webhook apunta al dominio nuevo).
+- [x] **Dominio nuevo** registrado + en Cloudflare (2026-08-06).
+- [x] **Base MongoDB nueva** (Atlas) — el owner tiene la URI. Recordar
+      Network Access (0.0.0.0/0 o IPs del clon) ANTES del primer arranque.
+- [x] **Cuenta 1girox nueva** — el owner tiene la API key. Falta confirmar la
+      URL de juego de la marca nueva (GIROX_PLAY_URL).
+- [x] **Cuenta hgcash nueva** — el owner tiene el token. El webhook secret se
+      genera en su dashboard al configurar la URL del webhook (paso 12).
 - [ ] Aprobación del caso SNS (en curso).
+
+**Decisiones del owner (2026-08-06):** sin pixel de Meta por ahora
+(`META_PIXEL_ID`/`META_CAPI_ACCESS_TOKEN` se OMITEN); fbAds no se usa más
+(`FBADS_WEBHOOK_TOKEN`/`FBADS_WEBHOOK_URL` se OMITEN); admin inicial del clon:
+usuario `ignite1000` con contraseña definida por el owner (NO se escribe acá —
+va directo al SSM). → El SSM del clon queda en **21 parámetros**.
 
 ## Inventario del entorno viejo (lo que hay que REPLICAR)
 
