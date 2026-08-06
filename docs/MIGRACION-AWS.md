@@ -107,7 +107,13 @@ Capturas de pantalla a tomar:
 - [ ] EB → Configuration → Capacity (min/max, load balanced).
 - [ ] EB → Configuration → Load balancer (listeners — ¿443 con certificado
       ACM? — y stickiness).
-- [ ] ElastiCache → Redis (node type + engine version).
+- [x] ElastiCache (sa-east-1, capturado 2026-08-06): hay 2 — `paginacopia-redis`
+      (serverless 7.1) y `paginacopia-redis-node` (**cache.t4g.micro**, Redis
+      OSS 7.1.0). Para el clon: crear UNO tipo nodo `cache.t4g.micro` Redis
+      OSS 7.1 (la REDIS_URL con base lógica /1 implica el de nodo, no el
+      serverless — serverless exige TLS y no soporta bases lógicas).
+- [x] S3 (capturado 2026-08-06): solo los 2 buckets automáticos de EB
+      (sa-east-1 y us-east-1) — NO hay bucket propio que recrear en el clon.
 - [ ] SNS → Text messaging (SMS) → preferencias (límite de gasto, tipo).
 - [ ] S3 → lista de buckets (identificar el de uploads del chat).
 - [ ] IAM → Roles → aws-elasticbeanstalk-ec2-role → Permissions (policies).
