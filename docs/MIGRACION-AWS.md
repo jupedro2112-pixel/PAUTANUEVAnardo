@@ -1,38 +1,65 @@
-# MIGRACIÓN A CUENTA AWS NUEVA — Runbook (iniciado 2026-08-06)
+# CLONACIÓN a una 2ª cuenta AWS — Runbook TEMPORAL (iniciado 2026-08-06)
 
-> Objetivo: clonar el entorno completo del backend (Elastic Beanstalk + SSM +
-> ElastiCache + SNS + S3 + IAM) de la cuenta AWS vieja a una cuenta AWS nueva
-> desde cero, y que funcione idéntico. El owner ejecuta los pasos guiado por el
-> asistente; este doc existe para que CUALQUIER sesión futura (Tails borra todo)
-> sepa el plan completo y en qué paso quedó.
+> ⚠️ **ARCHIVO TEMPORAL.** Existe solo para que el trabajo de clonación
+> sobreviva a los reinicios de Tails (todo lo local se borra). **Cuando la
+> clonación esté terminada y verificada, BORRAR este archivo del repo** —
+> no es documentación del sistema y no debe mezclarse con el resto.
 >
-> **Estado: FASE 1 en curso** (extracción de datos de la cuenta vieja).
-> Actualizar esta línea a medida que se avanza.
+> ⚠️ **NO ES UNA MIGRACIÓN. Es un CLON en PARALELO** (aclaración del owner
+> 2026-08-06): el Amazon viejo **sigue funcionando igual, para siempre** — no
+> se pausa, no se apaga, no se reemplaza NADA, no se toca su DNS ni su config.
+> De la cuenta vieja solo se LEE información (export/capturas). El resultado
+> son DOS entornos independientes corriendo a la vez; la única diferencia de
+> fondo del clon es que usa **OTRA base de datos MongoDB**.
+>
+> **Estado: FASE 1 en curso** (extracción de info de la cuenta vieja —
+> solo lectura). Actualizar esta línea a medida que se avanza.
 
 ---
 
 ## Reglas de oro
 
-1. **La cuenta vieja NO se apaga** hasta que la nueva esté probada y el DNS
-   cambiado (cutover). Conviven durante la migración.
+1. **La cuenta vieja no se toca.** Solo se exporta info (comandos de lectura
+   y capturas). Nada de editar, pausar ni borrar.
 2. **`ssm-export.json` = todos los secretos.** Vive SOLO en USB/persistencia
    del owner. JAMÁS en el repo (es público) ni pegado en chats.
 3. **El pedido de salida del SMS sandbox de SNS se hace PRIMERO** en la cuenta
    nueva (tarda 1-2 días hábiles; es el único bloqueante lento).
 4. Misma región que la cuenta vieja (anotarla en Fase 1).
 
-## Qué NO se migra (externo a AWS, sigue igual)
+## Valores que en el CLON son DISTINTOS (no copiar a ciegas)
 
-- MongoDB Atlas (misma URI; verificar que Network Access permita las IPs
-  nuevas — si está en 0.0.0.0/0, no hay que tocar nada).
-- Firebase/FCM, API key de 1girox, hgcash (mismas keys, viven en SSM).
-- Cloudflare/dominio cargas1girox.com: solo se cambia el CNAME al ALB nuevo en
-  el cutover. La regla WAF "Skip" de /api/hgcash/webhook queda como está.
-- El código: se deploya el zip generado desde este repo.
+Al subir los parámetros a SSM en la cuenta nueva, todo se copia igual SALVO:
+
+- **`MONGODB_URI`** → la base NUEVA del clon (decisión del owner: los dos
+  entornos usan bases distintas).
+- **`REDIS_URL`** → el ElastiCache propio del clon (el viejo apunta al Redis
+  de la cuenta vieja; jamás compartir: los adapters de Socket.IO se cruzarían).
+- **`PUBLIC_BASE_URL`** → el dominio PROPIO del clon (dos backends no pueden
+  compartir cargas1girox.com; el clon necesita su dominio/Cloudflare propio).
+
+A CONFIRMAR con el owner antes de cargar (pueden ser iguales o propios del clon):
+
+- **hgcash** (`HGCASH_API_TOKEN` / `HGCASH_WEBHOOK_SECRET`): hgcash permite
+  UNA sola URL de webhook por cuenta (gotcha conocido, ver WORKLOG #94 — por
+  eso existe el fan-out a autoreembolsos). Si el clon usa la MISMA cuenta
+  hgcash, hay que encadenar el fan-out; si tiene cuenta propia, va directo.
+- **1girox** (`GIROX_API_URL` / API keys): ¿misma marca/agente o marca nueva
+  con key propia?
+- `ADMIN_HOST` (host del panel) y `HGCASH_FANOUT_URL`, si aplican al clon.
+
+## Qué es común y no requiere nada (si se confirma que se comparte)
+
+- Firebase/FCM, `ANTHROPIC_API_KEY`, AWS SNS (cada cuenta AWS tiene su SNS —
+  el clon usa el de su propia cuenta, por eso el trámite del sandbox).
+- El código: se deploya el MISMO zip generado desde este repo en ambos.
+- MongoDB Atlas como servicio: el clon usa OTRA base/cluster — verificar que
+  el Network Access de ESA base permita las IPs del entorno nuevo (0.0.0.0/0
+  o las IPs concretas) ANTES del primer arranque.
 
 ---
 
-## FASE 1 — Extraer de la cuenta VIEJA (CloudShell + capturas)
+## FASE 1 — Extraer info de la cuenta VIEJA (solo lectura)
 
 En CloudShell de la cuenta vieja:
 
@@ -70,24 +97,22 @@ Capturas de pantalla a tomar:
 
 ---
 
-## FASE 2 — Construir la cuenta NUEVA (orden exacto)
+## FASE 2 — Construir el CLON en la cuenta NUEVA (orden exacto)
 
 1. **SNS sandbox:** SNS → Text messaging (SMS) → pedir salida del sandbox
    (caso de uso: OTP transaccional para app de clientes en Argentina). Setear
    límite de gasto mensual igual al viejo. *Esperar aprobación en paralelo al
    resto — mientras tanto, verificar a mano el número del owner para probar.*
 2. **Elegir la misma región.**
-3. **SSM:** subir todos los parámetros desde `ssm-export.json` vía CloudShell
-   (upload del archivo + loop de `put-parameter`; el asistente genera el
-   script en el momento). ⚠️ NO copiar `REDIS_URL` tal cual: apunta al
-   ElastiCache viejo — se completa en el paso 5.
-4. **ElastiCache:** crear Redis nuevo (mismo node type/engine que el viejo,
-   single node alcanza). En el security group del Redis, permitir el puerto
-   6379 desde el security group de las instancias EB (se ajusta después de
-   crear el entorno).
-5. **SSM `REDIS_URL`:** cargar con el endpoint del Redis nuevo (mismo formato
-   que el viejo; en el viejo usaba base lógica /1 porque compartía Redis con
-   la vieja vipcargas — en el nuevo, con Redis propio, va sin sufijo o /0).
+3. **Base de datos NUEVA:** crear el cluster/base de MongoDB del clon (Atlas)
+   y anotar su URI. Habilitar Network Access para el entorno nuevo.
+4. **SSM:** subir los parámetros desde `ssm-export.json` vía CloudShell
+   (upload del archivo + script de `put-parameter`; el asistente lo genera en
+   el momento), aplicando los REEMPLAZOS de la sección "Valores distintos".
+5. **ElastiCache:** crear Redis propio (mismo node type/engine que el viejo,
+   single node alcanza) y cargar su endpoint en `REDIS_URL`. Security group:
+   permitir 6379 desde el SG de las instancias EB (se ajusta tras crear el
+   entorno).
 6. **EB:** crear Application + Environment:
    - Misma Platform (Node.js 20 / Amazon Linux 2023, según captura).
    - Load balanced, mismo min/max e instance type que el viejo.
@@ -96,28 +121,30 @@ Capturas de pantalla a tomar:
    - Environment properties: las mismas del viejo (mínimo `SSM_PATH=/1girox/prod`).
    - Dejar que EB cree los roles; luego en IAM pegarle al instance profile las
      mismas policies del viejo (lectura SSM + SNS publish, según captura).
-   - Si el viejo tenía listener 443 con certificado ACM: pedir certificado en
-     ACM para cargas1girox.com (validación DNS → agregar el CNAME en
-     Cloudflare) y asignarlo al listener.
-7. **S3:** crear bucket para uploads (el código lo referencia vía env/SSM —
-   revisar nombre en ssm-nombres/eb-config). Contenido viejo: no hace falta
-   migrar (los mensajes tienen TTL 3 días).
+   - Si el clon va a tener dominio con HTTPS en el ALB: certificado ACM para
+     el dominio NUEVO (validación DNS en el Cloudflare del clon).
+7. **S3:** crear bucket propio para uploads del chat (ajustar el nombre en la
+   config/SSM del clon según cómo lo referencie el código).
 8. **Deploy:** zip del repo (mismo procedimiento de siempre) → subir a EB.
-9. **Prueba SIN tocar DNS:** contra la URL .elasticbeanstalk.com del entorno
-   nuevo: arranque limpio en logs, `GET /api/admin/girox/health`, login,
-   sockets (tiempo real), y SMS a número verificado.
-10. **Cutover:** en Cloudflare cambiar el CNAME de cargas1girox.com al ALB
-    nuevo. Verificar webhook de hgcash (la URL pública no cambia, así que no
-    hay que tocar el dashboard de hgcash — solo confirmar que llegan).
-11. **Días después, con todo verificado:** apagar el entorno viejo.
+9. **Prueba:** contra la URL .elasticbeanstalk.com del clon: arranque limpio
+   en logs, `GET /api/admin/girox/health`, login, sockets (tiempo real), SMS a
+   número verificado. El server corre las migraciones/seeds al primer arranque
+   sobre la base NUEVA (queda sembrada sola: admin inicial + comandos /sys_*).
+10. **Dominio del clon:** apuntar el dominio NUEVO (su propio Cloudflare) al
+    ALB del clon + regla WAF "Skip" para /api/hgcash/webhook si el clon usa
+    hgcash. Configurar el webhook de hgcash del clon según lo confirmado
+    (cuenta propia vs fan-out).
+11. **El entorno viejo queda EXACTAMENTE como está** — no hay cutover ni nada
+    que apagar. Ambos conviven.
 
-## Gotchas conocidos a re-verificar en el nuevo
+## Gotchas conocidos a re-verificar en el clon
 
 - Los secretos llegan por SSM en el bootstrap ASYNC → cualquier prueba de env
   vars se hace tras el arranque completo (trampa #130).
-- Atlas Network Access: si NO está en 0.0.0.0/0, agregar las IPs del entorno
-  nuevo ANTES del primer arranque (si no, el server no conecta a la DB).
-- El rate limit local de la Partner API es por proceso (N instancias × 55/min):
-  mismo comportamiento que el viejo, nada que hacer.
-- hgcash fanout (`HGCASH_FANOUT_URL`) y webhook secret: vienen en el export de
-  SSM, no requieren cambios.
+- Base nueva = arranca VACÍA: el seed crea el admin inicial (`ADMIN_USERNAME`)
+  y siembra los comandos; usuarios/config del viejo NO se copian (decisión
+  owner: bases separadas). Si algún día se quisiera partir de una copia de
+  datos, es un mongodump/mongorestore aparte — hoy NO está pedido.
+- El rate limit local de la Partner API es por proceso (N instancias × 55/min)
+  — y si AMBOS entornos usan la MISMA key de 1girox, el tope de 60/min se
+  COMPARTE entre los dos sistemas: otro motivo para confirmar el punto 1girox.
