@@ -8,6 +8,31 @@
 
 ## Sesión 2026-08-06
 
+### 151. /sys_reminder con texto viejo de VIPCARGAS tras cada carga → VACIADO + código saneado
+- **Reclamo del owner (captura):** después de cada carga aparecía "🎮 ¡Recuerda!
+  Para cargar o cobrar, ingresa a www.vipcargas.com" — texto de la era
+  VIPCARGAS. Y "no está en la lista de comandos, no lo puedo borrar".
+- **Qué era:** el comando **`/sys_reminder`** (recordatorio post-depósito).
+  SÍ figura en COMANDOS (como `/sys_reminder 🔒`, sin botón de borrar por ser
+  de sistema — por eso no lo encontraba/podía borrar). El texto viejo estaba
+  en DOS lados: sembrado en la BASE desde el primer arranque (seed de
+  initializeData) y HARDCODEADO como fallback en el handler del depósito.
+- **Fix:** (1) migración idempotente sin flag en initializeData:
+  `updateOne({name:'/sys_reminder', response:/vipcargas/i}, {response:''})` —
+  vacío = NO se envía (regla #43); si el owner escribe un texto nuevo desde
+  COMANDOS, no se vuelve a tocar (el regex ya no matchea). (2) seed y fallback
+  reescritos SIN dominio hardcodeado ("entrá siempre a esta misma página") —
+  clave también para el CLON (mismo código, otro dominio). (3) la migración
+  además loguea (warn) cualquier otro comando cuya response aún mencione
+  "vipcargas", para editarlos desde COMANDOS.
+- **⚠️ Pendiente señalado al owner (NO tocado, decisión de marca):** los SMS
+  de OTP (`src/services/otpService.js`) todavía dicen "VIPCARGAS: codigo ...
+  vipcargas .com" — texto visible para el cliente. Cambiarlo cuando el owner
+  defina la marca (¿"CARGAS 1GIROX" + cargas1girox.com?).
+- **Validado:** `node --check` OK. **Back necesita redeploy** (corre la
+  migración al arrancar). PROBAR: cargar fichas → NO debe aparecer más el
+  mensaje "¡Recuerda!"; en COMANDOS, /sys_reminder queda vacío y editable.
+
 ### 150. CHAU canal-proximamente PARA SIEMPRE: redirects del server /go/comunidad y /go/soporte
 - **Reclamo del owner (con video):** el pill "Unite a la Comunidad" y el botón
   "SÍ, quiero entrar" de la encuesta post-carga seguían cayendo en el 404 de

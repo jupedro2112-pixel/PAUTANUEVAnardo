@@ -7861,11 +7861,14 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       const reminderCmd = await Command.findOne({ name: '/sys_reminder', isActive: true });
       const reminderDisabled = reminderCmd && (!reminderCmd.response || !String(reminderCmd.response).trim());
       if (!reminderDisabled) {
+      // Fallback SIN dominio hardcodeado (fix 2026-08-06: el texto viejo tenía
+      // www.vipcargas.com clavado — se le mandaba a los clientes de 1girox y el
+      // owner no lo podía sacar). El texto real vive en /sys_reminder (COMANDOS).
       const reminderContent = (reminderCmd && reminderCmd.response)
         ? reminderCmd.response
             .replace(/\{amount\}/g, amount)
             .replace(/\{balance\}/g, newBalance)
-        : `🎮 ¡Recuerda!\nPara cargar o cobrar, ingresa a 🌐 www.vipcargas.com.\n🔥 ¡Ya tienes el acceso guardado, así que te queda más fácil y rápido cada vez que entres!  \n🕹️ ¡No olvides guardarla y mantenerla a mano!\n\nwww.vipcargas.com`;
+        : `🎮 ¡Recordá!\nPara cargar o retirar, entrá siempre a esta misma página.\n🕹️ ¡Guardala y tenela a mano!`;
       const reminderMessage = await Message.create({
         id: uuidv4(),
         senderId: 'admin',
@@ -9525,9 +9528,11 @@ async function initializeData() {
     },
     {
       name: '/sys_reminder',
-      description: 'Mensaje recordatorio enviado después de cada depósito (sin variables de monto por defecto).',
+      description: 'Mensaje recordatorio enviado después de cada depósito (sin variables de monto por defecto). Si lo dejás vacío, no se envía.',
       type: 'message',
-      response: '🎮 ¡Recuerda!\nPara cargar o cobrar, ingresa a 🌐 www.vipcargas.com.\n🔥 ¡Ya tienes el acceso guardado, así que te queda más fácil y rápido cada vez que entres!  \n🕹️ ¡No olvides guardarla y mantenerla a mano!\n\nwww.vipcargas.com'
+      // Sin dominio hardcodeado (fix 2026-08-06): este seed tenía
+      // www.vipcargas.com y quedó sembrado así en la base de 1girox.
+      response: '🎮 ¡Recordá!\nPara cargar o retirar, entrá siempre a esta misma página.\n🕹️ ¡Guardala y tenela a mano!'
     },
     {
       name: '/sys_install_app',
@@ -9620,6 +9625,26 @@ async function initializeData() {
     );
   }
   console.log('✅ Comandos de sistema verificados');
+
+  // MIGRACIÓN (2026-08-06, pedido owner): el /sys_reminder sembrado en la base
+  // conservaba el texto viejo de VIPCARGAS (www.vipcargas.com) y se le mandaba
+  // a cada cliente tras una carga. Se VACÍA (vacío = no se envía, regla #43) —
+  // el owner lo puede reescribir desde COMANDOS cuando quiera. Idempotente sin
+  // flag: la condición del regex deja de matchear una vez vaciado, y un texto
+  // nuevo que escriba el owner no se toca.
+  try {
+    const r = await Command.updateOne(
+      { name: '/sys_reminder', response: /vipcargas/i },
+      { $set: { response: '' } }
+    );
+    if (r.modifiedCount) console.log('✅ /sys_reminder con texto viejo de vipcargas → VACIADO (no se envía más)');
+    // Aviso (solo log): otros comandos que aún mencionen el dominio viejo —
+    // no se tocan solos (pueden tener texto editado a mano); se editan desde COMANDOS.
+    const stale = await Command.find({ response: /vipcargas/i }).select('name').lean();
+    if (stale.length) console.warn(`⚠️ Comandos que todavía mencionan "vipcargas" (editar desde COMANDOS): ${stale.map(c => c.name).join(', ')}`);
+  } catch (e) {
+    console.warn(`⚠️ Migración /sys_reminder: ${e.message}`);
+  }
 
   console.log('✅ Datos inicializados correctamente');
 }
