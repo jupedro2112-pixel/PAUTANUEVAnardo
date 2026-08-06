@@ -92,7 +92,8 @@ aws elasticbeanstalk describe-configuration-settings \
 Descargar los 3 archivos vía CloudShell → Actions → Download file.
 
 Capturas de pantalla a tomar:
-- [ ] Región de la cuenta (esquina superior derecha).
+- [x] Región de la cuenta: **sa-east-1 (São Paulo)** — confirmada por la URL
+      del entorno viejo (nuevogirox.sa-east-1.elasticbeanstalk.com).
 - [ ] EB → entorno girox → página principal (Platform exacta + domain).
 - [ ] EB → Configuration → Software (Environment properties, ej. SSM_PATH).
 - [ ] EB → Configuration → Instances (tipo, security groups).

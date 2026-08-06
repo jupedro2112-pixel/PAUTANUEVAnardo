@@ -5359,9 +5359,14 @@ function renderCommands(commands) {
                 <button class="btn-small" onclick='editCommand(${escapeHtml(JSON.stringify(cmd.name))})'>
                     <span class="icon icon-edit"></span>
                 </button>
-                ${cmd.isSystem ? '' : `<button class="btn-small btn-danger" onclick='deleteCommand(${escapeHtml(JSON.stringify(cmd.name))})'>
+                <!-- 🗑️ también en los de sistema (owner 2026-08-06): para los
+                     /sys_* el server los VACÍA (= apagado para siempre) en vez
+                     de borrarlos — borrarlos de verdad los dejaba zombies (el
+                     fallback hardcodeado seguía mandando el mensaje y el seed
+                     los resucitaba en cada arranque). -->
+                <button class="btn-small btn-danger" onclick='deleteCommand(${escapeHtml(JSON.stringify(cmd.name))})'>
                     <span class="icon icon-trash"></span>
-                </button>`}
+                </button>
             </div>
         </div>
     `).join('');
@@ -6227,16 +6232,23 @@ async function handleUpdateCommand() {
 }
 
 async function deleteCommand(name) {
-    if (!confirm(`¿Estás seguro de eliminar el comando ${name}?`)) return;
-    
+    // /sys_* = mensajes automáticos: el server los APAGA (vacía) en vez de
+    // borrarlos — el confirm avisa la diferencia (ver comentario en renderCommands).
+    const isSys = String(name).startsWith('/sys_');
+    const confirmMsg = isSys
+        ? `${name} es un MENSAJE AUTOMÁTICO del sistema.\n\nAl borrarlo se APAGA: no se le envía NUNCA MÁS a los clientes. Queda en la lista vacío por si algún día lo querés reactivar escribiéndole un texto nuevo.\n\n¿Apagarlo?`
+        : `¿Estás seguro de eliminar el comando ${name}?`;
+    if (!confirm(confirmMsg)) return;
+
     try {
         const response = await fetch(`${API_URL}/api/admin/commands/${encodeURIComponent(name)}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${currentToken}` }
         });
-        
+
         if (response.ok) {
-            showToast('Comando eliminado correctamente', 'success');
+            const data = await response.json().catch(() => ({}));
+            showToast(data.message || 'Comando eliminado correctamente', 'success');
             loadCommands();
         } else {
             const data = await response.json();

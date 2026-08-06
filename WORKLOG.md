@@ -8,6 +8,32 @@
 
 ## Sesión 2026-08-06
 
+### 152. Borrar un comando /sys_* ahora = APAGARLO de verdad (causa raíz del #151 confirmada)
+- **Owner (con captura del panel en vivo):** "sí se pueden borrar los comandos
+  automáticos" — su panel deployado (anterior al candado isSystem de #149)
+  muestra 🗑️ en los /sys_*. **Eso confirma la causa raíz del #151:** el owner
+  BORRÓ /sys_reminder en su momento → con el comando AUSENTE el handler usa el
+  FALLBACK hardcodeado (el texto viejo de vipcargas) → el mensaje seguía
+  saliendo aunque no estuviera en la lista. Borrar de verdad es una trampa
+  doble: el fallback lo revive Y el seed lo resucita en cada arranque.
+- **Fix (borrar = apagar):** `DELETE /api/admin/commands/:name` para los de
+  sistema ahora VACÍA la response en vez de borrar el doc (vacío = no se envía,
+  regla #43; el doc existente frena el re-seed y el fallback). Gate de admin
+  general (paridad con el POST de #149) + 404 si no existe. Los comandos
+  comunes se siguen borrando de verdad.
+- **Panel:** 🗑️ visible en TODOS los comandos (también /sys_); para los de
+  sistema el confirm explica "se APAGA, queda en la lista vacío para
+  reactivarlo con texto" y el toast muestra el mensaje del server.
+- **Seed de /sys_reminder → VACÍO por defecto** (complementa #151): como el
+  owner ya lo había borrado, el re-seed del próximo arranque lo va a recrear —
+  ahora nace APAGADO en vez de nacer con texto. En el clon (base nueva) ídem.
+- **Dato para el runbook del clon (captura):** panel en
+  nuevogirox.sa-east-1.elasticbeanstalk.com → **región sa-east-1 (São Paulo)**.
+- **Validado:** `node --check` OK (server.js, admin.js). Back necesita
+  redeploy; panel, recargar. PROBAR: 🗑️ sobre un /sys_ → confirm nuevo → queda
+  vacío en la lista y el mensaje no se manda; 🗑️ sobre un comando común →
+  se borra como siempre.
+
 ### 151. /sys_reminder con texto viejo de VIPCARGAS tras cada carga → VACIADO + código saneado
 - **Reclamo del owner (captura):** después de cada carga aparecía "🎮 ¡Recuerda!
   Para cargar o cobrar, ingresa a www.vipcargas.com" — texto de la era

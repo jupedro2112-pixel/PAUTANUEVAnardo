@@ -9528,11 +9528,12 @@ async function initializeData() {
     },
     {
       name: '/sys_reminder',
-      description: 'Mensaje recordatorio enviado después de cada depósito (sin variables de monto por defecto). Si lo dejás vacío, no se envía.',
+      description: 'Mensaje recordatorio enviado después de cada depósito. Vacío = APAGADO (no se envía). Escribile un texto para activarlo.',
       type: 'message',
-      // Sin dominio hardcodeado (fix 2026-08-06): este seed tenía
-      // www.vipcargas.com y quedó sembrado así en la base de 1girox.
-      response: '🎮 ¡Recordá!\nPara cargar o retirar, entrá siempre a esta misma página.\n🕹️ ¡Guardala y tenela a mano!'
+      // APAGADO por defecto (owner 2026-08-06): el seed viejo tenía el texto
+      // de www.vipcargas.com; el owner lo borró del panel y el fallback lo
+      // seguía mandando. Se siembra vacío — quien lo quiera, le escribe texto.
+      response: ''
     },
     {
       name: '/sys_install_app',
@@ -15411,12 +15412,28 @@ app.post('/api/admin/commands', authMiddleware, adminMiddleware, async (req, res
   }
 });
 
-// Eliminar comando
+// Eliminar comando. Los de SISTEMA (/sys_*) NO se borran de la colección:
+// "borrar" = VACIAR la response (vacío = no se envía, regla #43). Motivo
+// (bug real 2026-08-06): el owner borró /sys_reminder desde el panel viejo y
+// el mensaje SIGUIÓ saliendo — con el comando AUSENTE los handlers usan el
+// fallback hardcodeado, y encima el seed de initializeData lo resucita en
+// cada arranque. Vaciarlo es el único "borrado" que de verdad lo apaga para
+// siempre (y queda en la lista por si el owner quiere reactivarlo con texto).
 app.delete('/api/admin/commands/:name', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const cmd = await Command.findOne({ name: req.params.name });
-    if (cmd && cmd.isSystem) {
-      return res.status(403).json({ error: 'No se puede eliminar un comando del sistema' });
+    if (!cmd) return res.status(404).json({ error: 'Comando no encontrado' });
+    if (cmd.isSystem || String(cmd.name || '').startsWith('/sys_')) {
+      // Mismo gate que el POST (#149): los /sys_* son solo del admin general.
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo el administrador general puede tocar los comandos del sistema.' });
+      }
+      await Command.updateOne({ name: cmd.name }, { $set: { response: '', updatedAt: new Date() } });
+      return res.json({
+        success: true,
+        systemEmptied: true,
+        message: 'Mensaje automático APAGADO: no se envía nunca más. Queda en la lista vacío por si querés reactivarlo escribiéndole un texto.'
+      });
     }
     await Command.deleteOne({ name: req.params.name });
     res.json({ success: true, message: 'Comando eliminado correctamente' });
