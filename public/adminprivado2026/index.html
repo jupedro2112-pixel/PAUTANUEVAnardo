@@ -690,7 +690,7 @@ document.addEventListener('change', function (ev) {
                             <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
                                 Cuanto más pierde el cliente en el período, mayor el % que se le devuelve. Cada fila es un rango:
                                 <b>"Pérdida hasta $X → tanto %"</b>; el último rango va sin techo (= "más de $X"). Cada período
-                                (diario / semanal / mensual) tiene su <b>propia escalera</b> — pueden ser distintas entre sí.
+                                (semanal / mensual) tiene su <b>propia escalera</b> — pueden ser distintas entre sí.
                                 Los cambios se aplican <b>al instante</b> a los reembolsos nuevos y a lo que el cliente ve en su
                                 perfil. Solo el admin general puede modificarlos.
                             </p>
@@ -699,8 +699,9 @@ document.addEventListener('change', function (ev) {
                                 <button class="btn-primary" onclick="saveRefundTiers()">
                                     <span class="icon icon-save"></span> Guardar rangos
                                 </button>
-                                <button class="btn-secondary" onclick="copyDailyTiersToOthers()" title="Deja las 3 escaleras iguales a la del Diario">
-                                    📋 Copiar Diario → Semanal y Mensual
+                                <!-- 🪦 Antes: "Copiar Diario → Semanal y Mensual" (el diario se eliminó 2026-08-07). -->
+                                <button class="btn-secondary" onclick="copyWeeklyTiersToMonthly()" title="Deja la escalera del Mensual igual a la del Semanal">
+                                    📋 Copiar Semanal → Mensual
                                 </button>
                             </div>
                             <div id="refundTiersMsg" style="font-size:12px;margin-top:8px;color:#aaa;"></div>
@@ -1147,7 +1148,7 @@ document.addEventListener('change', function (ev) {
             </section>
 
             <!-- ============================================================
-                 REEMBOLSOS — cuánta plata reclaman (diario / semanal / mensual)
+                 REEMBOLSOS — cuánta plata reclaman (semanal / mensual)
                  ============================================================ -->
             <section id="reembolsosSection" class="section">
                 <div class="panel-header">
@@ -1155,7 +1156,7 @@ document.addEventListener('change', function (ev) {
                     <button class="refresh-btn" onclick="loadReembolsos()" title="Refrescar">🔄</button>
                 </div>
                 <div style="background:rgba(212,175,55,0.06);border:1px solid rgba(212,175,55,0.30);border-radius:10px;padding:12px;margin-bottom:14px;">
-                    <p style="margin:0;color:#bbb;font-size:11.5px;line-height:1.6;">Cuánta plata reclama la gente en reembolsos <strong>diarios</strong>, <strong>semanales</strong> y <strong>mensuales</strong>. Cada tarjeta muestra los totales de las últimas 24 h, 7 días, 30 días y el histórico.</p>
+                    <p style="margin:0;color:#bbb;font-size:11.5px;line-height:1.6;">Cuánta plata reclama la gente en reembolsos <strong>semanales</strong> y <strong>mensuales</strong>. Cada tarjeta muestra los totales de las últimas 24 h, 7 días, 30 días y el histórico.</p>
                 </div>
                 <div id="reembolsosBody">
                     <div style="color:#aaa;text-align:center;padding:24px;">⏳ Cargando…</div>

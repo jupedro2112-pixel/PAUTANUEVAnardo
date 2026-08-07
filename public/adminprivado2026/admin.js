@@ -5479,9 +5479,9 @@ async function toggleVipLevels() {
 // ====== Rangos de reembolso (solo admin general) ======
 // 🪦 Acá vivían loadRefundPercents/saveRefundPercents (% fijos por período, sin
 // uso desde #99): REEMPLAZADAS el 2026-08-05 por este editor de rangos por
-// pérdida, con escalera PROPIA por período (diario/semanal/mensual distintas).
+// pérdida, con escalera PROPIA por período (semanal/mensual distintas).
+// 🪦 El período DIARIO se eliminó el 2026-08-07 (junto con el reembolso diario).
 const REFUND_TIER_PERIODS = [
-    { key: 'daily', label: '📅 Diario' },
     { key: 'weekly', label: '📆 Semanal' },
     { key: 'monthly', label: '🗓️ Mensual' }
 ];
@@ -5536,14 +5536,13 @@ function _collectRefundTiers(period) {
     }));
 }
 
-function copyDailyTiersToOthers() {
-    const daily = _collectRefundTiers('daily');
-    if (!daily.length) { showToast('El Diario no tiene rangos para copiar', 'error'); return; }
-    for (const period of ['weekly', 'monthly']) {
-        const rows = document.getElementById(`refundTiersRows_${period}`);
-        if (rows) rows.innerHTML = daily.map(_refundTierRowHtml).join('');
-    }
-    showToast('Escalera del Diario copiada a Semanal y Mensual — tocá "Guardar rangos" para aplicar', 'info');
+// (Antes era copyDailyTiersToOthers; el diario se eliminó 2026-08-07.)
+function copyWeeklyTiersToMonthly() {
+    const weekly = _collectRefundTiers('weekly');
+    if (!weekly.length) { showToast('El Semanal no tiene rangos para copiar', 'error'); return; }
+    const rows = document.getElementById('refundTiersRows_monthly');
+    if (rows) rows.innerHTML = weekly.map(_refundTierRowHtml).join('');
+    showToast('Escalera del Semanal copiada al Mensual — tocá "Guardar rangos" para aplicar', 'info');
 }
 
 async function loadRefundTiers() {
@@ -5570,7 +5569,6 @@ async function loadRefundTiers() {
 async function saveRefundTiers() {
     const msg = document.getElementById('refundTiersMsg');
     const body = {
-        daily: _collectRefundTiers('daily'),
         weekly: _collectRefundTiers('weekly'),
         monthly: _collectRefundTiers('monthly')
     };
@@ -9816,9 +9814,10 @@ async function loadReembolsos() {
         if (!r.ok) throw new Error(j.error || 'Error');
         const types = j.types || {};
         const recent = j.recent || [];
-        const typeLabels = { daily: 'Diario', weekly: 'Semanal', monthly: 'Mensual' };
+        // 'daily' quedó SOLO como etiqueta de los claims HISTÓRICOS de la tabla:
+        // el reembolso diario se eliminó el 2026-08-07 (su card ya no se muestra).
+        const typeLabels = { daily: 'Diario (histórico)', weekly: 'Semanal', monthly: 'Mensual' };
         let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:18px;">';
-        html += _centRefundCard('📅 Diarios', types.daily, '#4caf50');
         html += _centRefundCard('📆 Semanales', types.weekly, '#2196f3');
         html += _centRefundCard('🗓️ Mensuales', types.monthly, '#d4af37');
         html += '</div>';

@@ -56,6 +56,8 @@ async function main() {
       timeZone: 'America/Argentina/Buenos_Aires'
     }); // YYYY-MM-DD
     let pk = null;
+    // ('daily' se mantiene acá SOLO para backfillear claims HISTÓRICOS: el
+    // reembolso diario se eliminó del producto el 2026-08-07.)
     if (doc.type === 'daily') {
       pk = 'daily:' + ymd;
     } else if (doc.type === 'weekly') {

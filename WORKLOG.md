@@ -4,9 +4,117 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-06**
+> **Última actualización: 2026-08-07**
 
-## Sesión 2026-08-06
+## Sesión 2026-08-07
+
+### 154. Script de los 21 SSM del clon: `scripts/clon-ssm-put.sh` (para CloudShell)
+- **Pedido del owner:** un solo archivo para subir/modificar todos los SSM del
+  clon (runbook MIGRACION-AWS paso 5).
+- **Qué es:** bash con los 21 parámetros como variables `COMPLETAR_*` que el
+  owner llena LOCAL en Tails (⚠️ **nunca commitearlo con valores reales: el
+  repo es público**), lo sube a CloudShell de la cuenta nueva y corre.
+  Precargados los valores conocidos (GIROX_API_URL, scope casino, región,
+  ADMIN_USERNAME ignite1000); `JWT_SECRET`/`JWT_REFRESH_SECRET` se AUTOGENERAN
+  (openssl rand). Sube todo como SecureString con `--overwrite` a
+  `/1girox/prod/` en sa-east-1.
+- **Guardas y modos:** aborta si `aws sts get-caller-identity` no da la cuenta
+  nueva (220282357357 — imposible pisar la vieja por error); los sin completar
+  se SALTEAN con aviso (permite tandas: HGCASH_WEBHOOK_SECRET recién existe en
+  el paso 12); `--check` lista qué está subido y qué falta; `bash
+  clon-ssm-put.sh NOMBRE [NOMBRE2…]` sube/corrige solo esos (para modificar
+  después). Re-correrlo completo es idempotente.
+- Runbook actualizado (paso 5 apunta al script). **Validado:** `bash -n` OK.
+  El script es TEMPORAL como el runbook: borrar ambos al terminar el clon.
+- **UPDATE (mismo día) — CAMBIO DE PLAN del owner: la página nueva va en el
+  Amazon VIEJO** (la cuenta nueva Maiteabigailsosaaws no se puede usar). Script
+  y runbook replanteados: path SSM **`/nardo1girox/prod/`** (el entorno EB
+  nuevo lleva `SSM_PATH=/nardo1girox/prod/`; loadSecrets.js lee de ahí, cero
+  cambio de código). Guards nuevos: aborta si el prefijo fuera el
+  `/1girox/prod/` VIVO y si la CloudShell es la cuenta nueva descartada.
+  Simplificaciones por misma cuenta: chau caso SNS y chau usuario IAM nuevo
+  (las keys AWS del export sirven → pasan a "copiar igual": 8 copiados + 13
+  propios = 21); Redis se REUSA (`paginacopia-redis-node`) con base lógica
+  **/2** (la /1 es de NUEVOgirox, la /0 de la vieja vipcargas — DB distinta,
+  adapters sin cruce). Sigue haciendo falta: ACM del dominio nuevo, entorno EB
+  nuevo, SG del Redis con regla para el SG nuevo, y los externos.
+- **UPDATE 2 (mismo día) — LOS 21 SSM SUBIDOS Y VERIFICADOS** ✅ por el owner
+  en CloudShell (`--check` dio los 21 sin faltantes). Antes de subir se
+  corrigieron 2 valores que iban a fallar: `ALLOWED_ORIGINS` (le faltaba el
+  esquema y tenía mayúsculas — se compara contra el header `Origin` exacto,
+  que siempre llega en minúsculas con `https?://`; se agregó también la
+  variante http:// de la URL EB) y `MONGODB_URI` (sin nombre de base caía en
+  la DB `test` de Atlas — se agregó `/giroxnardo` antes del `?`).
+  Dato: `HGCASH_WEBHOOK_SECRET` ya existía (el dashboard hgcash ya lo había
+  generado) → se subió de una, el paso 11 queda solo para configurar la URL y
+  probar. El script del repo volvió a placeholders (sin secretos) tras el uso.
+  **Próximo paso: FASE 2 paso 5 — crear el entorno EB nuevo** con
+  `SSM_PATH=/nardo1girox/prod/` (⚠️ ese path, no el vivo).
+
+### 153. REEMBOLSO DIARIO ELIMINADO de punta a punta — quedan solo SEMANAL y MENSUAL
+- **Pedido del owner:** sacar el reembolso diario de TODO el código, que no quede
+  nada, y re-alinear el recuadro de reembolsos de la PWA.
+- **Backend (server.js):**
+  - `/api/refunds/status` ya NO calcula el diario (ni pide su netwin a la
+    Partner API: una request menos por status). Manda un **stub `daily` en $0 /
+    no reclamable** SOLO por compat: las PWAs cacheadas viejas hacen
+    `daily.potentialAmount` sin chequear y un `undefined` les rompía TODO el
+    recuadro hasta que el SW se actualice. `tiers` (legacy) ahora es la escalera
+    del SEMANAL. El front nuevo ignora el stub por completo.
+  - `POST /api/refunds/claim/daily` → **stub amable** (mismo criterio que
+    register-quick #141): responde "ya no está disponible", nunca acredita.
+  - `getRefundPercents`/`REFUND_PCT_DEFAULTS`, `getRefundTiersByPeriod` y los
+    endpoints `refund-percents` / `refund-tiers` (GET/POST) quedaron solo con
+    weekly/monthly — una llave `daily` vieja en `Config['refundTiersByPeriod']`
+    se ignora al leer y el próximo guardado la deja afuera.
+  - `buildEscaleraText()` ({escalera} de la bienvenida) sin DIARIO.
+  - `/api/admin/reembolsos` (stats del panel) y `/api/refunds/all` sin bucket
+    diario; `/api/claims-feed` (ticker del login) **filtra los claims
+    históricos** `type:'daily'` y los ejemplos ya no generan "diario".
+- **Notificaciones:** reglas seed **B1/B2** (recordatorios del diario 14:00/22:00)
+  eliminadas de los defaults + **migración idempotente en el seed** que BORRA de
+  la base las que ya estén sembradas (`deleteMany({audienceType:
+  'refund-pending-daily'})`). La audiencia `refund-pending-daily` se eliminó de
+  `_resolveAudience`, del enum de NotificationRule y `_yesterdayInArt` con ella.
+- **Datos (decisión consciente):** los RefundClaim históricos `type:'daily'`
+  QUEDAN en la base (historial de la tabla del panel, rotulados "Diario
+  (histórico)"). Por eso el **enum de RefundClaim conserva 'daily'** (sacarlo
+  rompería cualquier save() de un doc viejo) y el script one-shot
+  `migrate-refund-periodkey.js` sigue sabiendo backfillear daily.
+- **Front PWA:** botón 📅 Diario del recuadro ELIMINADO (con lápida) — semanal y
+  mensual se reparten la fila 50/50 solos (flex:1 de `.dash-refunds-row`, sin CSS
+  nuevo). Fuera también: opción del modal unificado, rama daily de
+  `showRefundModal`, labels/％, escalera del diario en Mi Perfil (la comparación
+  "misma escalera" ahora es weekly vs monthly), textos informativos
+  ("Reembolsos: semanal y mensual"), CSS `.refund-btn.daily`, listener en app.js
+  y label del ticker. **SW a v95.**
+- **Panel admin:** editor de rangos solo Semanal/Mensual; botón "Copiar Diario →
+  Semanal y Mensual" reemplazado por **"Copiar Semanal → Mensual"**
+  (`copyWeeklyTiersToMonthly`; el save ya no manda daily). Stats de reembolsos
+  sin la card de Diarios. **admin-sw a v26.**
+- **Utils:** `getYesterdayRangeArgentinaEpoch` ELIMINADA de periodRanges.js (solo
+  la usaba el diario; `getToday…` sigue: la usa el fueguito). `canClaimDailyRefund`
+  ELIMINADA de models/refunds.js. Comentarios de refundTiers/periodRanges al día.
+- **Intactos a propósito:** todo lo "diario" que NO es reembolso (ruleta diaria,
+  fueguito/racha diaria, ScheduledNotif mode 'daily', ingresos diarios, breakdown
+  diario de publicistas, DailyPlayerStats) y el guard `_isStaleClientWelcome`
+  (su regex matchea textos VIEJOS cacheados, tiene que seguir reconociendo
+  "Reembolso DIARIO"). Los clientes muertos jugaygana* no se tocaron (regla de
+  CLAUDE.md: congelados para revertir; `referralRevenueService.js` menciona
+  "diario" solo en un comentario).
+- **⚠️ ACCIÓN OWNER (revisar 1 vez):** si algún comando de la sección COMANDOS
+  (p. ej. `/sys_welcome` guardado en la base) menciona el reembolso DIARIO en su
+  TEXTO literal, editarlo a mano — los textos guardados no se migran solos (el
+  guardado de rangos ya avisa cuáles mencionan reembolsos, #118).
+- **Docs:** ARCHITECTURE.md actualizado (§flujo de reembolsos, periodKey, tabla
+  de módulos — de paso se corrigió la fila stale de `giroxReportsService`, que ya
+  no existe desde #101). **Validado:** `node --check` OK en los 13 archivos JS
+  tocados. **Back necesita redeploy** (corre la migración de reglas B1/B2 al
+  arrancar); PWA y panel se actualizan con los SW nuevos. PROBAR: recuadro con
+  SOLO Semanal y Mensual bien repartidos; Mi Perfil sin bloque Diario; panel →
+  Rangos de reembolso con 2 escaleras y "Copiar Semanal → Mensual"; stats de
+  reembolsos con 2 cards; una PWA vieja cacheada no debe romperse (botón diario
+  muestra $0 / "ya no está disponible").
 
 ### 152. Borrar un comando /sys_* ahora = APAGARLO de verdad (causa raíz del #151 confirmada)
 - **Owner (con captura del panel en vivo):** "sí se pueden borrar los comandos

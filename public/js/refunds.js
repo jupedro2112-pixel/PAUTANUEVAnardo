@@ -91,7 +91,7 @@ VIP.refunds = (function () {
 
     function updateRefundButtons() {
         if (!VIP.state.refundStatus) return;
-        updateRefundButton('daily', VIP.state.refundStatus.daily);
+        // (El reembolso DIARIO se eliminó el 2026-08-07 — solo semanal y mensual.)
         updateRefundButton('weekly', VIP.state.refundStatus.weekly);
         updateRefundButton('monthly', VIP.state.refundStatus.monthly);
         updateRefundLabels();
@@ -106,14 +106,12 @@ VIP.refunds = (function () {
             const el = document.getElementById(id);
             if (el && s[t] && s[t].percentage != null) el.title = `${label} ${s[t].percentage}%`;
         };
-        tip('dailyRefundBtn', 'Reembolso Diario', 'daily');
         tip('weeklyRefundBtn', 'Reembolso Semanal (Lun-Mar)', 'weekly');
         tip('monthlyRefundBtn', 'Reembolso Mensual (Desde día 7)', 'monthly');
         const pctSpan = (id, t) => {
             const el = document.getElementById(id);
             if (el && s[t] && s[t].percentage != null) el.textContent = s[t].percentage;
         };
-        pctSpan('unifiedDailyPct', 'daily');
         pctSpan('unifiedWeeklyPct', 'weekly');
         pctSpan('unifiedMonthlyPct', 'monthly');
 
@@ -121,7 +119,7 @@ VIP.refunds = (function () {
         // en el HTML (los rangos se editan desde el panel) — acá se completa con
         // el % MÁXIMO real de las escaleras que mandó el backend.
         const ladders = s.tiersByPeriod
-            ? [s.tiersByPeriod.daily, s.tiersByPeriod.weekly, s.tiersByPeriod.monthly]
+            ? [s.tiersByPeriod.weekly, s.tiersByPeriod.monthly]
             : [s.tiers];
         let maxPct = 0;
         ladders.forEach((ts) => (ts || []).forEach((t) => { if (t && t.pct > maxPct) maxPct = t.pct; }));
@@ -220,15 +218,13 @@ VIP.refunds = (function () {
         // (campo `percentage` que devuelve /api/refunds/status) en vez de hardcodear.
         const pctOf = (t) => {
             const p = VIP.state.refundStatus[t] && VIP.state.refundStatus[t].percentage;
-            return (p !== undefined && p !== null) ? p : { daily: 20, weekly: 10, monthly: 5 }[t];
+            return (p !== undefined && p !== null) ? p : { weekly: 10, monthly: 5 }[t];
         };
         const titles = {
-            daily:   `📅 Reembolso Diario (${pctOf('daily')}%)`,
             weekly:  `📆 Reembolso Semanal (${pctOf('weekly')}%)`,
             monthly: `🗓️ Reembolso Mensual (${pctOf('monthly')}%)`
         };
         const periodLabels = {
-            daily:   '🎮 TU NETWIN DE AYER (pérdida real jugando)',
             weekly:  '🎮 TU NETWIN DE LA SEMANA PASADA (Lun-Dom)',
             monthly: '🎮 TU NETWIN DEL MES PASADO'
         };
@@ -293,18 +289,7 @@ VIP.refunds = (function () {
             const lastClaim = new Date(typeData.lastClaim);
             const now = new Date();
 
-            if (type === 'daily') {
-                const tomorrow = new Date(lastClaim);
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                tomorrow.setHours(0, 0, 0, 0);
-                if (now < tomorrow) {
-                    isClaimed = true;
-                    const diff = tomorrow - now;
-                    const hours   = Math.floor(diff / (1000 * 60 * 60));
-                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                    timeRemaining = `${hours}h ${minutes}m`;
-                }
-            } else if (type === 'weekly') {
+            if (type === 'weekly') {
                 const nextMonday = new Date(lastClaim);
                 const daysUntilMonday = (8 - lastClaim.getDay()) % 7 || 7;
                 nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
@@ -423,7 +408,7 @@ VIP.refunds = (function () {
      * ⚠️ Son DOS escalas distintas a propósito:
      *  - Nivel VIP: permanente, sube por apostado de por vida (Bronce…Diamante).
      *  - % de reembolso: POR PERÍODO, sale de la pérdida de ese período puntual y
-     *    puede variar entre el diario y el mensual. Se muestra SOLO el % (sin
+     *    puede variar entre el semanal y el mensual. Se muestra SOLO el % (sin
      *    nombres de rango) para que no se confunda con el nivel VIP.
      */
     async function showProfileModal() {
@@ -574,19 +559,17 @@ VIP.refunds = (function () {
         }).join('');
         const tbp = (s && s.tiersByPeriod) || null;
         const _sameLadder = tbp &&
-            JSON.stringify(tbp.daily) === JSON.stringify(tbp.weekly) &&
-            JSON.stringify(tbp.daily) === JSON.stringify(tbp.monthly);
+            JSON.stringify(tbp.weekly) === JSON.stringify(tbp.monthly);
         let tiersHtml;
         if (!tbp || _sameLadder) {
-            // Una sola tabla (las 3 escaleras son iguales o backend viejo).
-            tiersHtml = _tierRows((tbp && tbp.daily) || (s && s.tiers) || []);
+            // Una sola tabla (las 2 escaleras son iguales o backend viejo).
+            tiersHtml = _tierRows((tbp && tbp.weekly) || (s && s.tiers) || []);
         } else {
             // Escaleras distintas: una mini-tabla por período.
             const bloque = (label, tiers) =>
                 `<div style="font-size:11px;font-weight:800;color:#d4af37;margin:4px 0 2px;">${label}</div>` +
                 _tierRows(tiers);
-            tiersHtml = bloque('📅 Diario', tbp.daily) +
-                bloque('🗓️ Semanal', tbp.weekly) +
+            tiersHtml = bloque('🗓️ Semanal', tbp.weekly) +
                 bloque('📆 Mensual', tbp.monthly);
         }
 
@@ -651,7 +634,6 @@ VIP.refunds = (function () {
                     Cuanto más perdés en un período, mayor es el porcentaje que te devolvemos.
                     El porcentaje se calcula por separado en cada reembolso.
                 </div>
-                ${periodo('📅 Diario', s && s.daily)}
                 ${periodo('🗓️ Semanal', s && s.weekly)}
                 ${periodo('📆 Mensual', s && s.monthly)}
 

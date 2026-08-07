@@ -91,9 +91,10 @@ const notificationRuleSchema = new mongoose.Schema({
 
   // ============= AUDIENCIA =============
   // 'has-app-notifs' = todos los con app+notifs (default genérico)
-  // 'refund-pending-daily' = los que tienen daily disponible y no reclamaron hoy
-  // 'refund-pending-weekly' = idem semanal
+  // 'refund-pending-weekly' = los que tienen el semanal disponible y no lo reclamaron
   // 'refund-pending-monthly' = idem mensual
+  // ('refund-pending-daily' se eliminó el 2026-08-07 junto con el reembolso diario;
+  //  el seed borra las reglas B1/B2 que la usaban)
   // 'welcome-no-play-since' = reclamaron welcome y no cargaron en X días
   // 'tier-state' = filtro por tier+state (ej VIP+EN_RIESGO)
   // 'state-changed' = los que cambiaron de estado en el último ciclo
@@ -106,7 +107,6 @@ const notificationRuleSchema = new mongoose.Schema({
     type: String,
     enum: [
       'has-app-notifs',
-      'refund-pending-daily',
       'refund-pending-weekly',
       'refund-pending-monthly',
       'welcome-no-play-since',
@@ -128,7 +128,7 @@ const notificationRuleSchema = new mongoose.Schema({
 
   // ============= MENSAJE =============
   // Soporta plantillas con {{variable}}: username, amount, days, etc.
-  // Ejemplo body: "Hola {{username}}, tu reembolso del 8% de ayer vence en 2 horas"
+  // Ejemplo body: "Hola {{username}}, tu reembolso semanal vence hoy a las 23:59"
   title: { type: String, required: true },
   body:  { type: String, required: true },
 

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v94'; // v94: chau canal-proximamente — botones a /go/comunidad y /go/soporte (redirect del server)
+const CACHE_VERSION = 'v95'; // v95: reembolso DIARIO eliminado — quedan semanal y mensual (recuadro re-alineado)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

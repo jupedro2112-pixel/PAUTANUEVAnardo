@@ -1,6 +1,7 @@
 /**
  * periodRanges.js — Rangos de fecha en hora de ARGENTINA (UTC-3) para los períodos
- * de reembolso: ayer, semana pasada (lunes a domingo) y mes pasado.
+ * de reembolso: semana pasada (lunes a domingo) y mes pasado (+ "hoy", que usa el
+ * fueguito para su dateStr).
  *
  * Estas funciones vivían dentro de `jugaygana.js`, pero son PURAS: no dependen de
  * ninguna plataforma externa, sólo del calendario. Se movieron acá tal cual en la
@@ -9,7 +10,7 @@
  * ⚠️ La zona horaria está FIJA en America/Argentina/Buenos_Aires a propósito: los
  * períodos de reembolso los define el owner en hora argentina, y el server puede
  * correr en UTC (AWS). Si esto usara la hora del server, el corte del día se
- * desplazaría 3 horas y el reembolso "de ayer" incluiría parte de anteayer.
+ * desplazaría 3 horas y los períodos incluirían horas del día equivocado.
  *
  * Cada función devuelve epochs en segundos (compatibilidad con el código que ya los
  * consumía) más los strings de fecha que se usan para armar los `periodKey` únicos
@@ -38,27 +39,8 @@ function _partsOf(formatter, date) {
   };
 }
 
-/**
- * Ayer, de 00:00:00 a 23:59:59 hora argentina.
- * @returns {{fromEpoch:number, toEpoch:number, dateStr:string}}
- */
-function getYesterdayRangeArgentinaEpoch() {
-  const formatter = _formatter();
-  const today = _partsOf(formatter, new Date());
-
-  const todayLocal = new Date(`${today.y}-${today.m}-${today.d}T00:00:00-03:00`);
-  const yesterdayLocal = new Date(todayLocal.getTime() - 24 * 60 * 60 * 1000);
-  const y = _partsOf(formatter, yesterdayLocal);
-
-  const from = new Date(`${y.y}-${y.m}-${y.d}T00:00:00-03:00`);
-  const to = new Date(`${y.y}-${y.m}-${y.d}T23:59:59-03:00`);
-
-  return {
-    fromEpoch: Math.floor(from.getTime() / 1000),
-    toEpoch: Math.floor(to.getTime() / 1000),
-    dateStr: `${y.y}-${y.m}-${y.d}`
-  };
-}
+// 🪦 getYesterdayRangeArgentinaEpoch ELIMINADA (2026-08-07): solo la usaba el
+// reembolso DIARIO, que se sacó del producto. Está en el historial de git.
 
 /**
  * Hoy, de 00:00:00 a 23:59:59 hora argentina.
@@ -144,7 +126,6 @@ function getLastMonthRangeArgentinaEpoch() {
 }
 
 module.exports = {
-  getYesterdayRangeArgentinaEpoch,
   getTodayRangeArgentinaEpoch,
   getLastWeekRangeArgentinaEpoch,
   getLastMonthRangeArgentinaEpoch

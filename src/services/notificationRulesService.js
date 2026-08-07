@@ -90,33 +90,8 @@ async function _resolveAudience(rule, models) {
       }).map(u => u.username);
     }
 
-    case 'refund-pending-daily': {
-      // DailyPlayerStats no está portado en esta base — sin él no se puede
-      // resolver "quién perdió ayer". La regla queda inerte hasta portarlo.
-      if (!DailyPlayerStats) return [];
-      // Audiencia: usuarios con DailyPlayerStats de AYER (ART) donde perdieron
-      // Y todavía no reclamaron el daily de ese día.
-      const yest = _yesterdayInArt();
-      const losses = await DailyPlayerStats.find({
-        dateUtc: yest.dateUtc,
-        $expr: { $gt: ['$depositSum', '$withdrawSum'] }
-      }).select('username').lean();
-      const losersNorm = losses.map(d => (d.username || '').toLowerCase());
-      if (losersNorm.length === 0) return [];
-
-      // Excluir los que ya reclamaron daily para ese periodKey.
-      const periodKey = yest.dateKeyArt;
-      const claimed = await RefundClaim.find({
-        type: 'daily',
-        periodKey,
-        username: { $in: losersNorm }
-      }).select('username').lean();
-      const claimedSet = new Set(claimed.map(c => (c.username || '').toLowerCase()));
-
-      // Y filtrar a solo los que tienen app+notifs.
-      const eligible = losersNorm.filter(u => !claimedSet.has(u));
-      return _filterUsersByChannel(eligible, User);
-    }
+    // 🪦 'refund-pending-daily' ELIMINADA (2026-08-07): el reembolso diario se
+    // sacó del producto. Las reglas B1/B2 que la usaban se borran en el seed.
 
     case 'refund-pending-weekly': {
       if (!DailyPlayerStats) return [];
@@ -284,15 +259,8 @@ function _todayDateKeyArt() {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
-function _yesterdayInArt() {
-  const todayMs = Date.now();
-  const yMs = todayMs - 24 * 60 * 60 * 1000;
-  const p = _getArtParts(new Date(yMs));
-  const dateKeyArt = `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
-  // dateUtc: midnight UTC del mismo día calendario ART (los CSVs guardan así).
-  const dateUtc = new Date(`${dateKeyArt}T00:00:00.000Z`);
-  return { dateKeyArt, dateUtc };
-}
+// 🪦 _yesterdayInArt ELIMINADA (2026-08-07): solo la usaba la audiencia
+// 'refund-pending-daily' del reembolso diario, que se sacó del producto.
 
 function _lastWeekInArt() {
   const p = _getArtParts();
@@ -520,36 +488,9 @@ async function evaluateAllRules({ models, sendPushFn, logger }) {
 async function seedDefaultRulesIfMissing(NotificationRule) {
   const defaults = [
     // ============= REEMBOLSOS =============
-    {
-      id: uuidv4(),
-      code: 'B1',
-      name: 'Recordatorio reembolso diario — tarde (14:00)',
-      description: 'Push al mediodía a quienes perdieron ayer y no reclamaron todavía.',
-      category: 'refund',
-      enabled: true,
-      triggerType: 'cron',
-      cronSchedule: { hour: 14, minute: 0 },
-      audienceType: 'refund-pending-daily',
-      title: '💰 Tu reembolso del 8% te espera',
-      body: 'Perdiste ayer? Tenés un reembolso disponible. Tocá para reclamarlo.',
-      bonus: { type: 'none' },
-      cooldownMinutes: 12 * 60
-    },
-    {
-      id: uuidv4(),
-      code: 'B2',
-      name: 'Recordatorio reembolso diario — última hora (22:00)',
-      description: 'Último aviso 2h antes del cierre del día ART.',
-      category: 'refund',
-      enabled: true,
-      triggerType: 'cron',
-      cronSchedule: { hour: 22, minute: 0 },
-      audienceType: 'refund-pending-daily',
-      title: '⏰ Última hora para tu reembolso',
-      body: 'Quedan 2 horas. No te pierdas el 8% de tu pérdida de ayer.',
-      bonus: { type: 'none' },
-      cooldownMinutes: 8 * 60
-    },
+    // 🪦 B1/B2 (recordatorios del reembolso DIARIO) eliminadas el 2026-08-07:
+    // el reembolso diario se sacó del producto. La migración de abajo borra las
+    // que ya estén sembradas en la base.
     {
       id: uuidv4(),
       code: 'B3',
@@ -753,11 +694,24 @@ async function seedDefaultRulesIfMissing(NotificationRule) {
   //    copy desde el panel ANTES de activarlas.
   // Las reglas de recuperación quedan activas (igual son approval-gated).
   const _seedDisabledAudiences = new Set([
-    'refund-pending-daily', 'refund-pending-weekly', 'refund-pending-monthly',
+    'refund-pending-weekly', 'refund-pending-monthly',
     'welcome-no-play-since', 'tier-state', 'notification-plan'
   ]);
   for (const def of defaults) {
     if (_seedDisabledAudiences.has(def.audienceType)) def.enabled = false;
+  }
+
+  // MIGRACIÓN (idempotente): borrar las reglas del reembolso DIARIO que hayan
+  // quedado sembradas de antes (B1/B2 o cualquier otra con esa audiencia). El
+  // reembolso diario se eliminó el 2026-08-07; la audiencia ya ni existe en
+  // _resolveAudience, así que dejarlas solo confundiría desde el panel.
+  try {
+    const gone = await NotificationRule.deleteMany({ audienceType: 'refund-pending-daily' });
+    if (gone && gone.deletedCount) {
+      console.log(`[notif-rules] migración: ${gone.deletedCount} regla(s) del reembolso diario eliminadas (B1/B2)`);
+    }
+  } catch (e) {
+    console.warn(`[notif-rules] no se pudieron borrar las reglas del reembolso diario: ${e.message}`);
   }
 
   for (const def of defaults) {

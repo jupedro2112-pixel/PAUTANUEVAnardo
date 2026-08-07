@@ -39,7 +39,8 @@ El sistema VIPCARGAS:
 - Gestiona **cargas** (manuales por agente, o AUTOMÁTICAS vía banco hgcash + IA de
   comprobantes) y **retiros** (self-service con confirmación de agente y pago
   automático por hgcash).
-- Da **reembolsos** sobre la pérdida real/NETWIN (diario/semanal/mensual), **ruleta
+- Da **reembolsos** sobre la pérdida real/NETWIN (semanal/mensual — el diario se
+  eliminó el 2026-08-07), **ruleta
   diaria**, **fueguito** (racha), **bono instalación $5.000**, **referidos** (8% de
   netwin → owner-revenue, y 7% de eso al referidor) y **campañas/publicistas** con
   sub-atribución por influencer.
@@ -207,10 +208,9 @@ Quedan sólo para poder revertir; se borran más adelante. **No los uses para na
 | Módulo | Usa | Para qué |
 |---|---|---|
 | `src/services/giroxService.js` | server.js (`girox.*`), migración | **Cliente ÚNICO de la Partner API.** Altas (`createPlatformUser`, `syncUserToPlatform`), consulta (`getUserInfoByName`, `getUserBalance(WithRetry)`), credenciales (`validateCredentials`, `changeUserPassword`), SSO (`createSession`) y plata (`depositToUser`, `withdrawFromUser`, `creditUserBalance`). Auth por header `X-Api-Key`. Rate limit + reintentos propios. |
-| `src/services/giroxReportsService.js` | reembolsos, referidos (`giroxReports.*`) | **Netwin (GGR) por jugador y rango.** ⚠️ NO es la Partner API: habla con el PANEL `admin.1girox.com`. `getPlayerNetwinForDateRange`, `findPlayerIdByUsername`, `getPlayerInfoById`. |
-| `src/services/giroxUserLinkService.js` | reembolsos, referidos | `resolveGiroxUserId(userId, username)` — lee `User.giroxUserId` y, si falta, lo backfillea al vuelo contra el panel (match EXACTO del nombre, doble verificación). |
+| `src/services/giroxUserLinkService.js` | reembolsos, referidos | `resolveGiroxUserId(userId, username)` — lee `User.giroxUserId` y, si falta, lo backfillea al vuelo (match EXACTO del nombre, doble verificación). (🪦 `giroxReportsService.js` — el que scrapeaba netwin del PANEL — se ELIMINÓ el 2026-07-31 con la v1.9: el netwin sale de `getPlayerStats` de la Partner API, ver §4.6.) |
 | `src/services/giroxPublisherKeys.js` | publisher_admin create-user, panel | Alta de jugadores con la **API key de la campaña** (`Campaign.giroxApiKey`). `createUserAsPublisher`, `testKey`. `invalidateSession()` quedó como **no-op** (no hay sesiones que tirar). |
-| `src/utils/periodRanges.js` | reembolsos | Rangos ayer/semana/mes en hora Argentina. Eran funciones de `jugaygana.js`; son PURAS y se movieron acá para que el cliente viejo se pueda borrar. **No tocar los strings de fecha: alimentan los `periodKey` de RefundClaim.** |
+| `src/utils/periodRanges.js` | reembolsos, fueguito | Rangos hoy/semana pasada/mes pasado en hora Argentina. Eran funciones de `jugaygana.js`; son PURAS y se movieron acá para que el cliente viejo se pueda borrar. (La de "ayer" se eliminó junto con el reembolso diario, 2026-08-07.) **No tocar los strings de fecha: alimentan los `periodKey` de RefundClaim.** |
 | `scripts/migrate-users-to-girox.js` | one-shot manual | Migración de la base de usuarios (ver §4.7). |
 
 ### 4.2 Qué DESAPARECIÓ (el doc viejo insistía con estas cosas)
@@ -493,21 +493,26 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   devolver; si se descontó → devolución (split bonus/fichas para pagos legacy).
   `pay-other-bank` = pago manual (descuenta igual). Poller `_pollPayingPayouts` cada
   45s (últimas 2h) cubre webhooks perdidos.
-- **Reembolsos**: `POST /api/refunds/claim/{daily|weekly|monthly}` — lock Redis,
+- **Reembolsos**: `POST /api/refunds/claim/{weekly|monthly}` — lock Redis,
   ventanas de `models/refunds.js` (semanal: lunes/martes; mensual: desde día 7),
   rangos en hora ART de `src/utils/periodRanges.js`, NETWIN real de
   `girox.getPlayerStats(username, …)` (**sólo casino**, ver §4.6; por username, sin
   gate de ID). El % sale del RANGO por pérdida del período
-  (`src/utils/refundTiers.js`). **Desde 2026-08-05 los rangos son EDITABLES desde
-  el panel y CADA PERÍODO tiene su propia escalera** (diario ≠ semanal ≠ mensual):
-  `Config['refundTiersByPeriod']` (`{daily/weekly/monthly: [{name,pct,max}]}`),
+  (`src/utils/refundTiers.js`). 🪦 **El reembolso DIARIO se ELIMINÓ el 2026-08-07**
+  (decisión del owner): `claim/daily` quedó como stub que responde "ya no está
+  disponible" (para PWAs cacheadas), el status manda un stub `daily` en $0 por la
+  misma razón, y los RefundClaim históricos `type:'daily'` siguen en la base (el
+  enum del modelo conserva 'daily' SOLO por esos docs). **Desde 2026-08-05 los
+  rangos son EDITABLES desde el panel y CADA PERÍODO tiene su propia escalera**
+  (semanal ≠ mensual): `Config['refundTiersByPeriod']`
+  (`{weekly/monthly: [{name,pct,max}]}` — una llave `daily` vieja se ignora),
   leída SIN cache por `getRefundTiersByPeriod()` (server.js) con fallback a
   `DEFAULT_TIERS` (3/6/10%) por período si falta/es inválida. Validación en
   `refundTiers.normalizeTiers` (1-6 rangos, % 0-100, umbrales crecientes, último
   sin techo). Endpoints `GET/POST /api/admin/refund-tiers` (solo admin general);
   el POST devuelve `commandWarnings` = comandos `/sys_*` cuyo texto menciona
   porcentajes (esos se editan A MANO desde COMANDOS). El status manda
-  `tiersByPeriod` (+ `tiers` legacy = la del diario). Los viejos
+  `tiersByPeriod` (+ `tiers` legacy = la del semanal). Los viejos
   Config['refundPercents'] quedaron `enUso:false` y su card del panel fue
   reemplazada por el editor de rangos. **El RefundClaim se CREA antes de acreditar** (el índice único
   `userId+type+periodKey` es el candado atómico contra doble cobro; si el crédito
@@ -659,8 +664,9 @@ El backfill de `usernameLower` corre en CADA arranque (idempotente) y setea
 - **Identidad**: `user.id` (uuid), no `_id`. Username case-insensitive →
   `findUserByUsernameCI` (indexado + fallback), NUNCA regex nuevo.
 - **periodKey**: `YYYY-MM` (referidos y VipWagerMonth); RefundClaim usa
-  `daily:YYYY-MM-DD` / `weekly:YYYY-MM-DD` / `monthly:YYYY-MM` /
-  `rake:YYYY-MM-DD` (lunes de la semana del rakeback VIP).
+  `weekly:YYYY-MM-DD` / `monthly:YYYY-MM` / `rake:YYYY-MM-DD` (lunes de la
+  semana del rakeback VIP). (`daily:YYYY-MM-DD` sólo en claims históricos: el
+  reembolso diario se eliminó el 2026-08-07.)
 - **Montos 1girox: PESOS.** Se envían tal cual (2 decimales), y los balances y el netwin
   del panel vuelven en pesos. **NO multiplicar ni dividir por 100** — el ×100 de
   centavos era de JUGAYGANA y ya no existe.

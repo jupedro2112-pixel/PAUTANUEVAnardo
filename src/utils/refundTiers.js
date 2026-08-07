@@ -4,11 +4,11 @@
  * REGLA DE NEGOCIO (owner, 2026-07-31; configurable desde el panel 2026-08-05):
  *
  * Desde 2026-08-05 los rangos son EDITABLES DESDE EL PANEL y cada período
- * (diario / semanal / mensual) tiene su PROPIA escalera — pueden ser distintas
- * entre sí (pedido del owner). La config vive en Config['refundTiersByPeriod']
- * con la forma { daily: [...], weekly: [...], monthly: [...] } donde cada tier
- * es { name, pct, max } (max null = sin techo, el último). Si no hay config
- * guardada (o es inválida), rige DEFAULT_TIERS (la tabla histórica):
+ * (semanal / mensual — el diario se eliminó el 2026-08-07) tiene su PROPIA
+ * escalera — pueden ser distintas entre sí (pedido del owner). La config vive en
+ * Config['refundTiersByPeriod'] con la forma { weekly: [...], monthly: [...] }
+ * donde cada tier es { name, pct, max } (max null = sin techo, el último). Si no
+ * hay config guardada (o es inválida), rige DEFAULT_TIERS (la tabla histórica):
  *
  *   Pérdida del período        Rango    Reembolso
  *   ─────────────────────      ──────   ─────────
@@ -23,7 +23,7 @@
  * ni progreso que se arrastre entre períodos.
  *
  * Consecuencia práctica: un mismo jugador puede estar en el tope del mensual y en
- * el rango más bajo del diario al mismo tiempo, porque son períodos distintos con
+ * el rango más bajo del semanal al mismo tiempo, porque son períodos distintos con
  * pérdidas distintas. La UI muestra el rango POR REEMBOLSO, no uno solo.
  *
  * Los umbrales son en PESOS y se comparan contra el netwin (apostado − ganado) que
