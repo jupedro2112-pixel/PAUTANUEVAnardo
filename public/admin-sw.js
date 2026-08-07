@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v26'; // v26: reembolso DIARIO eliminado (editor de rangos y stats solo semanal/mensual)
+const CACHE_VERSION = 'v27'; // v27: publisher_admin multi-publicista (selector al crear usuario + checkboxes en cuentas)
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

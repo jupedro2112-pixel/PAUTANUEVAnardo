@@ -8,6 +8,61 @@
 
 ## Sesión 2026-08-07
 
+### 155. publisher_admin MULTI-PUBLICISTA: una cuenta puede tener varias campañas y elegir a cuál cargarle cada usuario
+- **Pedido del owner:** que un mismo acceso publisher_admin pueda tener 2, 3 o
+  más publicistas asignados y, al crear un usuario, marcar a cuál cargárselo
+  (cada publicista se separa: el jugador se crea bajo la cuenta de 1girox de
+  ESE publicista, con su key).
+- **Modelo:** campo nuevo `User.publisherCampaignCodes` (lista, uppercase). El
+  viejo `publisherCampaignCode` queda como "principal" (= el primero) por
+  compat — nada que migrar: las cuentas existentes siguen funcionando con su
+  única campaña. Helper central **`_publisherCodesOf(employee)`** (server.js):
+  unión de ambos campos, normalizada y sin duplicados — TODA validación de
+  "¿puede operar esta campaña?" pasa por ahí.
+- **Backend (endpoints del publisher_admin):**
+  - `create-user`: acepta `campaignCode` en el body. Con 2+ asignadas es
+    OBLIGATORIO; con una sola se puede omitir (flujo idéntico al de antes).
+    SEGURIDAD: un código que no esté en su lista → 403 (jamás se crea bajo un
+    publicista ajeno). El resto del flujo (key de la campaña elegida,
+    giroxOwnerCampaign, atribución, influencer de ESA campaña) ya colgaba de
+    `campaign` y no cambió.
+  - `influencers`: nuevo `?campaign=` (validado contra la lista; default la
+    primera) — cada campaña tiene sus propios influencers.
+  - `my-stats`: totales sobre TODAS sus campañas (`$in`) + campo nuevo
+    `publishers` (lista completa para armar el selector; `publisher` queda por
+    compat). `users`: `$in` + filtro opcional `?campaign=` + devuelve
+    `acquisitionCampaign` para el badge.
+  - `access-link`/`change-password`: el gate pasó de "tiene campaña" a "tiene
+    al menos una" (la propiedad real sigue siendo createdByEmployeeId).
+- **Backend (gestión del admin general):** POST y PUT de
+  `/api/admin/publisher-admins` aceptan **`campaignCodes` (lista)** — todas
+  deben existir y estar activas, tope 20 — o el legacy `campaignCode`; guardan
+  lista + principal. El GET devuelve `publisherCampaignCodes` y `campaigns`
+  (todas resueltas). Helper `_resolveCampaignCodesInput`. El login devuelve
+  también `publisherCampaignCodes`.
+- **Panel — vista publisher_admin:** bloque nuevo **"🏢 ¿A qué publicista?"**
+  en el form de crear usuario, visible SOLO con 2+ campañas (con una, todo
+  sigue igual). Son **BOTONES de un toque** (no un desplegable — pedido owner:
+  rápido para el agente), y **NUNCA hay uno preseleccionado**: se elige EN CADA
+  usuario y tras crear se **deselecciona solo** — así el próximo alta vuelve a
+  exigir la elección y no se le carga a un publicista equivocado por arrastre.
+  Al tocar un botón se recargan los influencers de esa campaña (con 2+ y nada
+  elegido, el selector de influencer se oculta hasta elegir). El header pasa a
+  "Mis publicistas" con la lista en el subtítulo, y "Mis usuarios" muestra un
+  badge 🏢 con la campaña de cada usuario.
+- **Panel — vista admin:** el modal de CUENTAS PUBLICISTAS pasó de select único
+  a **checkboxes** (marcar varias campañas); la card de cada cuenta lista
+  todas sus campañas y códigos.
+- **Sin cambios en el lockdown** (`PUBLISHER_ADMIN_ALLOWED_PATHS`): no hay
+  rutas nuevas, solo body/query en las existentes.
+- **Validado:** `node --check` OK (server.js, User.js, admin.js). admin-sw a
+  **v27**. **Back necesita redeploy**; panel, recargar. PROBAR: (1) editar una
+  cuenta publicista y marcarle 2-3 campañas; (2) loguear con esa cuenta → el
+  form muestra el selector; crear un usuario para cada publicista → en 1girox
+  cada jugador aparece bajo el sub-agente correcto y el badge 🏢 en "Mis
+  usuarios" coincide; (3) una cuenta con UNA sola campaña → sin selector, flujo
+  viejo intacto; (4) intentar create-user por curl con un código ajeno → 403.
+
 ### 154. Script de los 21 SSM del clon: `scripts/clon-ssm-put.sh` (para CloudShell)
 - **Pedido del owner:** un solo archivo para subir/modificar todos los SSM del
   clon (runbook MIGRACION-AWS paso 5).

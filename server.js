@@ -4015,8 +4015,9 @@ app.get('/api/admin/me', async (req, res) => {
         balance: user.balance,
         needsPasswordChange: !user.passwordChangedAt,
         // Sólo se llena para role='publisher_admin'. El front lo usa para mostrar
-        // qué publicista representa la cuenta y para filtrar el mini-dashboard.
-        publisherCampaignCode: user.publisherCampaignCode || null
+        // qué publicista(s) representa la cuenta y para filtrar el mini-dashboard.
+        publisherCampaignCode: user.publisherCampaignCode || null,
+        publisherCampaignCodes: user.role === 'publisher_admin' ? _publisherCodesOf(user) : []
       },
       token: freshToken
     });
@@ -11490,10 +11491,26 @@ app.get('/api/admin/campaigns/:code/users', authMiddleware, adminMiddleware, asy
 // PUBLISHER_ADMIN_ALLOWED_PATHS — acá sólo agregamos el chequeo de rol con
 // publisherAdminMiddleware para defensa en profundidad.
 
+// Resuelve los códigos de campaña PERMITIDOS de una cuenta publisher_admin:
+// la unión de publisherCampaignCodes (multi, 2026-08-07) y el legacy
+// publisherCampaignCode (principal), normalizados y sin duplicados. Toda
+// validación de "¿puede operar sobre esta campaña?" pasa por acá.
+function _publisherCodesOf(employee) {
+  const raw = [
+    ...(Array.isArray(employee?.publisherCampaignCodes) ? employee.publisherCampaignCodes : []),
+    employee?.publisherCampaignCode
+  ];
+  return Array.from(new Set(
+    raw.map((c) => String(c || '').toUpperCase().trim()).filter(Boolean)
+  ));
+}
+
 // POST /api/admin/publisher-admin/create-user
-// El publisher_admin crea un usuario para SU publicista. El código de campaña
-// no se elige en el body: se toma automáticamente del campo publisherCampaignCode
-// de la cuenta logueada.
+// El publisher_admin crea un usuario para uno de SUS publicistas. Desde
+// 2026-08-07 una cuenta puede tener VARIOS: si tiene más de uno, el body DEBE
+// traer `campaignCode` (el elegido en el selector del panel) y se valida que
+// esté en su lista — jamás se acepta un código ajeno. Con uno solo, el body
+// puede omitirlo (flujo idéntico al de siempre).
 app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdminMiddleware, async (req, res) => {
   try {
     const { username, password, email, phone } = req.body || {};
@@ -11508,25 +11525,41 @@ app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdmi
       return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 100 caracteres' });
     }
 
-    // Cargar la cuenta del publisher_admin desde la DB para obtener su campaña asociada.
+    // Cargar la cuenta del publisher_admin desde la DB para obtener sus campañas.
     const employee = await User.findOne({ id: req.user.userId }).lean();
     if (!employee || employee.role !== 'publisher_admin') {
       return res.status(403).json({ error: 'Cuenta no válida' });
     }
-    if (!employee.publisherCampaignCode) {
+    const allowedCodes = _publisherCodesOf(employee);
+    if (allowedCodes.length === 0) {
       return res.status(400).json({
         error: 'Tu cuenta no tiene un publicista asignado. Contactá al administrador general.'
       });
     }
 
+    // Elegir el publicista de ESTE usuario. SEGURIDAD: el código del body solo
+    // se acepta si está en la lista de la cuenta.
+    let chosenCode;
+    const rawCode = typeof req.body.campaignCode === 'string' ? req.body.campaignCode.toUpperCase().trim() : '';
+    if (rawCode) {
+      if (!allowedCodes.includes(rawCode)) {
+        return res.status(403).json({ error: 'Ese publicista no está asignado a tu cuenta.' });
+      }
+      chosenCode = rawCode;
+    } else if (allowedCodes.length === 1) {
+      chosenCode = allowedCodes[0];
+    } else {
+      return res.status(400).json({ error: 'Elegí a qué publicista cargarle este usuario.' });
+    }
+
     // Validar que la campaña sigue existiendo y activa (un admin podría haberla
-    // desactivado después de crear este publisher_admin).
-    const campaign = await Campaign.findOne({ code: employee.publisherCampaignCode }).lean();
+    // desactivado después de asignarla a este publisher_admin).
+    const campaign = await Campaign.findOne({ code: chosenCode }).lean();
     if (!campaign) {
-      return res.status(400).json({ error: 'La campaña asociada a tu cuenta ya no existe. Contactá al administrador general.' });
+      return res.status(400).json({ error: 'La campaña elegida ya no existe. Contactá al administrador general.' });
     }
     if (campaign.isActive === false) {
-      return res.status(400).json({ error: 'Tu publicista está desactivado. Contactá al administrador general.' });
+      return res.status(400).json({ error: 'Ese publicista está desactivado. Contactá al administrador general.' });
     }
 
     // Sub-atribución por influencer. Si la campaña tiene influencers ACTIVOS, el
@@ -11680,22 +11713,35 @@ app.post('/api/admin/publisher-admin/create-user', authMiddleware, publisherAdmi
   }
 });
 
-// GET /api/admin/publisher-admin/influencers
-// Devuelve los influencers ACTIVOS de la campaña de este publisher_admin, para
-// poblar el desplegable del form de crear usuario. Si la campaña no tiene
-// influencers cargados devuelve lista vacía (el front oculta el selector).
+// GET /api/admin/publisher-admin/influencers?campaign=CODE
+// Devuelve los influencers ACTIVOS de UNA campaña de este publisher_admin, para
+// poblar el desplegable del form de crear usuario. Con varias campañas
+// asignadas, `campaign` dice cuál (se valida contra su lista); sin el
+// parámetro se usa la primera. Si la campaña no tiene influencers cargados
+// devuelve lista vacía (el front oculta el selector).
 app.get('/api/admin/publisher-admin/influencers', authMiddleware, publisherAdminMiddleware, async (req, res) => {
   try {
     const employee = await User.findOne({ id: req.user.userId }).lean();
-    if (!employee || !employee.publisherCampaignCode) {
+    const allowedCodes = _publisherCodesOf(employee || {});
+    if (allowedCodes.length === 0) {
       return res.json({ influencers: [] });
     }
-    const campaign = await Campaign.findOne({ code: employee.publisherCampaignCode })
+    const rawCode = String(req.query.campaign || '').toUpperCase().trim();
+    let code;
+    if (rawCode) {
+      if (!allowedCodes.includes(rawCode)) {
+        return res.status(403).json({ error: 'Ese publicista no está asignado a tu cuenta.' });
+      }
+      code = rawCode;
+    } else {
+      code = allowedCodes[0];
+    }
+    const campaign = await Campaign.findOne({ code })
       .select('influencers').lean();
     const influencers = (campaign?.influencers || [])
       .filter(i => i.isActive)
       .map(i => i.name);
-    res.json({ influencers });
+    res.json({ influencers, campaign: code });
   } catch (err) {
     logger.error(`[publisher_admin influencers] ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });
@@ -11711,21 +11757,29 @@ app.get('/api/admin/publisher-admin/my-stats', authMiddleware, publisherAdminMid
     if (!employee || employee.role !== 'publisher_admin') {
       return res.status(403).json({ error: 'Cuenta no válida' });
     }
-    if (!employee.publisherCampaignCode) {
+    const allowedCodes = _publisherCodesOf(employee);
+    if (allowedCodes.length === 0) {
       return res.json({
         publisher: null,
+        publishers: [],
         totals: { users: 0, deposits: 0, withdrawals: 0, netRevenue: 0 },
         recentUsers: []
       });
     }
 
-    const campaign = await Campaign.findOne({ code: employee.publisherCampaignCode }).lean();
+    // Todas las campañas asignadas (para el selector del form y el subtítulo).
+    const campaignsList = await Campaign.find({ code: { $in: allowedCodes } })
+      .select('code publisher name isActive').lean();
+    // Ordenadas como en la lista de la cuenta (la primera es la "principal").
+    campaignsList.sort((a, b) => allowedCodes.indexOf(a.code) - allowedCodes.indexOf(b.code));
+    const campaign = campaignsList[0] || null;
 
     // Sólo contamos usuarios creados POR esta cuenta (acquisitionSource='manual'
     // y createdByEmployeeId == el ID del empleado logueado). Esto evita mezclar
     // los orgánicos del link de pauta si la campaña también está activa allí.
+    // Con varias campañas asignadas se suman TODAS (los totales son de la cuenta).
     const baseQuery = {
-      acquisitionCampaign: employee.publisherCampaignCode,
+      acquisitionCampaign: { $in: allowedCodes },
       acquisitionSource: 'manual',
       createdByEmployeeId: employee.id
     };
@@ -11766,7 +11820,13 @@ app.get('/api/admin/publisher-admin/my-stats', authMiddleware, publisherAdminMid
       .lean();
 
     res.json({
+      // `publisher` (la principal) queda por compat; `publishers` trae TODAS las
+      // campañas asignadas — el front arma con esto el selector de "a qué
+      // publicista cargarle" del form de crear usuario.
       publisher: campaign ? { code: campaign.code, name: campaign.name, publisher: campaign.publisher } : null,
+      publishers: campaignsList.map((c) => ({
+        code: c.code, name: c.name, publisher: c.publisher, isActive: c.isActive !== false
+      })),
       totals: {
         users: users.length,
         deposits: totalDeposits,
@@ -11790,7 +11850,8 @@ app.get('/api/admin/publisher-admin/my-stats', authMiddleware, publisherAdminMid
 app.get('/api/admin/publisher-admin/users', authMiddleware, publisherAdminMiddleware, async (req, res) => {
   try {
     const employee = await User.findOne({ id: req.user.userId }).lean();
-    if (!employee || !employee.publisherCampaignCode) {
+    const allowedCodes = _publisherCodesOf(employee || {});
+    if (allowedCodes.length === 0) {
       return res.json({ users: [], total: 0, page: 1, totalPages: 0, perPage: 10 });
     }
     const PER_PAGE = 10;
@@ -11798,9 +11859,14 @@ app.get('/api/admin/publisher-admin/users', authMiddleware, publisherAdminMiddle
     const search = String(req.query.search || '').trim().slice(0, 60);
 
     const influencerFilter = String(req.query.influencer || '').trim().slice(0, 80);
+    // Filtro opcional por publicista (solo tiene sentido con varias asignadas);
+    // se valida contra la lista para no filtrar por campañas ajenas.
+    const campaignFilter = String(req.query.campaign || '').toUpperCase().trim();
 
     const baseQuery = {
-      acquisitionCampaign: employee.publisherCampaignCode,
+      acquisitionCampaign: campaignFilter && allowedCodes.includes(campaignFilter)
+        ? campaignFilter
+        : { $in: allowedCodes },
       acquisitionSource: 'manual',
       createdByEmployeeId: employee.id
     };
@@ -11815,7 +11881,7 @@ app.get('/api/admin/publisher-admin/users', authMiddleware, publisherAdminMiddle
     const total = await User.countDocuments(baseQuery);
     const totalPages = total === 0 ? 0 : Math.ceil(total / PER_PAGE);
     const users = await User.find(baseQuery)
-      .select('id username createdAt phone email acquisitionInfluencer')
+      .select('id username createdAt phone email acquisitionInfluencer acquisitionCampaign')
       .sort({ createdAt: -1 })
       .skip((page - 1) * PER_PAGE)
       .limit(PER_PAGE)
@@ -11838,7 +11904,7 @@ app.post('/api/admin/publisher-admin/users/:userId/access-link', authMiddleware,
   try {
     const { userId } = req.params;
     const employee = await User.findOne({ id: req.user.userId }).lean();
-    if (!employee || !employee.publisherCampaignCode) {
+    if (!employee || _publisherCodesOf(employee).length === 0) {
       return res.status(403).json({ error: 'Cuenta no válida' });
     }
     const target = await User.findOne({ id: userId }).select('id username role isBlocked createdByEmployeeId').lean();
@@ -11874,7 +11940,7 @@ app.post('/api/admin/publisher-admin/users/:userId/change-password', authMiddlew
       return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 100 caracteres' });
     }
     const employee = await User.findOne({ id: req.user.userId }).lean();
-    if (!employee || !employee.publisherCampaignCode) {
+    if (!employee || _publisherCodesOf(employee).length === 0) {
       return res.status(403).json({ error: 'Cuenta no válida' });
     }
     const target = await User.findOne({ id: userId });
@@ -11916,6 +11982,34 @@ app.post('/api/admin/publisher-admin/users/:userId/change-password', authMiddlew
 // explícito req.user.role !== 'admin' (no basta adminMiddleware que también
 // admite depositor/withdrawer).
 
+// Normaliza y valida la lista de campañas de una cuenta publisher_admin
+// (acepta `campaignCodes` lista o `campaignCode` suelto, sin duplicados).
+// Devuelve { codes, campaignsByCode } o { error } con mensaje para el admin.
+async function _resolveCampaignCodesInput({ campaignCodes, campaignCode }) {
+  const raw = [];
+  if (Array.isArray(campaignCodes)) raw.push(...campaignCodes);
+  if (campaignCode) raw.push(campaignCode);
+  const codes = Array.from(new Set(
+    raw.map((c) => String(c || '').toUpperCase().trim()).filter(Boolean)
+  ));
+  if (codes.length === 0) {
+    return { error: 'Elegí al menos una campaña (publicista) para la cuenta.' };
+  }
+  if (codes.length > 20) {
+    return { error: 'Máximo 20 publicistas por cuenta.' };
+  }
+  const campaigns = await Campaign.find({ code: { $in: codes } })
+    .select('code publisher name isActive').lean();
+  const byCode = Object.fromEntries(campaigns.map((c) => [c.code, c]));
+  for (const code of codes) {
+    if (!byCode[code]) return { error: `No existe una campaña con el código ${code}` };
+    if (byCode[code].isActive === false) {
+      return { error: `La campaña ${code} está desactivada — reactivala antes de asignarla` };
+    }
+  }
+  return { codes, campaignsByCode: byCode };
+}
+
 // POST /api/admin/publisher-admins — crear una cuenta publisher_admin asociada
 // a una Campaign existente y activa.
 app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (req, res) => {
@@ -11923,9 +12017,9 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Sólo el administrador general puede crear publisher_admins' });
     }
-    const { username, password, campaignCode, email, phone } = req.body || {};
-    if (!username || !password || !campaignCode) {
-      return res.status(400).json({ error: 'username, password y campaignCode son requeridos' });
+    const { username, password, campaignCode, campaignCodes, email, phone } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username y password son requeridos' });
     }
     if (!validateUsername(username)) {
       return res.status(400).json({ error: 'Usuario inválido. Usá 3-30 caracteres: letras, números, punto, guion o guion bajo.' });
@@ -11934,14 +12028,11 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
       return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 100 caracteres' });
     }
 
-    const normalizedCode = String(campaignCode).toUpperCase().trim();
-    const campaign = await Campaign.findOne({ code: normalizedCode }).lean();
-    if (!campaign) {
-      return res.status(400).json({ error: 'No existe una campaña con ese código' });
-    }
-    if (campaign.isActive === false) {
-      return res.status(400).json({ error: 'La campaña está desactivada — reactivala antes de asignar una cuenta' });
-    }
+    // Campañas: acepta `campaignCodes` (lista, panel nuevo 2026-08-07) o el
+    // legacy `campaignCode` (una sola). Todas tienen que existir y estar activas.
+    const check = await _resolveCampaignCodesInput({ campaignCodes, campaignCode });
+    if (check.error) return res.status(400).json({ error: check.error });
+    const { codes, campaignsByCode } = check;
 
     const existing = await findUserByUsernameCI(username);
     if (existing) {
@@ -11956,7 +12047,9 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
       email: email || null,
       phone: phone || null,
       role: 'publisher_admin',
-      publisherCampaignCode: normalizedCode,
+      // El primero de la lista queda como "principal" (compat con el campo viejo).
+      publisherCampaignCode: codes[0],
+      publisherCampaignCodes: codes,
       accountNumber: generateAccountNumber(),
       balance: 0,
       createdAt: new Date(),
@@ -11966,7 +12059,7 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
     });
 
     logger.info(
-      `[admin] ${req.user.username} creó publisher_admin ${username} para campaña ${normalizedCode}`
+      `[admin] ${req.user.username} creó publisher_admin ${username} para campañas [${codes.join(', ')}]`
     );
 
     res.status(201).json({
@@ -11975,7 +12068,10 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
         id: newPa.id,
         username: newPa.username,
         publisherCampaignCode: newPa.publisherCampaignCode,
-        campaign: { code: campaign.code, publisher: campaign.publisher, name: campaign.name },
+        publisherCampaignCodes: codes,
+        campaign: campaignsByCode[codes[0]]
+          ? { code: codes[0], publisher: campaignsByCode[codes[0]].publisher, name: campaignsByCode[codes[0]].name }
+          : null,
         isActive: newPa.isActive,
         createdAt: newPa.createdAt
       }
@@ -11991,14 +12087,14 @@ app.post('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (
 app.get('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const list = await User.find({ role: 'publisher_admin' })
-      .select('id username publisherCampaignCode isActive createdAt lastLogin email phone')
+      .select('id username publisherCampaignCode publisherCampaignCodes isActive createdAt lastLogin email phone')
       .sort({ createdAt: -1 })
       .lean();
 
     if (list.length === 0) return res.json({ publisherAdmins: [] });
 
-    // Resolver datos de la campaña asociada a cada uno.
-    const codes = Array.from(new Set(list.map(p => p.publisherCampaignCode).filter(Boolean)));
+    // Resolver datos de TODAS las campañas asociadas (multi desde 2026-08-07).
+    const codes = Array.from(new Set(list.flatMap(p => _publisherCodesOf(p))));
     const campaigns = await Campaign.find({ code: { $in: codes } })
       .select('code publisher name isActive')
       .lean();
@@ -12015,18 +12111,23 @@ app.get('/api/admin/publisher-admins', authMiddleware, adminMiddleware, async (r
     ]);
     const userCountByEmployeeId = Object.fromEntries(userCountAgg.map(x => [x._id, x.count]));
 
-    const enriched = list.map(p => ({
-      id: p.id,
-      username: p.username,
-      email: p.email,
-      phone: p.phone,
-      isActive: p.isActive,
-      createdAt: p.createdAt,
-      lastLogin: p.lastLogin,
-      publisherCampaignCode: p.publisherCampaignCode,
-      campaign: campaignByCode[p.publisherCampaignCode] || null,
-      usersCreatedCount: userCountByEmployeeId[p.id] || 0
-    }));
+    const enriched = list.map(p => {
+      const myCodes = _publisherCodesOf(p);
+      return {
+        id: p.id,
+        username: p.username,
+        email: p.email,
+        phone: p.phone,
+        isActive: p.isActive,
+        createdAt: p.createdAt,
+        lastLogin: p.lastLogin,
+        publisherCampaignCode: p.publisherCampaignCode,
+        publisherCampaignCodes: myCodes,
+        campaign: campaignByCode[p.publisherCampaignCode] || null,
+        campaigns: myCodes.map((c) => campaignByCode[c] || { code: c, publisher: null, name: null, missing: true }),
+        usersCreatedCount: userCountByEmployeeId[p.id] || 0
+      };
+    });
 
     res.json({ publisherAdmins: enriched });
   } catch (err) {
@@ -12044,19 +12145,18 @@ app.put('/api/admin/publisher-admins/:id', authMiddleware, adminMiddleware, asyn
       return res.status(403).json({ error: 'Sólo el administrador general puede modificar publisher_admins' });
     }
     const { id } = req.params;
-    const { campaignCode, isActive, password, email, phone } = req.body || {};
+    const { campaignCode, campaignCodes, isActive, password, email, phone } = req.body || {};
 
     const target = await User.findOne({ id, role: 'publisher_admin' });
     if (!target) return res.status(404).json({ error: 'Publisher_admin no encontrado' });
 
-    if (campaignCode !== undefined) {
-      const normalizedCode = String(campaignCode).toUpperCase().trim();
-      const campaign = await Campaign.findOne({ code: normalizedCode }).lean();
-      if (!campaign) return res.status(400).json({ error: 'No existe una campaña con ese código' });
-      if (campaign.isActive === false) {
-        return res.status(400).json({ error: 'La campaña está desactivada' });
-      }
-      target.publisherCampaignCode = normalizedCode;
+    // Cambiar las campañas asignadas: `campaignCodes` (lista, panel nuevo) o el
+    // legacy `campaignCode` (una sola). La primera queda como principal.
+    if (campaignCodes !== undefined || campaignCode !== undefined) {
+      const check = await _resolveCampaignCodesInput({ campaignCodes, campaignCode });
+      if (check.error) return res.status(400).json({ error: check.error });
+      target.publisherCampaignCode = check.codes[0];
+      target.publisherCampaignCodes = check.codes;
     }
     if (typeof isActive === 'boolean') target.isActive = isActive;
     if (typeof email === 'string') target.email = email.trim() || null;
@@ -12079,6 +12179,7 @@ app.put('/api/admin/publisher-admins/:id', authMiddleware, adminMiddleware, asyn
         id: target.id,
         username: target.username,
         publisherCampaignCode: target.publisherCampaignCode,
+        publisherCampaignCodes: _publisherCodesOf(target),
         isActive: target.isActive
       }
     });

@@ -82,14 +82,22 @@ const userSchema = new mongoose.Schema({
     index: true
   },
   // Para cuentas con role='publisher_admin': código de la Campaign a la que
-  // están atadas permanentemente. Todo usuario que crean queda atribuido a
-  // este código. Ignorado en cualquier otro rol.
+  // están atadas. Todo usuario que crean queda atribuido a un código de su
+  // lista. Ignorado en cualquier otro rol.
+  // Desde 2026-08-07 una misma cuenta puede tener VARIOS publicistas:
+  // `publisherCampaignCodes` es la lista completa y `publisherCampaignCode`
+  // queda como "principal" (el primero) por compatibilidad — el server siempre
+  // resuelve los permitidos con la UNIÓN de ambos campos (_publisherCodesOf).
   publisherCampaignCode: {
     type: String,
     default: null,
     uppercase: true,
     trim: true,
     index: true
+  },
+  publisherCampaignCodes: {
+    type: [{ type: String, uppercase: true, trim: true }],
+    default: []
   },
   accountNumber: { 
     type: String, 

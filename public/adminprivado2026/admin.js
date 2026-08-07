@@ -672,6 +672,10 @@ function setupRoleBasedUI() {
 // Cualquier 403 acá indica desincronización entre frontend y backend; se
 // loguea pero no se propaga al usuario porque no hay nada que pueda hacer.
 
+// Campañas asignadas a la cuenta logueada (las devuelve my-stats). Con 2+ se
+// muestra el selector "🏢 Publicista" del form de crear usuario.
+let _paCampaigns = [];
+
 async function loadPublisherAdminStats() {
     try {
         const r = await fetch(`${API_URL}/api/admin/publisher-admin/my-stats`, {
@@ -684,10 +688,21 @@ async function loadPublisherAdminStats() {
         }
         const data = await r.json();
 
-        // Título: "Juan Pérez — Meta Ads enero 2026"
+        _paCampaigns = data.publishers || (data.publisher ? [data.publisher] : []);
+        _paRenderCampaignSelect();
+        // Re-sincronizar los influencers con lo que muestre el selector (en el
+        // init de la vista este fetch corre ANTES de conocer las campañas: con
+        // 2+ hay que ocultar la lista hasta que el publicista elija una).
+        loadPaInfluencers();
+
+        // Título: "Juan Pérez — Meta Ads enero 2026" (con varias campañas, el
+        // título es genérico y el subtítulo las lista todas).
         const title = document.getElementById('paPublisherName');
         const subtitle = document.getElementById('paPublisherSubtitle');
-        if (data.publisher) {
+        if (_paCampaigns.length > 1) {
+            if (title) title.textContent = 'Mis publicistas';
+            if (subtitle) subtitle.textContent = _paCampaigns.map(c => `${c.publisher} (${c.code})`).join(' · ');
+        } else if (data.publisher) {
             if (title) title.textContent = data.publisher.publisher;
             if (subtitle) subtitle.textContent = data.publisher.name + ' (' + data.publisher.code + ')';
         } else {
@@ -754,8 +769,12 @@ async function loadPaUsers(page = 1, search = '') {
             const infBadge = u.acquisitionInfluencer
                 ? `<span style="color:#6cf;font-size:10px;background:rgba(108,170,255,0.12);padding:1px 6px;border-radius:4px;margin-left:6px;white-space:nowrap;">🎬 ${_paSafe(u.acquisitionInfluencer)}</span>`
                 : '';
+            // Con 2+ publicistas asignados, mostrar de cuál es cada usuario.
+            const campBadge = (_paCampaigns.length > 1 && u.acquisitionCampaign)
+                ? `<span style="color:#d4af37;font-size:10px;background:rgba(212,175,55,0.12);padding:1px 6px;border-radius:4px;margin-left:6px;white-space:nowrap;">🏢 ${_paSafe(u.acquisitionCampaign)}</span>`
+                : '';
             return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#1a1a2e;border-radius:6px;font-size:13px;">
-                <span style="color:#fff;font-weight:600;">${_paSafe(u.username)}${infBadge}</span>
+                <span style="color:#fff;font-weight:600;">${_paSafe(u.username)}${campBadge}${infBadge}</span>
                 <span style="color:#888;font-size:11px;white-space:nowrap;">${_paSafe(dateStr)}</span>
                 <button onclick="paGenerateAccessLink('${_paSafe(u.id)}','${_paSafe(u.username)}')" title="Generar link de acceso (un solo uso — loguea al cliente automáticamente)" style="padding:6px 12px;background:rgba(0,255,136,0.10);border:1px solid #00c853;color:#7fe07f;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;">🔗 Link</button>
                 <button onclick="openPaChangePwdModal('${_paSafe(u.id)}','${_paSafe(u.username)}')" style="padding:6px 12px;background:rgba(212,175,55,0.15);border:1px solid #d4af37;color:#d4af37;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;">🔑 Contraseña</button>
@@ -864,16 +883,78 @@ async function submitPaChangePwd() {
     }
 }
 
+// Publicista elegido para el PRÓXIMO usuario ('' = ninguno). A propósito NUNCA
+// arranca preseleccionado y se LIMPIA tras cada alta (pedido owner 2026-08-07):
+// el agente tiene que elegir consciente en cada usuario — así no se le carga a
+// un publicista equivocado por arrastre.
+let _paChosenCampaign = '';
+
+// Pinta los BOTONES "🏢 ¿A qué publicista?" del form de crear usuario (un toque
+// = elegido, rápido para el agente). Con UNA sola campaña queda oculto (flujo
+// idéntico al de antes); con 2+ es obligatorio elegir (el backend lo exige igual).
+function _paRenderCampaignSelect() {
+    const wrap = document.getElementById('paNewCampaignWrap');
+    const box = document.getElementById('paNewCampaignBtns');
+    if (!wrap || !box) return;
+    if (_paCampaigns.length <= 1) {
+        wrap.style.display = 'none';
+        box.innerHTML = '';
+        _paChosenCampaign = '';
+        return;
+    }
+    // Si lo elegido ya no está en la lista (le sacaron la campaña), limpiar.
+    if (_paChosenCampaign && !_paCampaigns.some(c => c.code === _paChosenCampaign)) {
+        _paChosenCampaign = '';
+    }
+    box.innerHTML = _paCampaigns.map(c => {
+        const on = c.code === _paChosenCampaign;
+        return `<button type="button" class="pa-campaign-btn" data-code="${_paSafe(c.code)}"
+            onclick="paPickCampaign('${_paSafe(c.code)}')"
+            style="padding:10px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;
+                   background:${on ? 'linear-gradient(135deg,#d4af37,#b8860b)' : '#1a1a2e'};
+                   color:${on ? '#000' : '#fff'};
+                   border:1px solid ${on ? '#d4af37' : 'rgba(212,175,55,0.35)'};">
+            ${on ? '✅ ' : ''}${_paSafe(c.publisher)} <span style="font-weight:400;font-size:11px;opacity:0.8;">(${_paSafe(c.code)})</span>
+        </button>`;
+    }).join('');
+    wrap.style.display = 'block';
+}
+
+// Un toque en el botón = publicista elegido para ESTE usuario (tocar otro lo
+// cambia; los influencers se recargan porque cada campaña tiene su propia lista).
+function paPickCampaign(code) {
+    _paChosenCampaign = code;
+    _paRenderCampaignSelect();
+    loadPaInfluencers();
+}
+window.paPickCampaign = paPickCampaign;
+
+// Campaña actualmente elegida (o '' si hay una sola / nada aún).
+function _paSelectedCampaign() {
+    return _paChosenCampaign;
+}
+
 // Carga los influencers activos de la campaña del publisher_admin y puebla el
-// desplegable del form de crear usuario. Si la campaña no tiene influencers
+// desplegable del form de crear usuario. Con varias campañas asignadas pide
+// los de la ELEGIDA en el selector (sin elección todavía: oculta el selector
+// de influencers hasta que elija). Si la campaña no tiene influencers
 // cargados, oculta el selector (flujo igual al de antes).
 let _paInfluencers = [];
 async function loadPaInfluencers() {
     const wrap = document.getElementById('paNewInfluencerWrap');
     const sel = document.getElementById('paNewInfluencer');
     if (!wrap || !sel) return;
+    const campaign = _paSelectedCampaign();
+    if (_paCampaigns.length > 1 && !campaign) {
+        // Todavía no eligió publicista: no sabemos qué influencers mostrar.
+        _paInfluencers = [];
+        wrap.style.display = 'none';
+        sel.innerHTML = '';
+        return;
+    }
     try {
-        const r = await fetch(`${API_URL}/api/admin/publisher-admin/influencers`, {
+        const qs = campaign ? `?campaign=${encodeURIComponent(campaign)}` : '';
+        const r = await fetch(`${API_URL}/api/admin/publisher-admin/influencers${qs}`, {
             credentials: 'include',
             headers: { 'Authorization': `Bearer ${currentToken}` }
         });
@@ -908,6 +989,9 @@ async function paCreateUser() {
     const username = usernameEl?.value.trim();
     const password = passwordEl?.value;
     const phone = phoneEl?.value.trim();
+    // Con 2+ publicistas asignados es OBLIGATORIO elegir a cuál cargarle.
+    const campaignRequired = _paCampaigns.length > 1;
+    const campaignCode = _paSelectedCampaign();
     // El selector sólo está visible si la campaña tiene influencers cargados.
     const influencerRequired = _paInfluencers.length > 0;
     const influencer = influencerRequired ? (influencerEl?.value || '') : '';
@@ -915,6 +999,13 @@ async function paCreateUser() {
     if (!username || !password) {
         if (errBox) {
             errBox.textContent = 'Usuario y contraseña son obligatorios';
+            errBox.style.display = 'block';
+        }
+        return;
+    }
+    if (campaignRequired && !campaignCode) {
+        if (errBox) {
+            errBox.textContent = 'Elegí a qué publicista cargarle este usuario';
             errBox.style.display = 'block';
         }
         return;
@@ -937,7 +1028,12 @@ async function paCreateUser() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${currentToken}`
             },
-            body: JSON.stringify({ username, password, phone: phone || null, influencer: influencer || undefined })
+            body: JSON.stringify({
+                username, password, phone: phone || null,
+                influencer: influencer || undefined,
+                // Con un solo publicista va undefined y el backend usa ese único.
+                campaignCode: campaignCode || undefined
+            })
         });
         const data = await r.json();
         if (!r.ok) {
@@ -963,6 +1059,11 @@ async function paCreateUser() {
         passwordEl.value = '';
         phoneEl.value = '';
         if (influencerEl) influencerEl.value = '';
+        // DESELECCIONAR el publicista (pedido owner): el próximo usuario exige
+        // elegirlo de nuevo — nunca queda uno "pegado" del alta anterior.
+        _paChosenCampaign = '';
+        _paRenderCampaignSelect();
+        loadPaInfluencers();
         // Recargar stats + la lista (volver a página 1 sin búsqueda activa).
         loadPublisherAdminStats();
         loadPaUsers(1, '');
@@ -11268,10 +11369,22 @@ async function loadPublisherAdmins() {
             return;
         }
         list.innerHTML = items.map(pa => {
-            const campName = pa.campaign ? `${_safe(pa.campaign.publisher)} · ${_safe(pa.campaign.name)}` : '<span style="color:#ff6666;">Campaña no encontrada</span>';
+            // Todas las campañas asignadas (multi desde 2026-08-07).
+            const camps = (pa.campaigns && pa.campaigns.length)
+                ? pa.campaigns
+                : (pa.campaign ? [pa.campaign] : []);
+            const campName = camps.length
+                ? camps.map(c => c && c.publisher
+                    ? `${_safe(c.publisher)} · ${_safe(c.name)}${c.isActive === false ? ' <span style="color:#ff6666;font-size:10px;">(inactiva)</span>' : ''}`
+                    : `<span style="color:#ff6666;">${_safe((c && c.code) || '?')} no encontrada</span>`
+                  ).join('<br>')
+                : '<span style="color:#ff6666;">Sin campañas asignadas</span>';
             const inactiveBadge = !pa.isActive ? '<span style="background:#3a1a1a;color:#ff6666;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">INACTIVA</span>' : '';
-            const inactiveCamp = pa.campaign && pa.campaign.isActive === false ? '<span style="background:#3a1a1a;color:#ff6666;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">CAMPAÑA INACTIVA</span>' : '';
+            const inactiveCamp = camps.some(c => c && c.isActive === false) ? '<span style="background:#3a1a1a;color:#ff6666;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">CAMPAÑA INACTIVA</span>' : '';
             const lastLogin = pa.lastLogin ? fmtFechaHoraAR(pa.lastLogin) : '<em style="color:#666;">nunca</em>';
+            const codesStr = (pa.publisherCampaignCodes && pa.publisherCampaignCodes.length)
+                ? pa.publisherCampaignCodes.join(', ')
+                : (pa.publisherCampaignCode || '—');
             return `
                 <div style="background:#0d0d1a;border:1px solid rgba(212,175,55,0.2);border-radius:10px;padding:14px;display:grid;gap:8px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -11288,7 +11401,7 @@ async function loadPublisherAdmins() {
                         <div>👥 Usuarios creados: <strong style="color:#d4af37;">${pa.usersCreatedCount}</strong></div>
                         <div>📅 Creada: ${fmtFechaAR(pa.createdAt)}</div>
                         <div>🔑 Último login: ${lastLogin}</div>
-                        <div>🎯 Código: <code style="color:#d4af37;">${_safe(pa.publisherCampaignCode)}</code></div>
+                        <div>🎯 Código(s): <code style="color:#d4af37;">${_safe(codesStr)}</code></div>
                     </div>
                 </div>
             `;
@@ -11299,11 +11412,14 @@ async function loadPublisherAdmins() {
     }
 }
 
-// Cargar el <select> de campañas en el modal con las campañas activas.
-async function _loadCampaignsIntoPaSelect(selectedCode) {
-    const sel = document.getElementById('paFormCampaignCode');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— Cargando —</option>';
+// Cargar la lista de CHECKBOXES de campañas activas en el modal (2026-08-07:
+// antes era un select único — ahora una cuenta puede tener varias campañas).
+// `selectedCodes` = las que ya tiene asignadas (pre-marcadas al editar).
+async function _loadCampaignsIntoPaSelect(selectedCodes) {
+    const box = document.getElementById('paFormCampaignList');
+    if (!box) return;
+    const selected = new Set((selectedCodes || []).map(c => String(c || '').toUpperCase()));
+    box.innerHTML = '<span style="color:#888;font-size:12px;">— Cargando —</span>';
     try {
         const r = await fetch(`${API_URL}/api/admin/campaigns`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }
@@ -11312,15 +11428,25 @@ async function _loadCampaignsIntoPaSelect(selectedCode) {
         const all = data.campaigns || [];
         const active = all.filter(c => c.isActive !== false);
         if (active.length === 0) {
-            sel.innerHTML = '<option value="">— No hay campañas activas —</option>';
+            box.innerHTML = '<span style="color:#888;font-size:12px;">— No hay campañas activas —</span>';
             return;
         }
-        sel.innerHTML = '<option value="">— Elegir campaña —</option>' + active.map(c =>
-            `<option value="${_safe(c.code)}" ${c.code === selectedCode ? 'selected' : ''}>${_safe(c.publisher)} · ${_safe(c.name)} (${_safe(c.code)})</option>`
+        box.innerHTML = active.map(c =>
+            `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:#fff;font-size:13px;padding:4px 2px;">
+                <input type="checkbox" class="pa-campaign-check" value="${_safe(c.code)}" ${selected.has(c.code) ? 'checked' : ''}>
+                <span>${_safe(c.publisher)} · ${_safe(c.name)} <code style="color:#d4af37;font-size:11px;">(${_safe(c.code)})</code></span>
+            </label>`
         ).join('');
     } catch (e) {
-        sel.innerHTML = '<option value="">— Error cargando —</option>';
+        box.innerHTML = '<span style="color:#ff6666;font-size:12px;">— Error cargando —</span>';
     }
+}
+
+// Códigos marcados en el modal (en el orden en que aparecen; el primero queda
+// como "principal" en el backend).
+function _paFormCheckedCampaigns() {
+    return Array.from(document.querySelectorAll('#paFormCampaignList .pa-campaign-check:checked'))
+        .map(el => el.value);
 }
 
 function showCreatePublisherAdminModal() {
@@ -11366,7 +11492,9 @@ async function showEditPublisherAdminModal(paId) {
         document.getElementById('paFormActiveRow').style.display = '';
         document.getElementById('paFormIsActive').checked = pa.isActive !== false;
         document.getElementById('paFormError').style.display = 'none';
-        _loadCampaignsIntoPaSelect(pa.publisherCampaignCode);
+        _loadCampaignsIntoPaSelect(pa.publisherCampaignCodes && pa.publisherCampaignCodes.length
+            ? pa.publisherCampaignCodes
+            : (pa.publisherCampaignCode ? [pa.publisherCampaignCode] : []));
         showModal('publisherAdminFormModal');
     } catch (e) {
         showToast('Error cargando cuenta', 'error');
@@ -11382,14 +11510,14 @@ async function submitPublisherAdminForm() {
     const errBox = document.getElementById('paFormError');
     errBox.style.display = 'none';
 
-    const campaignCode = document.getElementById('paFormCampaignCode').value;
+    const campaignCodes = _paFormCheckedCampaigns();
     const username = document.getElementById('paFormUsername').value.trim();
     const password = document.getElementById('paFormPassword').value;
     const email = document.getElementById('paFormEmail').value.trim();
     const phone = document.getElementById('paFormPhone').value.trim();
 
-    if (!campaignCode) {
-        errBox.textContent = 'Elegí una campaña';
+    if (campaignCodes.length === 0) {
+        errBox.textContent = 'Marcá al menos una campaña';
         errBox.style.display = 'block';
         return;
     }
@@ -11404,13 +11532,13 @@ async function submitPublisherAdminForm() {
             }
             url = `${API_URL}/api/admin/publisher-admins`;
             method = 'POST';
-            body = JSON.stringify({ campaignCode, username, password, email: email || null, phone: phone || null });
+            body = JSON.stringify({ campaignCodes, username, password, email: email || null, phone: phone || null });
         } else {
             const id = document.getElementById('paFormEditId').value;
             const isActive = document.getElementById('paFormIsActive').checked;
             url = `${API_URL}/api/admin/publisher-admins/${encodeURIComponent(id)}`;
             method = 'PUT';
-            const payload = { campaignCode, email: email || null, phone: phone || null, isActive };
+            const payload = { campaignCodes, email: email || null, phone: phone || null, isActive };
             if (password) payload.password = password;
             body = JSON.stringify(payload);
         }

@@ -449,6 +449,17 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   queda bajo el agente que lo creó primero: recrearlo con otra key NO lo mueve de rama.
   Cargas, retiros y bonos van SIEMPRE por la key master (los depósitos salen del saldo
   del dueño de la key — que es lo que queremos).
+  **Multi-publicista (2026-08-07):** una cuenta publisher_admin puede tener VARIAS
+  campañas (`User.publisherCampaignCodes`, lista; `publisherCampaignCode` queda como
+  "principal"/compat = la primera). Los permitidos se resuelven SIEMPRE con
+  `_publisherCodesOf(employee)` (server.js, unión de ambos campos). Con 2+ campañas el
+  create-user exige `body.campaignCode` (validado contra su lista — un código ajeno da
+  403), el selector del panel lo manda y los influencers se piden por campaña
+  (`GET .../influencers?campaign=`). my-stats/users agregan sobre TODAS
+  (`acquisitionCampaign: {$in}`); la lista "Mis usuarios" acepta `?campaign=` para
+  filtrar y muestra a qué publicista pertenece cada usuario. La gestión del admin
+  (POST/PUT `/api/admin/publisher-admins`) acepta `campaignCodes` (lista) o el legacy
+  `campaignCode`.
 - **Pauta / vanity URL**: `GET /:code` matchea Campaign.code exacto (DB directa) o slug
   del publisher (cache 30s). Setea cookie httpOnly `vip_campaign` (60 días) → el server
   reinyecta el código en CADA carga SPA (`renderIndexHtml`) para que "registro sin SMS"
