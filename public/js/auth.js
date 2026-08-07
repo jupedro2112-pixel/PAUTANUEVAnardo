@@ -1402,10 +1402,10 @@ VIP.auth = (function () {
         resetRegisterOtp();
         sendBtn.onclick = handleRegisterDirect;
 
-        // El usuario de registro arranca con "girox" (antes "VIP"); el cliente
-        // completa — y lo puede BORRAR si quiere otro nombre, igual que antes.
+        // El usuario de registro arranca con "gx" (antes "girox", antes "VIP");
+        // el cliente completa — y lo puede BORRAR si quiere otro nombre.
         const ru = document.getElementById('registerUsername');
-        if (ru && !ru.value.trim()) ru.value = 'girox';
+        if (ru && !ru.value.trim()) ru.value = 'gx';
     }
 
     // ============================================

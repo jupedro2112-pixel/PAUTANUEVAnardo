@@ -2306,12 +2306,16 @@ document.addEventListener('change', function (ev) {
                         <div style="display:grid;gap:12px;">
                             <div>
                                 <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Usuario *</label>
-                                <input type="text" id="paNewUsername" maxlength="30" placeholder="ej: juan_player1" autocomplete="off" style="width:100%;padding:10px;background:#1a1a2e;color:#fff;border:1px solid rgba(212,175,55,0.3);border-radius:6px;box-sizing:border-box;">
-                                <small style="color:#888;font-size:11px;">3-30 caracteres. Letras, números, punto, guion o guion bajo.</small>
+                                <!-- Defaults del alta rápida (pedido owner 2026-08-07): el usuario
+                                     arranca con "gx" (el agente completa: gxhector2) y la clave con
+                                     "asd123" (editable). Tras crear, ambos VUELVEN a estos defaults. -->
+                                <input type="text" id="paNewUsername" value="gx" maxlength="30" placeholder="ej: gxhector2" autocomplete="off" style="width:100%;padding:10px;background:#1a1a2e;color:#fff;border:1px solid rgba(212,175,55,0.3);border-radius:6px;box-sizing:border-box;">
+                                <small style="color:#888;font-size:11px;">Completá después del "gx" (ej. gxhector2). 3-30 caracteres: letras, números, punto, guion o guion bajo.</small>
                             </div>
                             <div>
                                 <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Contraseña *</label>
-                                <input type="text" id="paNewPassword" maxlength="100" placeholder="mínimo 6 caracteres" autocomplete="off" style="width:100%;padding:10px;background:#1a1a2e;color:#fff;border:1px solid rgba(212,175,55,0.3);border-radius:6px;box-sizing:border-box;">
+                                <input type="text" id="paNewPassword" value="asd123" maxlength="100" placeholder="mínimo 6 caracteres" autocomplete="off" style="width:100%;padding:10px;background:#1a1a2e;color:#fff;border:1px solid rgba(212,175,55,0.3);border-radius:6px;box-sizing:border-box;">
+                                <small style="color:#888;font-size:11px;">Viene precargada con <code style="color:#d4af37;">asd123</code> — cambiala si querés. El cliente crea la suya al entrar con el link.</small>
                             </div>
                             <!-- Selector de publicista (2026-08-07): solo visible cuando la
                                  cuenta tiene 2+ publicistas asignados. Son BOTONES de un toque
@@ -2631,7 +2635,9 @@ document.addEventListener('change', function (ev) {
             <div class="modal-body">
                 <div class="form-group">
                     <label for="newUserUsername">Usuario:</label>
-                    <input type="text" id="newUserUsername" placeholder="Nombre de usuario">
+                    <!-- Arranca con "gx" precargado (pedido owner 2026-08-07) — es solo
+                         un default, el agente lo completa (gxhector2) o lo borra. -->
+                    <input type="text" id="newUserUsername" value="gx" placeholder="gxnombre">
                 </div>
                 <div class="form-group">
                     <label for="newUserPassword">Contraseña:</label>

@@ -572,6 +572,12 @@ function setupRoleBasedUI() {
         // Ajustar layout del main para que ocupe todo (sidebar oculto).
         const main = document.querySelector('.main-content');
         if (main) main.style.marginLeft = '0';
+        // Defaults del alta rápida (pedido owner 2026-08-07): usuario "gx" y
+        // clave "asd123" precargados — solo si están vacíos, no pisa lo tipeado.
+        const paU = document.getElementById('paNewUsername');
+        if (paU && !paU.value.trim()) paU.value = 'gx';
+        const paP = document.getElementById('paNewPassword');
+        if (paP && !paP.value.trim()) paP.value = 'asd123';
         // Cargar stats iniciales + lista de usuarios paginada + influencers.
         loadPublisherAdminStats();
         loadPaUsers(1, '');
@@ -1003,6 +1009,15 @@ async function paCreateUser() {
         }
         return;
     }
+    // "gx" solo = quedó el default sin completar (el backend igual lo
+    // rechazaría por mínimo 3 caracteres, pero avisamos claro acá).
+    if (username.toLowerCase() === 'gx') {
+        if (errBox) {
+            errBox.textContent = 'Completá el nombre de usuario después de "gx" (ej: gxhector2)';
+            errBox.style.display = 'block';
+        }
+        return;
+    }
     if (campaignRequired && !campaignCode) {
         if (errBox) {
             errBox.textContent = 'Elegí a qué publicista cargarle este usuario';
@@ -1055,8 +1070,10 @@ async function paCreateUser() {
             showAccessLinkModal(data.accessLink, data.user.username,
                 'Usuario creado ✅ — pasale este link: entra logueado automático y crea su contraseña.');
         }
-        usernameEl.value = '';
-        passwordEl.value = '';
+        // Reset del alta rápida (pedido owner 2026-08-07): el usuario VUELVE al
+        // default "gx" (listo para completar gxhector2) y la clave a "asd123".
+        usernameEl.value = 'gx';
+        passwordEl.value = 'asd123';
         phoneEl.value = '';
         if (influencerEl) influencerEl.value = '';
         // DESELECCIONAR el publicista (pedido owner): el próximo usuario exige
@@ -5354,6 +5371,11 @@ function getRoleLabel(role) {
 // CREATE USER / ADMIN
 // ============================================
 function showCreateUserModal() {
+    // El campo usuario arranca con "gx" precargado (pedido owner 2026-08-07):
+    // el agente lo completa (ej. gxhector2). Solo si está vacío — no pisa lo
+    // que haya quedado a medio tipear.
+    const u = document.getElementById('newUserUsername');
+    if (u && !u.value.trim()) u.value = 'gx';
     showModal('createUserModal');
 }
 
@@ -5390,8 +5412,8 @@ async function handleCreateUser() {
             showToast(data.message, 'success');
             hideModal('createUserModal');
             loadUsers();
-            // Limpiar formulario
-            document.getElementById('newUserUsername').value = '';
+            // Limpiar formulario (el usuario vuelve al default "gx" para el próximo alta)
+            document.getElementById('newUserUsername').value = 'gx';
             document.getElementById('newUserPassword').value = '';
             document.getElementById('newUserEmail').value = '';
             document.getElementById('newUserPhone').value = '';

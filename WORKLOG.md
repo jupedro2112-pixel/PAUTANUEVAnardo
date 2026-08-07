@@ -8,6 +8,34 @@
 
 ## Sesión 2026-08-07
 
+### 156. Alta rápida: prefijo default "gx" en TODOS los altas + clave "asd123" precargada para publicistas
+- **Pedido del owner (3 partes):**
+  1. **Registro de la PWA (lado cliente):** el usuario precargado pasa de
+     "girox" a **"gx"** (index.html value/placeholder + re-fill de auth.js,
+     mismo mecanismo de #127 — sigue siendo borrable). SW a **v96**.
+  2. **Alta del panel (admin general / depositor / etc., modal "crear
+     usuario"):** el campo usuario ahora arranca precargado con **"gx"**
+     (value en el HTML + prefill en showCreateUserModal si está vacío; tras
+     crear, vuelve a "gx" para el próximo). Antes no había ningún default.
+  3. **Alta del publisher_admin:** usuario precargado **"gx"** (completa:
+     gxhector2) y contraseña precargada **"asd123"** (editable). Tras crear
+     cada usuario TODO vuelve al estado inicial: usuario="gx", clave="asd123",
+     publicista DESELECCIONADO (de #155) e influencer limpio — alta en serie
+     rápida eligiendo publicista en cada una.
+- Validación nueva en el form del publicista: "gx" solo (default sin
+  completar) se rechaza con mensaje claro antes de pegarle al server.
+- **⚠️ Nota de seguridad (aceptada por el owner):** "asd123" como clave
+  INICIAL de cuentas creadas por agente es deliberada y transitoria — el
+  cliente entra con el link de un solo uso (#111) y crea su propia clave. No
+  reintroduce el hueco de #149 (aquello era el AUTO-IMPORT creando cuentas con
+  clave fija sin que nadie la elija + login local que la aceptaba; el login
+  ahora valida contra 1girox).
+- **Validado:** `node --check` OK (admin.js, auth.js, SW). Solo front (PWA +
+  panel): SW v96 y recarga del panel. PROBAR: registro PWA → campo con "gx";
+  alta admin → "gx" precargado y vuelve tras crear; alta publicista → "gx" +
+  "asd123" precargados, crear uno → todo se resetea y el publicista queda sin
+  elegir.
+
 ### 155. publisher_admin MULTI-PUBLICISTA: una cuenta puede tener varias campañas y elegir a cuál cargarle cada usuario
 - **Pedido del owner:** que un mismo acceso publisher_admin pueda tener 2, 3 o
   más publicistas asignados y, al crear un usuario, marcar a cuál cargárselo

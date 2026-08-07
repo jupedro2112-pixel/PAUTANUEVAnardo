@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v95'; // v95: reembolso DIARIO eliminado — quedan semanal y mensual (recuadro re-alineado)
+const CACHE_VERSION = 'v96'; // v96: prefijo default del registro "girox" → "gx"
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
