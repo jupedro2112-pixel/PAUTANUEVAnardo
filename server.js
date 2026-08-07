@@ -4244,14 +4244,28 @@ app.post('/api/auth/change-password', authMiddleware, authLimiter, async (req, r
     if (closeAllSessions) {
       user.tokenVersion = (user.tokenVersion || 0) + 1;
     }
-    
+
     await user.save();
 
     await syncPasswordToJugaygana(user, newPassword, 'change-password');
 
+    // "Cerrar todas las sesiones" sube tokenVersion y mata TODOS los JWT —
+    // incluido el de ESTA request. Para que el que tildó el checkbox no quede
+    // deslogueado (fix 2026-08-07), se le emite un token FRESCO con la versión
+    // nueva: se cierran los DEMÁS dispositivos, el suyo sigue adentro.
+    let freshToken = null;
+    if (closeAllSessions) {
+      freshToken = jwt.sign(
+        { userId: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion ?? 0 },
+        JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+    }
+
     res.json({
       message: 'Contraseña cambiada exitosamente',
       sessionsClosed: closeAllSessions || false,
+      token: freshToken,
       phoneVerified: !!user.phoneVerified,
       phone: user.phone || null
     });
@@ -4377,12 +4391,24 @@ app.post('/api/auth/change-password/pending', authMiddleware, authLimiter, async
 
     await syncPasswordToJugaygana(user, newPassword, 'change-password');
 
+    // Igual que en /change-password: token fresco para que el que cerró las
+    // sesiones no se desloguee a sí mismo (solo caen los DEMÁS dispositivos).
+    let freshToken = null;
+    if (closeAllSessions) {
+      freshToken = jwt.sign(
+        { userId: user.id, username: user.username, role: user.role, tokenVersion: user.tokenVersion ?? 0 },
+        JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+    }
+
     res.json({
       message: 'Contraseña cambiada. Entraste en modo temporal.',
       temporaryAccess: true,
       pendingAccessCode: pendingCode,
       phoneVerificationPending: true,
-      sessionsClosed: closeAllSessions || false
+      sessionsClosed: closeAllSessions || false,
+      token: freshToken
     });
   } catch (error) {
     logger.error(`Error en change-password/pending: ${error.message}`);

@@ -985,11 +985,22 @@ VIP.auth = (function () {
                 document.getElementById('closeAllSessions').checked = false;
 
                 if (closeAllSessions) {
-                    VIP.ui.showToast('🔒 Todas las sesiones han sido cerradas. Por favor, vuelve a iniciar sesión.', 'info');
-                    setTimeout(() => {
-                        localStorage.removeItem('userToken');
-                        location.reload();
-                    }, 2000);
+                    if (data && data.token) {
+                        // El server emite un token FRESCO con el tokenVersion nuevo
+                        // (fix 2026-08-07): se cierran los DEMÁS dispositivos pero
+                        // ESTA sesión sigue adentro — nada de volver a loguearse.
+                        VIP.state.currentToken = data.token;
+                        localStorage.setItem('userToken', data.token);
+                        VIP.ui.showToast('🔒 Se cerraron las sesiones en los demás dispositivos. La tuya sigue activa.', 'success');
+                    } else {
+                        // Backend viejo sin token fresco: el JWT actual ya está
+                        // muerto — único camino, relogin (comportamiento anterior).
+                        VIP.ui.showToast('🔒 Todas las sesiones han sido cerradas. Por favor, vuelve a iniciar sesión.', 'info');
+                        setTimeout(() => {
+                            localStorage.removeItem('userToken');
+                            location.reload();
+                        }, 2000);
+                    }
                 }
                 return true;
             }
@@ -1145,7 +1156,20 @@ VIP.auth = (function () {
                 VIP.state.currentUser.phoneVerified = false;
                 VIP.state.currentUser.phoneVerificationPending = true;
             }
-            _temporalCloseAllSessions = !!_vipChangePwdPending.closeAllSessions;
+            // Token fresco del server (fix 2026-08-07): si cerró las otras
+            // sesiones, ESTA sigue viva con el token nuevo — el flag de
+            // "desloguearse al cerrar el panel" queda SOLO como fallback para
+            // un backend viejo que no lo devuelva.
+            if (data && data.token) {
+                VIP.state.currentToken = data.token;
+                localStorage.setItem('userToken', data.token);
+                _temporalCloseAllSessions = false;
+                if (_vipChangePwdPending.closeAllSessions) {
+                    VIP.ui.showToast('🔒 Se cerraron las sesiones en los demás dispositivos. La tuya sigue activa.', 'success');
+                }
+            } else {
+                _temporalCloseAllSessions = !!_vipChangePwdPending.closeAllSessions;
+            }
             _vipChangePwdPending = null;
             _stopChangePwdResendCooldown();
 

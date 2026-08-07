@@ -8,6 +8,29 @@
 
 ## Sesión 2026-08-07
 
+### 157. FIX "Cerrar todas las sesiones" ya no desloguea al que lo tilda
+- **Reclamo del owner:** al cambiar la contraseña con el checkbox "Cerrar todas
+  las sesiones activas" tildado, se le cerraba la sesión TAMBIÉN al propio
+  usuario que hizo el cambio (tenía que volver a loguearse estando ya adentro).
+- **Causa (doble):** (1) subir `tokenVersion` invalida TODOS los JWT, incluido
+  el de la request que hizo el cambio; (2) el front encima se deslogueaba a sí
+  mismo a propósito (removeItem + reload).
+- **Fix:** los DOS endpoints (`/api/auth/change-password` y su variante
+  temporal `/change-password/pending`) ahora, cuando `closeAllSessions`,
+  emiten un **token FRESCO** (mismo payload que el login, con el tokenVersion
+  nuevo, 30d) y lo devuelven como `token`. El front lo guarda
+  (VIP.state.currentToken + localStorage `userToken`) y muestra "Se cerraron
+  las sesiones en los demás dispositivos. La tuya sigue activa." — sin
+  relogin. Aplica también al cambio OBLIGATORIO de primer ingreso y al flujo
+  temporal (el flag `_temporalCloseAllSessions` quedó solo como fallback).
+- **Fallback conservado:** si el back deployado fuera viejo y no devolviera
+  `token`, el front cae al comportamiento anterior (relogin) — nunca queda con
+  un token muerto.
+- **Validado:** `node --check` OK (server.js, auth.js). SW a **v97**. Back
+  necesita redeploy. PROBAR: cambiar contraseña con el tilde puesto → toast
+  "los demás dispositivos" y seguir navegando SIN reloguear; en OTRO
+  dispositivo abierto con la misma cuenta → al próximo request lo saca.
+
 ### 156. Alta rápida: prefijo default "gx" en TODOS los altas + clave "asd123" precargada para publicistas
 - **Pedido del owner (3 partes):**
   1. **Registro de la PWA (lado cliente):** el usuario precargado pasa de
