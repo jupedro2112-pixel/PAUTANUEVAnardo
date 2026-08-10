@@ -8,6 +8,11 @@
 
 ## Sesión 2026-08-10
 
+> ✅ **DEPLOYADO:** el owner confirmó (2026-08-10, fin del día) que TODO lo de
+> esta sesión (#158–#166) ya está deployado en AWS EB. Los "Back necesita
+> redeploy" de las entradas de abajo quedan cumplidos. Con ese restart también
+> tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158).
+
 ### 166. CASO ASENTADO: loop "requiere Chrome" al abrir la app en algunos Android (WebAPK) — NO es bug nuestro
 - **Reporte (agente admin, con video):** en algunos teléfonos, al abrir la app
   instalada aparece "CARGAS 1GIROX requiere la siguiente app: Chrome
