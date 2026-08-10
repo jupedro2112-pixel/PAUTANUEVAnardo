@@ -523,7 +523,15 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   sin techo). Endpoints `GET/POST /api/admin/refund-tiers` (solo admin general);
   el POST devuelve `commandWarnings` = comandos `/sys_*` cuyo texto menciona
   porcentajes (esos se editan A MANO desde COMANDOS). El status manda
-  `tiersByPeriod` (+ `tiers` legacy = la del semanal). Los viejos
+  `tiersByPeriod` (+ `tiers` legacy = la del semanal). **Mínimos para COBRAR
+  (2026-08-10):** `Config['refundMinimums']` (`{weekly, monthly}`, defaults
+  $1.500/$5.000, 0 = sin mínimo), leída SIN cache por `getRefundMinimums()`.
+  Si el reembolso calculado da > $0 pero MENOS que el mínimo, el claim rechaza
+  ANTES de la reserva atómica (no quema el período) con el mínimo VIGENTE en el
+  mensaje (`belowMinimum:true, minAmount`). Se editan en la misma card de
+  rangos del panel y viajan en el mismo GET/POST de refund-tiers (`minimums`
+  es opcional en el body: un panel cacheado viejo no los pisa). El status
+  manda `minAmount` y `belowMinimum` por período. Los viejos
   Config['refundPercents'] quedaron `enUso:false` y su card del panel fue
   reemplazada por el editor de rangos. **El RefundClaim se CREA antes de acreditar** (el índice único
   `userId+type+periodKey` es el candado atómico contra doble cobro; si el crédito

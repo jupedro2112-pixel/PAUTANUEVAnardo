@@ -5625,10 +5625,25 @@ function _refundTierRowHtml(t) {
     </div>`;
 }
 
-function renderRefundTiersEditor(tiersByPeriod) {
+function renderRefundTiersEditor(tiersByPeriod, minimums) {
     const cont = document.getElementById('refundTiersEditors');
     if (!cont) return;
-    cont.innerHTML = REFUND_TIER_PERIODS.map((p) => {
+    const mins = minimums || {};
+    const minVal = (k, def) => (mins[k] != null && Number.isFinite(Number(mins[k])) ? Number(mins[k]) : def);
+    // Mínimos para COBRAR (owner 2026-08-10): si el reembolso calculado del
+    // período no llega, el cliente NO puede reclamarlo (el server rechaza con
+    // el monto vigente en el mensaje). Se guardan con el mismo "Guardar rangos".
+    const minsHtml = `<div style="margin-bottom:14px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;">
+        <div style="font-weight:bold;font-size:13px;margin-bottom:6px;">💵 Mínimo para cobrar</div>
+        <div style="color:#aaa;font-size:11px;margin-bottom:8px;">Si el reembolso calculado del período da MENOS que esto, el cliente no puede reclamarlo (le sale el aviso con el monto). 0 = sin mínimo.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;">📆 Semanal: $
+                <input type="number" id="refundMinWeekly" value="${minVal('weekly', 1500)}" min="0" step="1" style="width:100px;"></label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;">🗓️ Mensual: $
+                <input type="number" id="refundMinMonthly" value="${minVal('monthly', 5000)}" min="0" step="1" style="width:100px;"></label>
+        </div>
+    </div>`;
+    cont.innerHTML = minsHtml + REFUND_TIER_PERIODS.map((p) => {
         const tiers = (tiersByPeriod && tiersByPeriod[p.key]) || [];
         return `<div style="margin-bottom:14px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;">
             <div style="font-weight:bold;font-size:13px;margin-bottom:8px;">${p.label}</div>
@@ -5683,7 +5698,7 @@ async function loadRefundTiers() {
         if (header) header.style.display = '';
         const j = await r.json();
         if (j.maxTiers) _refundTiersMaxRows = j.maxTiers;
-        renderRefundTiersEditor(j.tiersByPeriod || {});
+        renderRefundTiersEditor(j.tiersByPeriod || {}, j.minimums);
     } catch (e) {
         console.error('Error cargando rangos de reembolso:', e);
     }
@@ -5691,11 +5706,18 @@ async function loadRefundTiers() {
 
 async function saveRefundTiers() {
     const msg = document.getElementById('refundTiersMsg');
+    const minWeekly = Number(document.getElementById('refundMinWeekly')?.value);
+    const minMonthly = Number(document.getElementById('refundMinMonthly')?.value);
+    if (!Number.isFinite(minWeekly) || minWeekly < 0 || !Number.isFinite(minMonthly) || minMonthly < 0) {
+        showToast('Los mínimos para cobrar tienen que ser números de 0 en adelante (0 = sin mínimo)', 'error');
+        return;
+    }
     const body = {
         weekly: _collectRefundTiers('weekly'),
-        monthly: _collectRefundTiers('monthly')
+        monthly: _collectRefundTiers('monthly'),
+        minimums: { weekly: minWeekly, monthly: minMonthly }
     };
-    if (!confirm('¿Guardar los rangos de reembolso? Se aplican AL INSTANTE a los reclamos nuevos y a lo que el cliente ve en su perfil.')) return;
+    if (!confirm('¿Guardar los rangos y mínimos de reembolso? Se aplican AL INSTANTE a los reclamos nuevos y a lo que el cliente ve en su perfil.')) return;
     try {
         const r = await authFetch('/api/admin/refund-tiers', {
             method: 'POST',
@@ -5707,7 +5729,7 @@ async function saveRefundTiers() {
             showToast(j.error || 'No se pudo guardar', 'error');
             return;
         }
-        renderRefundTiersEditor(j.tiersByPeriod || {});
+        renderRefundTiersEditor(j.tiersByPeriod || {}, j.minimums);
         const resumen = REFUND_TIER_PERIODS.map((p) => {
             const ts = (j.tiersByPeriod && j.tiersByPeriod[p.key]) || [];
             return `${p.label.split(' ')[1]}: ${ts.map((t) => `${t.pct}%`).join('/')}`;

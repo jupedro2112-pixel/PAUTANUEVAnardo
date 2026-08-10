@@ -8,6 +8,36 @@
 
 ## Sesión 2026-08-10
 
+### 159. MÍNIMO para cobrar el reembolso (semanal $1.500 / mensual $5.000), editable desde el panel
+- **Pedido del owner:** que haya un mínimo de reembolso semanal y mensual para
+  poder cobrarlo; si el cliente tiene reembolso > $0 pero no llega, error
+  claro con el monto mínimo ACTUALIZADO del panel (nunca un texto fijo).
+- **Config nueva `refundMinimums`** (`{weekly: 1500, monthly: 5000}` por
+  default, 0 = sin mínimo) + helper `getRefundMinimums()` (server.js) — sin
+  cache, mismo patrón multi-instancia que `getRefundTiersByPeriod`.
+- **Claims (`/api/refunds/claim/{weekly|monthly}`):** si el reembolso
+  CALCULADO da menos que el mínimo → rechazo con "🚫 No llegaste al mínimo…
+  tu reembolso del período es $X y el mínimo para cobrarlo es $Y" (montos
+  con formato es-AR; `belowMinimum:true`, `minAmount`, `canClaim:true`). El
+  chequeo va **ANTES de la reserva atómica** a propósito: el rechazo no quema
+  el una-vez-por-período. El caso netLoss=0 conserva su mensaje propio.
+- **`/api/refunds/status`:** cada período suma `minAmount` y `belowMinimum`
+  (la PWA actual no los usa — muestra el toast con el message del claim, que
+  ya alcanza para el flujo pedido; quedan para pintar el aviso en el recuadro
+  si algún día se quiere).
+- **Panel (card "Rangos de reembolso", solo admin general):** bloque nuevo
+  "💵 Mínimo para cobrar" con los 2 inputs; se guardan con el MISMO botón
+  "Guardar rangos". `GET/POST /api/admin/refund-tiers` ahora llevan
+  `minimums` — **opcional en el POST**: un panel cacheado viejo que no lo
+  manda guarda solo las escaleras y NO pisa los mínimos vigentes. Validación
+  0–10.000.000; `Config.set` para registrar quién lo cambió.
+- **Validado:** `node --check` OK (server.js, admin.js, admin-sw.js).
+  admin-sw a **v28**. **Back necesita redeploy**; panel, recargar. PROBAR:
+  (1) panel → card de rangos muestra los mínimos 1500/5000, cambiarlos y
+  guardar; (2) cliente con reembolso chico (< mínimo) → al reclamar ve el
+  error con el monto del panel; (3) con reembolso ≥ mínimo → cobra normal;
+  (4) sin pérdida → sigue el mensaje "No tenés pérdida en el período".
+
 ### 158. Lentitud reportada → Atlas upgradeado de FREE a M10 (autoscaling hasta M50) + fanout hgcash apagado
 - **Reclamo del owner:** "la página anda lenta". Diagnóstico con video del panel
   (post-upgrade) + tail de 100 líneas de las 2 instancias EB.

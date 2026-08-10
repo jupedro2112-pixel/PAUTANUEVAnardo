@@ -6543,6 +6543,30 @@ async function getRefundTiersByPeriod() {
   return out;
 }
 
+// ============================================================
+// MÍNIMOS de reembolso (owner 2026-08-10): monto mínimo que tiene que dar el
+// REEMBOLSO CALCULADO del período para poder cobrarlo. Si da > $0 pero menor
+// al mínimo, el reclamo se rechaza con un mensaje que incluye el mínimo
+// VIGENTE (config del panel, no un texto fijo). Editables desde la card
+// "Rangos de reembolso" (solo admin general) vía Config['refundMinimums'].
+// 0 = sin mínimo para ese período. Sin cache A PROPÓSITO (multi-instancia,
+// misma razón que getConfig/getRefundTiersByPeriod).
+// ============================================================
+const REFUND_MIN_CONFIG_KEY = 'refundMinimums';
+const REFUND_MIN_DEFAULTS = { weekly: 1500, monthly: 5000 };
+async function getRefundMinimums() {
+  let cfg = null;
+  try {
+    cfg = await getConfig(REFUND_MIN_CONFIG_KEY, null);
+  } catch (_) { /* fallback a defaults */ }
+  const out = {};
+  for (const period of ['weekly', 'monthly']) {
+    const n = Number(cfg && cfg[period]);
+    out[period] = Number.isFinite(n) && n >= 0 ? Math.round(n) : REFUND_MIN_DEFAULTS[period];
+  }
+  return out;
+}
+
 /**
  * Llave de idempotencia del reembolso para 1girox.
  *
@@ -6611,7 +6635,7 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
     // fija ni de un acumulado histórico. Ver src/utils/refundTiers.js. Cada período
     // tiene su PROPIA escalera (editable desde el panel): un mismo jugador puede
     // estar en el tope del mensual y en el rango más bajo del semanal.
-    const tiersByPeriod = await getRefundTiersByPeriod();
+    const [tiersByPeriod, refundMins] = await Promise.all([getRefundTiersByPeriod(), getRefundMinimums()]);
     const weeklyCalc = refundTiers.calcRefund(weeklyNetLoss, tiersByPeriod.weekly);
     const monthlyCalc = refundTiers.calcRefund(monthlyNetLoss, tiersByPeriod.monthly);
 
@@ -6660,7 +6684,11 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
         netAmount: weeklyNetLoss,
         percentage: weeklyCalc.pct,
         tier: tierOut(weeklyCalc),
-        period: `${lastWeekRange.fromDateStr} a ${lastWeekRange.toDateStr}`
+        period: `${lastWeekRange.fromDateStr} a ${lastWeekRange.toDateStr}`,
+        // Mínimo configurable para COBRAR (panel). El claim lo valida server-side;
+        // acá viaja para que el front pueda mostrarlo sin hardcodearlo.
+        minAmount: refundMins.weekly,
+        belowMinimum: weeklyCalc.amount > 0 && weeklyCalc.amount < refundMins.weekly
       },
       monthly: {
         ...monthlyStatus,
@@ -6668,7 +6696,9 @@ app.get('/api/refunds/status', authMiddleware, async (req, res) => {
         netAmount: monthlyNetLoss,
         percentage: monthlyCalc.pct,
         tier: tierOut(monthlyCalc),
-        period: `${lastMonthRange.fromDateStr} a ${lastMonthRange.toDateStr}`
+        period: `${lastMonthRange.fromDateStr} a ${lastMonthRange.toDateStr}`,
+        minAmount: refundMins.monthly,
+        belowMinimum: monthlyCalc.amount > 0 && monthlyCalc.amount < refundMins.monthly
       }
     });
   } catch (error) {
@@ -6759,6 +6789,24 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
 
       logger.info('[REFUND] weekly — calculado para', username, 'netLoss:', netLoss,
         'rango:', _calc.tier.name, 'pct:', weeklyPct, 'refund:', refundAmount);
+
+      // MÍNIMO configurable (panel, junto a los rangos): un reembolso > $0 pero
+      // menor al mínimo NO se cobra. Va ANTES de la reserva atómica a propósito:
+      // este rechazo no quema el una-vez-por-período. El mensaje lleva el mínimo
+      // VIGENTE de la config para que nunca quede un monto viejo hardcodeado.
+      const _minWeekly = (await getRefundMinimums()).weekly;
+      if (_minWeekly > 0 && refundAmount < _minWeekly) {
+        logger.info(`[REFUND] weekly — bajo el mínimo para ${username}: refund $${refundAmount} < min $${_minWeekly}`);
+        return res.json({
+          success: false,
+          message: `🚫 No llegaste al mínimo del reembolso semanal: tu reembolso del período es $${refundAmount.toLocaleString('es-AR')} y el mínimo para cobrarlo es $${_minWeekly.toLocaleString('es-AR')}.`,
+          canClaim: true,
+          belowMinimum: true,
+          minAmount: _minWeekly,
+          amount: refundAmount,
+          netAmount: netLoss
+        });
+      }
 
       // CANDADO REAL contra doble cobro: RESERVAR el reclamo (índice único
       // userId+type+periodKey) ANTES de acreditar. El create atómico ES la
@@ -6905,6 +6953,22 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
 
       logger.info('[REFUND] monthly — calculado para', username, 'netLoss:', netLoss,
         'rango:', _calc.tier.name, 'pct:', monthlyPct, 'refund:', refundAmount);
+
+      // MÍNIMO configurable (mismo criterio que el semanal): rechazo ANTES de la
+      // reserva atómica, con el mínimo vigente del panel en el mensaje.
+      const _minMonthly = (await getRefundMinimums()).monthly;
+      if (_minMonthly > 0 && refundAmount < _minMonthly) {
+        logger.info(`[REFUND] monthly — bajo el mínimo para ${username}: refund $${refundAmount} < min $${_minMonthly}`);
+        return res.json({
+          success: false,
+          message: `🚫 No llegaste al mínimo del reembolso mensual: tu reembolso del período es $${refundAmount.toLocaleString('es-AR')} y el mínimo para cobrarlo es $${_minMonthly.toLocaleString('es-AR')}.`,
+          canClaim: true,
+          belowMinimum: true,
+          minAmount: _minMonthly,
+          amount: refundAmount,
+          netAmount: netLoss
+        });
+      }
 
       // CANDADO REAL contra doble cobro (mismo patrón que el semanal):
       // reservar el reclamo (índice único) ANTES de acreditar.
@@ -7291,12 +7355,13 @@ app.get('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req, 
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Solo el admin general puede ver los rangos de reembolso.' });
     }
-    const tbp = await getRefundTiersByPeriod();
+    const [tbp, minimums] = await Promise.all([getRefundTiersByPeriod(), getRefundMinimums()]);
     res.json({
       tiersByPeriod: {
         weekly: refundTiers.listTiers(tbp.weekly),
         monthly: refundTiers.listTiers(tbp.monthly)
       },
+      minimums,
       defaults: refundTiers.listTiers(refundTiers.DEFAULT_TIERS),
       maxTiers: refundTiers.MAX_TIERS
     });
@@ -7323,6 +7388,21 @@ app.post('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req,
         return res.status(400).json({ error: `${label}: ${e.message}` });
       }
     }
+    // Mínimos para cobrar (owner 2026-08-10). Opcionales en el body a propósito:
+    // un panel cacheado viejo que no los manda guarda solo las escaleras y los
+    // mínimos vigentes quedan como están (nunca se pisan con defaults).
+    let minimums = null;
+    if (b.minimums != null) {
+      minimums = {};
+      for (const period of ['weekly', 'monthly']) {
+        const label = { weekly: 'Semanal', monthly: 'Mensual' }[period];
+        const n = Number(b.minimums[period]);
+        if (!Number.isFinite(n) || n < 0 || n > 10000000) {
+          return res.status(400).json({ error: `${label}: mínimo para cobrar inválido (0 a 10.000.000; 0 = sin mínimo).` });
+        }
+        minimums[period] = Math.round(n);
+      }
+    }
     // Se guarda solo lo editable (name/pct/max); emoji/color/min se derivan al leer.
     // (Si la config vieja tenía una escalera `daily`, este guardado la deja afuera.)
     const toSave = {};
@@ -7331,6 +7411,10 @@ app.post('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req,
     }
     // Config.set (no setConfig) para dejar registrado QUIÉN lo cambió (updatedBy).
     await Config.set(REFUND_TIERS_CONFIG_KEY, toSave, req.user.username);
+    if (minimums) {
+      await Config.set(REFUND_MIN_CONFIG_KEY, minimums, req.user.username);
+      logger.info(`[refund-tiers] mínimos actualizados por ${req.user.username}: semanal=$${minimums.weekly} mensual=$${minimums.monthly}`);
+    }
     logger.info(`[refund-tiers] actualizado por ${req.user.username}: ` +
       ['weekly', 'monthly'].map((p) =>
         `${p}=[${normalized[p].map((t) => `${t.name} ${t.pct}%≤${t.max === null ? '∞' : t.max}`).join(', ')}]`).join(' · '));
@@ -7343,6 +7427,7 @@ app.post('/api/admin/refund-tiers', authMiddleware, adminMiddleware, async (req,
         weekly: refundTiers.listTiers(normalized.weekly),
         monthly: refundTiers.listTiers(normalized.monthly)
       },
+      minimums: minimums || await getRefundMinimums(),
       commandWarnings
     });
   } catch (error) {
