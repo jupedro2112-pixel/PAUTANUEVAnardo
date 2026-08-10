@@ -8,6 +8,21 @@
 
 ## Sesión 2026-08-10
 
+### 165. Cerrados PAGINADO de a 100 (sobre #164, pedido del owner)
+- En vez de traer hasta 500 filas de una (cientos de KB), la pestaña Cerrados
+  ahora carga **de a 100** con botones **"‹ Más nuevos / Más viejos ›"** y
+  label "Página N · últimas 48hs" — siempre dentro de la ventana de 48hs.
+- **Backend:** `?page=N` (1-50) solo para closed; pide 101 filas para saber
+  `hasMore` sin count extra; skip/limit sobre el índice
+  `{status, lastMessageAt}`. Respuesta suma `page` y `hasMore`.
+- **Panel:** paginador arriba de la lista (visible solo en Cerrados);
+  `closedChatsPage` se resetea al cambiar de pestaña; el cache de 30s por
+  pestaña guarda SOLO la página 1 (helper `_setTabCache` reemplaza los 4
+  sets directos — las páginas viejas no pisan el cache ni lo usan). admin-sw
+  **v33**. **Back necesita redeploy** + recargar panel. PROBAR: Cerrados →
+  100 filas + "Más viejos ›" pasa de página; volver a Abiertos y regresar →
+  arranca en página 1.
+
 ### 164. Pestaña CERRADOS del chat: ahora muestra las últimas 48 HORAS (antes top 100)
 - **Pedido del owner:** ver las últimas 48hs de chats para auditar la
   atención de chats viejos; preguntó si afecta la velocidad.

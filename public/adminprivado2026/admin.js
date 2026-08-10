@@ -148,6 +148,8 @@ function setupEventListeners() {
             elements.tabBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentTab = btn.dataset.tab;
+            closedChatsPage = 1; // al entrar/salir de Cerrados, arrancar en lo más nuevo
+            if (typeof updateClosedPager === 'function') updateClosedPager();
             if (currentTab === 'comunidad') clearComunidadAlert();
             // Limpiar selección de chat al cambiar de pestaña
             if (selectedUserId) {
@@ -1400,8 +1402,8 @@ function initSocket() {
         // Mover al tope de la lista
         conversations.splice(convIndex, 1);
         conversations.unshift(conv);
-        // Actualizar cache
-        conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
+        // Actualizar cache (solo página 1 de cerrados)
+        _setTabCache();
         renderConversations();
     });
 
@@ -1410,7 +1412,7 @@ function initSocket() {
         const convIndex = conversations.findIndex(c => c.userId === data.userId);
         if (convIndex !== -1) {
             conversations[convIndex].unread = 0;
-            conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
+            _setTabCache();
             renderConversations();
         }
         loadStatsThrottled();
@@ -1634,9 +1636,9 @@ function updateConversationInList(message) {
     conversations.splice(convIndex, 1);
     conversations.unshift(conv);
     
-    // Actualizar cache de la pestaña actual
-    conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
-    
+    // Actualizar cache de la pestaña actual (solo página 1 de cerrados)
+    _setTabCache();
+
     // Re-renderizar la lista de forma instantánea
     renderConversations();
 }
@@ -1644,23 +1646,64 @@ function updateConversationInList(message) {
 // Cargar conversaciones con cache por pestaña.
 // opts.prefetch=false evita el prefetch de mensajes (se usa en recargas de
 // fondo disparadas por sockets, para no amplificar las requests).
+// Paginado de CERRADOS (owner 2026-08-10): 48hs de historial de a 100 por
+// página, para poder auditar la atención vieja sin bajar cientos de KB.
+let closedChatsPage = 1;
+let closedChatsHasMore = false;
+
+// El cache por pestaña guarda SOLO la página 1 de cerrados (las otras páginas
+// no deben pisarlo — al volver a la pestaña se muestra siempre lo más nuevo).
+function _setTabCache() {
+    if (currentTab === 'closed' && closedChatsPage > 1) return;
+    conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
+}
+
+function updateClosedPager() {
+    const pager = document.getElementById('closedChatsPager');
+    if (!pager) return;
+    pager.style.display = currentTab === 'closed' ? 'flex' : 'none';
+    if (currentTab !== 'closed') return;
+    const label = document.getElementById('closedPagerLabel');
+    const prev = document.getElementById('closedPagerPrev');
+    const next = document.getElementById('closedPagerNext');
+    if (label) label.textContent = 'Página ' + closedChatsPage + ' · últimas 48hs';
+    if (prev) prev.disabled = closedChatsPage <= 1;
+    if (next) next.disabled = !closedChatsHasMore;
+}
+
+function closedChatsPrev() {
+    if (closedChatsPage <= 1) return;
+    closedChatsPage--;
+    loadConversations(true, { prefetch: false });
+}
+
+function closedChatsNext() {
+    if (!closedChatsHasMore) return;
+    closedChatsPage++;
+    loadConversations(true, { prefetch: false });
+}
+
 async function loadConversations(forceRefresh = false, opts = {}) {
     const { prefetch = true } = opts;
     const now = Date.now();
     const tabCache = conversationsCacheByTab.get(currentTab);
-    
-    // Usar cache si está disponible, no es forzado y no expiró
-    if (!forceRefresh && tabCache && (now - tabCache.timestamp) < CONVERSATIONS_CACHE_TIME) {
+    const enPaginaVieja = currentTab === 'closed' && closedChatsPage > 1;
+
+    // Usar cache si está disponible, no es forzado y no expiró (el cache es
+    // solo de la página 1 — en páginas viejas siempre se va al server)
+    if (!forceRefresh && !enPaginaVieja && tabCache && (now - tabCache.timestamp) < CONVERSATIONS_CACHE_TIME) {
         conversations = tabCache.data;
         renderConversations();
+        updateClosedPager();
         return;
     }
-    
+
     try {
-        const response = await fetch(`${API_URL}/api/admin/conversations?status=${currentTab}`, {
+        const pageParam = currentTab === 'closed' ? `&page=${closedChatsPage}` : '';
+        const response = await fetch(`${API_URL}/api/admin/conversations?status=${currentTab}${pageParam}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }
         });
-        
+
         if (!response.ok) {
             const errBody = await response.json().catch(() => ({}));
             console.error('[loadConversations] HTTP', response.status, errBody);
@@ -1668,14 +1711,16 @@ async function loadConversations(forceRefresh = false, opts = {}) {
             // NO guardar respuesta vacía en cache cuando hay error
             return;
         }
-        
+
         const data = await response.json();
         conversations = data.conversations || [];
-        
-        // Guardar en cache por pestaña
-        conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
-        
+        if (currentTab === 'closed') closedChatsHasMore = !!data.hasMore;
+
+        // Guardar en cache por pestaña (solo página 1)
+        _setTabCache();
+
         renderConversations();
+        updateClosedPager();
 
         // PREFETCH: Cargar mensajes de los primeros 3 chats en background
         // (solo en cargas manuales; se omite en refrescos de fondo por socket).
@@ -2648,7 +2693,7 @@ async function markMessagesAsRead(userId) {
         const convIndex = conversations.findIndex(c => c.userId === userId);
         if (convIndex !== -1) {
             conversations[convIndex].unread = 0;
-            conversationsCacheByTab.set(currentTab, { data: [...conversations], timestamp: Date.now() });
+            _setTabCache();
             renderConversations();
         }
 

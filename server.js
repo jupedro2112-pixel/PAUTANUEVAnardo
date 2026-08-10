@@ -14393,21 +14393,25 @@ app.get('/api/admin/conversations', authMiddleware, adminMiddleware, async (req,
     }
     
     // Ventana de la lista (owner 2026-08-10): CERRADOS muestra las últimas 48
-    // HORAS (antes: top 100 por actividad — con el volumen actual eso cubría
-    // solo unas horas y no se podía auditar la atención del día anterior).
-    // Tope de sanidad 500. Abiertos/pagos/comunidad quedan como estaban: un
-    // chat ABIERTO viejo es trabajo pendiente y tiene que aparecer siempre.
+    // HORAS, PAGINADO de a 100 (?page=N, más recientes primero) — así se puede
+    // auditar la atención de ayer/anteayer sin respuestas de cientos de KB.
+    // Antes era top 100 por actividad, que con el volumen actual cubría solo
+    // unas horas. Abiertos/pagos/comunidad quedan como estaban: un chat
+    // ABIERTO viejo es trabajo pendiente y tiene que aparecer siempre.
     // Los mensajes viven 72h (TTL) así que 48h siempre tiene el historial.
     const isClosed = status === 'closed';
+    const page = isClosed ? Math.min(Math.max(parseInt(req.query.page, 10) || 1, 1), 50) : 1;
     const match = isClosed
       ? { status, lastMessageAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } }
       : { status };
 
-    // AGREGACIÓN OPTIMIZADA: Todo en una sola query
+    // AGREGACIÓN OPTIMIZADA: Todo en una sola query. En closed se piden 101
+    // filas para saber si hay página siguiente sin un count extra.
     const pipeline = [
       { $match: match },
       { $sort: { lastMessageAt: -1 } },
-      { $limit: isClosed ? 500 : 100 },
+      ...(isClosed ? [{ $skip: (page - 1) * 100 }] : []),
+      { $limit: isClosed ? 101 : 100 },
       {
         $lookup: {
           from: 'users',
@@ -14476,9 +14480,11 @@ app.get('/api/admin/conversations', authMiddleware, adminMiddleware, async (req,
       }
     ];
     
-    const conversations = await ChatStatus.aggregate(pipeline);
-    
-    res.json({ conversations });
+    let conversations = await ChatStatus.aggregate(pipeline);
+    const hasMore = isClosed && conversations.length > 100;
+    if (hasMore) conversations = conversations.slice(0, 100);
+
+    res.json({ conversations, page, hasMore });
   } catch (error) {
     console.error('Error obteniendo conversaciones:', error);
     res.status(500).json({ error: 'Error del servidor' });
