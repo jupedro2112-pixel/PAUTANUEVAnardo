@@ -8,6 +8,31 @@
 
 ## Sesión 2026-08-10
 
+### 166. CASO ASENTADO: loop "requiere Chrome" al abrir la app en algunos Android (WebAPK) — NO es bug nuestro
+- **Reporte (agente admin, con video):** en algunos teléfonos, al abrir la app
+  instalada aparece "CARGAS 1GIROX requiere la siguiente app: Chrome
+  [CERRAR/INSTALAR]"; INSTALAR lleva al Play Store donde Chrome figura YA
+  instalado (botones Desinstalar/Abrir); Abrir vuelve a la app y el cartel
+  reaparece — loop. El agente confirmó que **desinstalar la app y volver a
+  instalarla lo arregla**.
+- **Diagnóstico:** ese cartel es un **diálogo del SISTEMA Android**, no
+  nuestro. La PWA instalada desde Chrome se empaqueta como **WebAPK** atado a
+  Chrome como navegador anfitrión; si ese vínculo queda roto/desactualizado
+  (Chrome deshabilitado al momento de instalar, update de Chrome corrupto,
+  etc.), el shell no puede arrancar y Android muestra ese diálogo ANTES de
+  que corra ni una línea nuestra — por eso no hay nada que parchear del lado
+  del código. Verificado además que nuestro botón "Instalar App"
+  (VIP.ui.installApp, public/js/ui.js) jamás linkea al Play Store: usa
+  deferredPrompt o instrucciones manuales.
+- **Solución para soporte (script para agentes):** 1) desinstalar la app,
+  2) abrir CHROME (no otro navegador), 3) actualizar Chrome desde el Play
+  Store si tiene update pendiente, 4) entrar a la página y reinstalar desde
+  el menú ☰ → "Instalar App". Alternativa sin reinstalar: actualizar/habilitar
+  Chrome y reiniciar el teléfono. Se le sugirió al owner crear un COMANDO
+  desde el panel con este texto para responder al toque.
+- Afecta solo a ALGUNOS Android (vínculo WebAPK↔Chrome del dispositivo);
+  nada que deployar.
+
 ### 165. Cerrados PAGINADO de a 100 (sobre #164, pedido del owner)
 - En vez de traer hasta 500 filas de una (cientos de KB), la pestaña Cerrados
   ahora carga **de a 100** con botones **"‹ Más nuevos / Más viejos ›"** y
