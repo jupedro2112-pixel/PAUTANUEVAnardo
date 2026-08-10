@@ -17240,7 +17240,10 @@ app.post('/api/admin/promo-bonus/:id/use', authMiddleware, adminMiddleware, asyn
 // en la carga — el lote nunca acredita plata solo.
 const NotifBatch = require('./src/models/NotifBatch');
 
-const NOTIF_BATCH_MAX_RECIPIENTS = 500;
+// Tope de sanidad, no de negocio: cubre "lote completo" con margen de sobra
+// (hoy ~1.6k clientes). El envío es en segundo plano y reanudable, así que el
+// tamaño no compromete nada.
+const NOTIF_BATCH_MAX_RECIPIENTS = 20000;
 const NOTIF_BATCH_SEND_ROLES = ['admin', 'depositor'];
 const NOTIF_BATCH_VIEW_ROLES = ['admin', 'depositor', 'withdrawer'];
 
@@ -17255,13 +17258,15 @@ function _notifChannelOf(u) {
   return 'none';
 }
 
+const NOTIF_BATCH_USER_SELECT = 'id username role isBlocked fcmToken fcmTokens fcmTokenContext notifPermission';
+
 // Resuelve la lista de usernames del panel (case-insensitive) a usuarios
 // reales. Devuelve { users, notFound, skipped } — skipped = bloqueados.
 async function _resolveNotifBatchUsers(usernames) {
   const wanted = [...new Set((usernames || []).map((s) => String(s || '').trim()).filter(Boolean))];
   const found = wanted.length ? await User.find({ role: 'user', username: { $in: wanted } })
     .collation({ locale: 'en', strength: 2 })
-    .select('id username role isBlocked fcmToken fcmTokens fcmTokenContext notifPermission').lean() : [];
+    .select(NOTIF_BATCH_USER_SELECT).lean() : [];
   const byId = new Map();
   for (const u of found) if (!byId.has(u.id)) byId.set(u.id, u);
   const users = [...byId.values()].filter((u) => u.isBlocked !== true);
@@ -17270,6 +17275,175 @@ async function _resolveNotifBatchUsers(usernames) {
   const notFound = wanted.filter((w) => !foundLower.has(w.toLowerCase()));
   return { users, notFound, skipped };
 }
+
+// Resuelve la AUDIENCIA del lote según el body del panel:
+//  - 'list':     usernames pegados (default, compat con el flujo original).
+//  - 'inactive': clientes sin login hace >= audienceDays (mismo criterio que
+//                los segmentos del push masivo: lastLogin viejo o inexistente),
+//                ordenados por lastLogin DESC (los "más frescos" primero — los
+//                más probables de volver) y recortados a audienceLimit si se
+//                pidió cupo (ej. "lote de 300 inactivos de 15 días").
+//  - 'all':      lote completo — todos los clientes activos.
+// Siempre excluye bloqueados. Devuelve además el descriptor de audiencia que
+// se guarda en el lote para el historial.
+async function _resolveNotifBatchAudience(b) {
+  const type = (b.audienceType === 'inactive' || b.audienceType === 'all') ? b.audienceType : 'list';
+  if (type === 'list') {
+    const usernames = Array.isArray(b.usernames) ? b.usernames : [];
+    if (!usernames.length) return { error: 'Pegá al menos un username.' };
+    if (usernames.length > NOTIF_BATCH_MAX_RECIPIENTS) return { error: `Máximo ${NOTIF_BATCH_MAX_RECIPIENTS} usuarios por lote.` };
+    const r = await _resolveNotifBatchUsers(usernames);
+    return { ...r, audience: { audienceType: 'list', audienceDays: null, audienceLimit: null } };
+  }
+  if (type === 'all') {
+    const users = await User.find({ role: 'user', isBlocked: { $ne: true } })
+      .limit(NOTIF_BATCH_MAX_RECIPIENTS)
+      .select(NOTIF_BATCH_USER_SELECT).lean();
+    return { users, notFound: [], skipped: [], audience: { audienceType: 'all', audienceDays: null, audienceLimit: null } };
+  }
+  // inactive
+  const days = Math.round(Number(b.audienceDays));
+  if (!Number.isFinite(days) || days < 1 || days > 365) {
+    return { error: 'Los días de inactividad tienen que estar entre 1 y 365.' };
+  }
+  let limit = b.audienceLimit == null || b.audienceLimit === '' ? null : Math.round(Number(b.audienceLimit));
+  if (limit != null && (!Number.isFinite(limit) || limit < 1 || limit > NOTIF_BATCH_MAX_RECIPIENTS)) {
+    return { error: `El cupo tiene que estar entre 1 y ${NOTIF_BATCH_MAX_RECIPIENTS} (o vacío = sin cupo).` };
+  }
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const users = await User.find({
+    role: 'user', isBlocked: { $ne: true },
+    $or: [{ lastLogin: { $lt: cutoff } }, { lastLogin: { $exists: false } }]
+  })
+    .sort({ lastLogin: -1 })
+    .limit(limit || NOTIF_BATCH_MAX_RECIPIENTS)
+    .select(NOTIF_BATCH_USER_SELECT).lean();
+  return { users, notFound: [], skipped: [], audience: { audienceType: 'inactive', audienceDays: days, audienceLimit: limit } };
+}
+
+// Texto que ve el cliente en el chat (el push lleva title + message pelado).
+function _notifBatchChatContent(batch) {
+  const giftLabel = _giftLabelOf(batch);
+  return batch.mode === 'code'
+    ? `${batch.message}\n\n🎁 Tu regalo: ${giftLabel}.\n🔑 Tu código: ${batch.code}\nCanjealo desde el menú ☰ → "🎁 Reclamar Bono con Código". ⏰ Válido por ${batch.validHours}hs.`
+    : `${batch.message}\n\n🎁 Tenés un ${giftLabel}, ya activado. Avisale al agente cuando cargues. ⏰ Válido por ${batch.validHours}hs.`;
+}
+
+// ============================================================
+// MOTOR DE ENVÍO de lotes — "que nunca falle" (owner 2026-08-10).
+// ============================================================
+// El envío NO vive en la request: los recipients quedan con delivery:null y
+// este motor los procesa de a uno con CLAIM ATÓMICO ($elemMatch delivery:null
+// → 'sending' con findOneAndUpdate). Garantías:
+//  - Deploy/reinicio a mitad de un lote: el cron lo retoma donde quedó
+//    (los 'sending' colgados >10 min se recuperan solos).
+//  - Multi-instancia EB: dos instancias pueden procesar EL MISMO lote a la
+//    vez sin duplicar a nadie (el claim es por destinatario; el que pierde
+//    la carrera no matchea y pasa al siguiente).
+//  - Cada destinatario recibe: PromoBonus (si el lote es modo window y aún
+//    no lo tiene) + mensaje de chat + push/socket. Si el push falla queda
+//    'error' registrado (el mensaje de chat le queda igual).
+// Ritmo: pausa corta entre destinatarios para no saturar FCM/Mongo — un lote
+// completo (~1.6k) tarda ~1-2 min en segundo plano.
+const NOTIF_BATCH_STALE_SENDING_MS = 10 * 60 * 1000;
+const NOTIF_BATCH_SEND_PAUSE_MS = 35;
+let _notifBatchQueueRunning = false;
+
+async function _processNotifBatchQueue() {
+  if (_notifBatchQueueRunning) return; // guard por proceso (cada instancia corre el suyo)
+  _notifBatchQueueRunning = true;
+  try {
+    const pendientes = await NotifBatch.find({ sendDone: { $ne: true } })
+      .select('id').sort({ sentAt: 1 }).limit(20).lean();
+    for (const p of pendientes) {
+      await _processOneNotifBatch(p.id);
+    }
+  } catch (e) {
+    logger.warn(`[notif-batch] motor: ${e.message}`);
+  } finally {
+    _notifBatchQueueRunning = false;
+  }
+}
+
+async function _processOneNotifBatch(batchId) {
+  const batch = await NotifBatch.findOne({ id: batchId }).select('-recipients').lean();
+  if (!batch) return;
+  const chatContent = _notifBatchChatContent(batch);
+  const pushTitle = batch.title || '🎁 Tenés un regalo';
+  const pushBody = String(batch.message || '').slice(0, 150);
+  let procesados = 0;
+
+  for (;;) {
+    const stale = new Date(Date.now() - NOTIF_BATCH_STALE_SENDING_MS);
+    // Claim atómico del PRÓXIMO pendiente (o un 'sending' colgado). La
+    // proyección posicional devuelve el elemento matcheado (pre-update) →
+    // sabemos a QUIÉN reclamamos sin traer los 20k recipients.
+    const doc = await NotifBatch.findOneAndUpdate(
+      { id: batchId, recipients: { $elemMatch: { $or: [
+        { delivery: null },
+        { delivery: 'sending', deliveryAt: { $lt: stale } }
+      ] } } },
+      { $set: { 'recipients.$.delivery': 'sending', 'recipients.$.deliveryAt': new Date() } },
+      { new: false, projection: { id: 1, 'recipients.$': 1 } }
+    ).lean();
+    const rec = doc && doc.recipients && doc.recipients[0];
+    if (!rec) break; // sin pendientes reclamables (puede quedar un 'sending' vivo en otra instancia)
+
+    let delivery = 'error';
+    try {
+      const u = await User.findOne({ id: rec.userId })
+        .select('id username fcmToken fcmTokens').lean();
+      if (u) {
+        if (batch.mode === 'window' && !rec.promoBonusId) {
+          const pb = await _activateBatchPromoBonus(u, batch);
+          await NotifBatch.updateOne(
+            { id: batchId, 'recipients.userId': u.id },
+            { $set: { 'recipients.$.promoBonusId': pb.id } }
+          ).catch(() => {});
+        }
+        await Message.create({
+          id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+          receiverId: u.id, receiverRole: 'user', content: chatContent,
+          type: 'system', timestamp: new Date(), read: false
+        });
+        const r = await sendPushIfOffline(u, pushTitle, pushBody, { tag: 'notif-batch' });
+        delivery = (r && r.delivery) || 'none';
+      } else {
+        delivery = 'error'; // usuario borrado entre el armado y el envío
+      }
+    } catch (e) {
+      logger.warn(`[notif-batch] error notificando a ${rec.username}: ${e.message}`);
+    }
+    await NotifBatch.updateOne(
+      { id: batchId, 'recipients.userId': rec.userId },
+      { $set: { 'recipients.$.delivery': delivery, 'recipients.$.deliveryAt': new Date() } }
+    ).catch(() => {});
+    procesados++;
+    await new Promise((r) => setTimeout(r, NOTIF_BATCH_SEND_PAUSE_MS));
+  }
+
+  // ¿Terminó? Sin pendientes NI 'sending' (los vivos de otra instancia
+  // también cuentan — el próximo pase del cron lo cierra).
+  const queda = await NotifBatch.findOne({
+    id: batchId,
+    recipients: { $elemMatch: { $or: [{ delivery: null }, { delivery: 'sending' }] } }
+  }).select('id').lean();
+  if (!queda) {
+    const done = await NotifBatch.updateOne(
+      { id: batchId, sendDone: { $ne: true } },
+      { $set: { sendDone: true } }
+    );
+    if (done.modifiedCount) {
+      logger.info(`[notif-batch] lote ${batchId} COMPLETADO (${procesados} procesados en este pase)`);
+    }
+  } else if (procesados) {
+    logger.info(`[notif-batch] lote ${batchId}: ${procesados} procesados en este pase, sigue en cola`);
+  }
+}
+
+// Cron del motor: cada 45s retoma lo que haya quedado pendiente (arranques,
+// deploys, lotes creados en la otra instancia). Idempotente por diseño.
+setInterval(() => { _processNotifBatchQueue().catch(() => {}); }, 45000);
 
 // Activa el PromoBonus de un lote para un usuario. Reemplaza (vence) el bono
 // activo anterior — mismo criterio que el motor de reglas: UN cartel a la vez.
@@ -17372,23 +17546,24 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
   };
 }
 
-// POST /api/admin/notif-batches/preview — valida la lista de usernames ANTES
-// de enviar: quién existe, quién está bloqueado y qué canal de push tiene
-// (app / navegador / sin notis). Es la vista de "quién puede recibir y quién no".
+// POST /api/admin/notif-batches/preview — resuelve la AUDIENCIA (lista pegada,
+// inactivos de N días con cupo, o lote completo) ANTES de enviar: cuántos son,
+// quién existe/está bloqueado y qué canal de push tiene cada uno (app /
+// navegador / sin notis). Es la vista de "quién puede recibir y quién no".
+// Para lotes grandes la lista visible se recorta a 150 (los totales son
+// completos igual).
 app.post('/api/admin/notif-batches/preview', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     if (!NOTIF_BATCH_SEND_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'Solo admin general y cajeros de carga pueden enviar lotes.' });
     }
-    const usernames = Array.isArray(req.body && req.body.usernames) ? req.body.usernames : [];
-    if (!usernames.length) return res.status(400).json({ error: 'Pegá al menos un username.' });
-    if (usernames.length > NOTIF_BATCH_MAX_RECIPIENTS) {
-      return res.status(400).json({ error: `Máximo ${NOTIF_BATCH_MAX_RECIPIENTS} usuarios por lote.` });
-    }
-    const { users, notFound, skipped } = await _resolveNotifBatchUsers(usernames);
+    const resolved = await _resolveNotifBatchAudience(req.body || {});
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+    const { users, notFound, skipped } = resolved;
     const list = users.map((u) => ({ username: u.username, channel: _notifChannelOf(u) }));
     res.json({
-      users: list,
+      users: list.slice(0, 150),
+      truncated: Math.max(0, list.length - 150),
       notFound,
       skipped,
       totals: {
@@ -17459,14 +17634,11 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
       if (clash) return res.status(400).json({ error: 'Ya hay un lote ACTIVO con ese código. Elegí otro o esperá a que venza.' });
     }
 
-    const usernames = Array.isArray(b.usernames) ? b.usernames : [];
-    if (!usernames.length) return res.status(400).json({ error: 'Pegá al menos un username.' });
-    if (usernames.length > NOTIF_BATCH_MAX_RECIPIENTS) {
-      return res.status(400).json({ error: `Máximo ${NOTIF_BATCH_MAX_RECIPIENTS} usuarios por lote.` });
-    }
-    const { users, notFound, skipped } = await _resolveNotifBatchUsers(usernames);
+    const resolved = await _resolveNotifBatchAudience(b);
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+    const { users, notFound, skipped, audience } = resolved;
     if (!users.length) {
-      return res.status(400).json({ error: 'Ningún username de la lista existe como cliente activo.', notFound, skipped });
+      return res.status(400).json({ error: 'La audiencia quedó vacía (¿usernames inexistentes o sin inactivos con ese criterio?).', notFound, skipped });
     }
 
     const sentAt = new Date();
@@ -17476,62 +17648,24 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
       name, mode, giftType, amount, code, validHours, sentAt, expiresAt,
       title, message,
       sentBy: req.user.username, sentByRole: req.user.role,
+      ...audience,
+      sendDone: false,
       recipients: users.map((u) => ({
         userId: u.id, username: u.username,
-        channel: _notifChannelOf(u), delivery: null,
-        // Modo window: el bono nace activado para todos → claimedAt = envío.
+        channel: _notifChannelOf(u), delivery: null, deliveryAt: null,
+        // Modo window: el bono nace activado para todos → claimedAt = envío
+        // (el PromoBonus lo crea el motor al procesar a cada uno).
         claimedAt: mode === 'window' ? sentAt : null,
         promoBonusId: null
       }))
     };
     await NotifBatch.create(batch);
 
-    // Modo window: activar el PromoBonus de TODOS ahora (cartel verde al toque).
-    if (mode === 'window') {
-      for (const u of users) {
-        try {
-          const pb = await _activateBatchPromoBonus(u, batch);
-          await NotifBatch.updateOne(
-            { id: batch.id, 'recipients.userId': u.id },
-            { $set: { 'recipients.$.promoBonusId': pb.id } }
-          ).catch(() => {});
-        } catch (e) {
-          logger.warn(`[notif-batch] no se pudo activar el bono de ${u.username}: ${e.message}`);
-        }
-      }
-    }
-
-    // Texto que ve el cliente (chat + push). El código va al final en modo code.
-    const giftLabel = _giftLabelOf(batch);
-    const chatContent = mode === 'code'
-      ? `${message}\n\n🎁 Tu regalo: ${giftLabel}.\n🔑 Tu código: ${code}\nCanjealo desde el menú ☰ → "🎁 Reclamar Bono con Código". ⏰ Válido por ${validHours}hs.`
-      : `${message}\n\n🎁 Tenés un ${giftLabel}, ya activado. Avisale al agente cuando cargues. ⏰ Válido por ${validHours}hs.`;
-
-    // Notificar en SEGUNDO PLANO (hasta 500 pushes secuenciales pueden tardar
-    // minutos — la respuesta HTTP no espera). La entrega de cada uno queda en
-    // recipients[].delivery para el historial.
-    setImmediate(async () => {
-      for (const u of users) {
-        let delivery = 'none';
-        try {
-          await Message.create({
-            id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
-            receiverId: u.id, receiverRole: 'user', content: chatContent,
-            type: 'system', timestamp: new Date(), read: false
-          });
-          const r = await sendPushIfOffline(u, title, message.slice(0, 150), { tag: 'notif-batch' });
-          delivery = (r && r.delivery) || 'none';
-        } catch (e) {
-          delivery = 'error';
-          logger.warn(`[notif-batch] error notificando a ${u.username}: ${e.message}`);
-        }
-        await NotifBatch.updateOne(
-          { id: batch.id, 'recipients.userId': u.id },
-          { $set: { 'recipients.$.delivery': delivery } }
-        ).catch(() => {});
-      }
-      logger.info(`[notif-batch] lote ${batch.id} (${mode}, ${giftType} ${amount}) enviado por ${req.user.username} a ${users.length} usuarios`);
-    });
+    // TODO el trabajo por destinatario (PromoBonus del modo window + mensaje de
+    // chat + push) lo hace el MOTOR en segundo plano, con claim atómico por
+    // destinatario y reanudación tras deploy/reinicio (ver
+    // _processNotifBatchQueue). Acá solo se lo patea para que arranque ya.
+    setImmediate(() => { _processNotifBatchQueue().catch(() => {}); });
 
     res.json({
       success: true,
@@ -17569,9 +17703,11 @@ app.get('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req,
         _id: 0, id: 1, name: 1, mode: 1, giftType: 1, amount: 1, code: 1,
         validHours: 1, sentAt: 1, expiresAt: 1, title: 1, message: 1,
         sentBy: 1, sentByRole: 1,
+        audienceType: 1, audienceDays: 1, audienceLimit: 1, sendDone: 1,
         total: { $size: { $ifNull: ['$recipients', []] } },
         claimed: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $ne: ['$$r.claimedAt', null] } } } },
         delivered: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $in: ['$$r.delivery', ['socket', 'push']] } } } },
+        pendientes: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $in: ['$$r.delivery', [null, 'sending']] } } } },
         sinNotis: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $eq: ['$$r.channel', 'none'] } } } }
       } }
     ]);

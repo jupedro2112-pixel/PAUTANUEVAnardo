@@ -1514,8 +1514,27 @@ document.addEventListener('change', function (ev) {
                         <div style="color:#777;font-size:.75rem;margin-top:.25rem">El regalo, el código (si hay) y la vigencia se agregan solos al final del mensaje.</div>
                     </div>
                     <div class="form-group" style="margin-top:.75rem">
-                        <label class="form-label">Destinatarios * (usernames separados por coma, espacio o enter)</label>
-                        <textarea id="giftBatchUsers" class="form-input" rows="4" placeholder="gxjuan123&#10;gxana456&#10;gxpedro789" style="resize:vertical"></textarea>
+                        <label class="form-label" style="display:block;margin-bottom:.3rem">Destinatarios *</label>
+                        <div style="margin-bottom:.5rem">
+                            <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchAudience" value="list" checked onchange="updateGiftBatchAudienceUI()"> 📋 Lista pegada</label>
+                            <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchAudience" value="inactive" onchange="updateGiftBatchAudienceUI()"> 😴 Inactivos</label>
+                            <label style="font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchAudience" value="all" onchange="updateGiftBatchAudienceUI()"> 🌍 Lote completo (todos)</label>
+                        </div>
+                        <div id="giftBatchListWrap">
+                            <textarea id="giftBatchUsers" class="form-input" rows="4" placeholder="gxjuan123&#10;gxana456&#10;gxpedro789 (separados por coma, espacio o enter)" style="resize:vertical"></textarea>
+                        </div>
+                        <div id="giftBatchInactiveWrap" style="display:none;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+                            <div>
+                                <label class="form-label" style="display:block;margin-bottom:.3rem">Sin entrar hace ≥ (días)</label>
+                                <input type="number" id="giftBatchInactiveDays" class="form-input" min="1" max="365" step="1" value="15" style="width:110px" />
+                            </div>
+                            <div>
+                                <label class="form-label" style="display:block;margin-bottom:.3rem">Cupo (ej. 300 — vacío = todos)</label>
+                                <input type="number" id="giftBatchInactiveLimit" class="form-input" min="1" step="1" placeholder="sin cupo" style="width:130px" />
+                            </div>
+                            <div style="color:#777;font-size:.75rem;max-width:260px">Se eligen los inactivos más recientes primero (los más probables de volver).</div>
+                        </div>
+                        <div id="giftBatchAllNote" style="display:none;color:#ffaa44;font-size:.8rem">⚠️ Va a TODOS los clientes activos. Usá "🔍 Validar lista" para ver cuántos son antes de enviar.</div>
                     </div>
                     <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
                         <button class="btn btn-secondary" onclick="previewGiftBatch()">🔍 Validar lista</button>

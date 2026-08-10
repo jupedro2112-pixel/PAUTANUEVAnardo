@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v29'; // v29: lotes con regalo (card + historial en Notificaciones, cartel verde con $ fijo, badge multi-token)
+const CACHE_VERSION = 'v30'; // v30: lotes con audiencias (inactivos con cupo / lote completo) + motor de envío reanudable
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

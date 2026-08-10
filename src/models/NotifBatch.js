@@ -51,6 +51,18 @@ const notifBatchSchema = new mongoose.Schema({
   sentBy: { type: String, required: true },
   sentByRole: { type: String, default: null },
 
+  // Cómo se armó la lista (para el historial): 'list' = usernames pegados,
+  // 'inactive' = inactivos ≥ audienceDays sin login (tope audienceLimit,
+  // los más recientes primero), 'all' = lote completo (todos los clientes).
+  audienceType: { type: String, enum: ['list', 'inactive', 'all'], default: 'list' },
+  audienceDays: { type: Number, default: null },
+  audienceLimit: { type: Number, default: null },
+
+  // false hasta que TODOS los recipients tengan delivery final. El motor
+  // (_processNotifBatchQueue, cron en server.js) retoma los lotes con
+  // sendDone:false — un deploy/reinicio a mitad de envío NO pierde nada.
+  sendDone: { type: Boolean, default: false, index: true },
+
   recipients: {
     type: [{
       userId: { type: String, required: true },
@@ -59,9 +71,13 @@ const notifBatchSchema = new mongoose.Schema({
       // badge del chat): app = token standalone, browser = token de
       // navegador, none = sin ningún token FCM.
       channel: { type: String, enum: ['app', 'browser', 'none'], default: 'none' },
-      // Resultado real de la entrega: socket (estaba online), push (FCM OK),
-      // none (sin token), error (FCM falló). null = todavía enviando.
+      // Estado de entrega: null = pendiente; 'sending' = reclamado por una
+      // instancia (si queda colgado >10 min se retoma); finales: socket
+      // (estaba online), push (FCM OK), none (sin token), error (FCM falló;
+      // el mensaje de chat igual le queda). El claim es ATÓMICO por
+      // destinatario → dos instancias nunca le mandan doble.
       delivery: { type: String, default: null },
+      deliveryAt: { type: Date, default: null },
       // Modo 'code': cuándo canjeó. Modo 'window': = sentAt (bono directo).
       claimedAt: { type: Date, default: null },
       promoBonusId: { type: String, default: null },

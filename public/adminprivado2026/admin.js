@@ -10749,6 +10749,34 @@ function updateGiftBatchModeUI() {
     if (wrap) wrap.style.display = (mode && mode.value === 'window') ? 'none' : '';
 }
 
+function updateGiftBatchAudienceUI() {
+    const aud = (document.querySelector('input[name="giftBatchAudience"]:checked') || {}).value || 'list';
+    const listW = document.getElementById('giftBatchListWrap');
+    const inacW = document.getElementById('giftBatchInactiveWrap');
+    const allN = document.getElementById('giftBatchAllNote');
+    if (listW) listW.style.display = aud === 'list' ? '' : 'none';
+    if (inacW) inacW.style.display = aud === 'inactive' ? 'flex' : 'none';
+    if (allN) allN.style.display = aud === 'all' ? '' : 'none';
+}
+
+// Arma la parte de AUDIENCIA del body (compartida por preview y envío).
+// Devuelve null si falta algo (ya avisa con toast).
+function _giftBatchAudiencePayload() {
+    const aud = (document.querySelector('input[name="giftBatchAudience"]:checked') || {}).value || 'list';
+    if (aud === 'list') {
+        const usernames = _giftBatchUsernames();
+        if (!usernames.length) { showToast('Pegá al menos un username', 'error'); return null; }
+        return { audienceType: 'list', usernames };
+    }
+    if (aud === 'inactive') {
+        const days = Number((document.getElementById('giftBatchInactiveDays') || {}).value);
+        if (!Number.isFinite(days) || days < 1) { showToast('Poné los días de inactividad', 'error'); return null; }
+        const limitRaw = ((document.getElementById('giftBatchInactiveLimit') || {}).value || '').trim();
+        return { audienceType: 'inactive', audienceDays: days, audienceLimit: limitRaw === '' ? null : Number(limitRaw) };
+    }
+    return { audienceType: 'all' };
+}
+
 function genGiftBatchCode() {
     const AB = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     let c = '';
@@ -10768,37 +10796,47 @@ function _giftBatchChannelChip(ch) {
     return '<span style="color:#ff9d76;">🔕 sin notis</span>';
 }
 
-async function previewGiftBatch() {
-    const usernames = _giftBatchUsernames();
+// Corre el preview y devuelve el json (o null). renderInBox=true lo pinta.
+async function _runGiftBatchPreview(renderInBox) {
+    const audience = _giftBatchAudiencePayload();
+    if (!audience) return null;
     const box = document.getElementById('giftBatchPreview');
-    if (!usernames.length) { showToast('Pegá al menos un username', 'error'); return; }
-    if (box) box.innerHTML = '<p style="color:#888;font-size:.82rem">Validando lista...</p>';
+    if (renderInBox && box) box.innerHTML = '<p style="color:#888;font-size:.82rem">Armando la audiencia...</p>';
     try {
         const r = await authFetch('/api/admin/notif-batches/preview', {
-            method: 'POST', body: JSON.stringify({ usernames })
+            method: 'POST', body: JSON.stringify(audience)
         });
         const j = await r.json();
-        if (!r.ok) { if (box) box.innerHTML = ''; showToast(j.error || 'No se pudo validar', 'error'); return; }
-        const t = j.totals || {};
-        let html = '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.75rem;font-size:.82rem;">' +
-            '<div style="margin-bottom:.5rem;color:#ccc;"><b>' + t.ok + '</b> válidos — ' +
-            '📱 ' + t.app + ' con app · 🌐 ' + t.browser + ' navegador · 🔕 <b style="color:#ff9d76;">' + t.none + ' SIN notis</b> (solo les llega el mensaje al chat)</div>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:.35rem;">' +
-            (j.users || []).map((u) => '<span style="background:rgba(0,0,0,0.3);border-radius:6px;padding:2px 8px;">' + escapeHtml(u.username) + ' ' + _giftBatchChannelChip(u.channel) + '</span>').join('') +
-            '</div>';
-        if (j.notFound && j.notFound.length) {
-            html += '<div style="margin-top:.5rem;color:#ff6b6b;">❌ No existen: ' + j.notFound.map(escapeHtml).join(', ') + '</div>';
+        if (!r.ok) { if (renderInBox && box) box.innerHTML = ''; showToast(j.error || 'No se pudo validar', 'error'); return null; }
+        if (renderInBox && box) {
+            const t = j.totals || {};
+            let html = '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.75rem;font-size:.82rem;">' +
+                '<div style="margin-bottom:.5rem;color:#ccc;"><b>' + t.ok + '</b> destinatarios — ' +
+                '📱 ' + t.app + ' con app · 🌐 ' + t.browser + ' navegador · 🔕 <b style="color:#ff9d76;">' + t.none + ' SIN notis</b> (solo les llega el mensaje al chat)</div>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:.35rem;">' +
+                (j.users || []).map((u) => '<span style="background:rgba(0,0,0,0.3);border-radius:6px;padding:2px 8px;">' + escapeHtml(u.username) + ' ' + _giftBatchChannelChip(u.channel) + '</span>').join('') +
+                '</div>';
+            if (j.truncated) {
+                html += '<div style="margin-top:.4rem;color:#999;">… y ' + j.truncated + ' más (los totales de arriba son completos).</div>';
+            }
+            if (j.notFound && j.notFound.length) {
+                html += '<div style="margin-top:.5rem;color:#ff6b6b;">❌ No existen: ' + j.notFound.map(escapeHtml).join(', ') + '</div>';
+            }
+            if (j.skipped && j.skipped.length) {
+                html += '<div style="margin-top:.25rem;color:#ffaa44;">🚫 Bloqueados (no se les envía): ' + j.skipped.map(escapeHtml).join(', ') + '</div>';
+            }
+            html += '</div>';
+            box.innerHTML = html;
         }
-        if (j.skipped && j.skipped.length) {
-            html += '<div style="margin-top:.25rem;color:#ffaa44;">🚫 Bloqueados (no se les envía): ' + j.skipped.map(escapeHtml).join(', ') + '</div>';
-        }
-        html += '</div>';
-        if (box) box.innerHTML = html;
+        return j;
     } catch (e) {
-        if (box) box.innerHTML = '';
+        if (renderInBox && box) box.innerHTML = '';
         showToast('Error de conexión', 'error');
+        return null;
     }
 }
+
+async function previewGiftBatch() { await _runGiftBatchPreview(true); }
 
 async function sendGiftBatch() {
     const mode = (document.querySelector('input[name="giftBatchMode"]:checked') || {}).value || 'code';
@@ -10806,14 +10844,22 @@ async function sendGiftBatch() {
     const amount = Number((document.getElementById('giftBatchAmount') || {}).value);
     const validHours = Number((document.getElementById('giftBatchHours') || {}).value);
     const message = ((document.getElementById('giftBatchMessage') || {}).value || '').trim();
-    const usernames = _giftBatchUsernames();
     if (!Number.isFinite(amount) || amount < 1) { showToast('Poné el monto del regalo (% o $)', 'error'); return; }
     if (!Number.isFinite(validHours) || validHours < 1 || validHours > 168) { showToast('La vigencia va de 1 a 168 horas', 'error'); return; }
     if (message.length < 5) { showToast('Escribí el mensaje (mínimo 5 caracteres)', 'error'); return; }
-    if (!usernames.length) { showToast('Pegá al menos un username', 'error'); return; }
+    const audience = _giftBatchAudiencePayload();
+    if (!audience) return;
+    // El conteo REAL sale del server (para inactivos/todos no se sabe client-side).
+    const prev = await _runGiftBatchPreview(false);
+    if (!prev) return;
+    const count = (prev.totals && prev.totals.ok) || 0;
+    if (!count) { showToast('La audiencia quedó vacía', 'error'); return; }
     const regaloTxt = giftType === 'percent' ? ('+' + amount + '% en próxima carga') : ('$' + amount.toLocaleString('es-AR') + ' fijo');
     const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (bono activo ya para todos, ' + validHours + 'hs)');
-    if (!confirm('¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nDestinatarios: ' + usernames.length + '\n\nEl regalo lo aplicás VOS en la carga (cartel verde del chat).')) return;
+    const audTxt = audience.audienceType === 'all' ? '🌍 LOTE COMPLETO' :
+        audience.audienceType === 'inactive' ? ('😴 inactivos ≥' + audience.audienceDays + ' días' + (audience.audienceLimit ? ' (cupo ' + audience.audienceLimit + ')' : '')) :
+        '📋 lista pegada';
+    if (!confirm('¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nAudiencia: ' + audTxt + '\nDestinatarios: ' + count + '\n\nEl regalo lo aplicás VOS en la carga (cartel verde del chat). El envío sale en segundo plano y se reanuda solo si el server se reinicia.')) return;
     const btn = document.getElementById('giftBatchSendBtn');
     const st = document.getElementById('giftBatchStatus');
     if (btn) btn.disabled = true;
@@ -10822,7 +10868,8 @@ async function sendGiftBatch() {
         const r = await authFetch('/api/admin/notif-batches', {
             method: 'POST',
             body: JSON.stringify({
-                mode, giftType, amount, validHours, message, usernames,
+                mode, giftType, amount, validHours, message,
+                ...audience,
                 name: ((document.getElementById('giftBatchName') || {}).value || '').trim(),
                 title: ((document.getElementById('giftBatchTitle') || {}).value || '').trim(),
                 code: mode === 'code' ? ((document.getElementById('giftBatchCode') || {}).value || '').trim() : null
@@ -10864,15 +10911,21 @@ async function loadNotifBatches() {
             const vencido = new Date(b.expiresAt).getTime() <= Date.now();
             const regalo = b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'));
             const modo = b.mode === 'code' ? ('🔑 ' + escapeHtml(b.code || '')) : ('⏰ ' + b.validHours + 'hs');
+            const aud = b.audienceType === 'all' ? '🌍 todos' :
+                b.audienceType === 'inactive' ? ('😴 inactivos ≥' + (b.audienceDays || '?') + 'd' + (b.audienceLimit ? ' (cupo ' + b.audienceLimit + ')' : '')) :
+                '📋 lista';
+            const envio = b.pendientes > 0
+                ? '<span style="color:#ffd166;">⏳ enviando (' + (b.total - b.pendientes) + '/' + b.total + ')</span>'
+                : b.delivered + ' notificados';
             return '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.7rem .9rem;margin-bottom:.5rem;font-size:.82rem;">' +
                 '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.4rem;align-items:center;">' +
-                    '<div><b style="color:#d4af37;">' + regalo + '</b> · ' + modo +
+                    '<div><b style="color:#d4af37;">' + regalo + '</b> · ' + modo + ' · ' + aud +
                         (b.name ? ' · <span style="color:#ccc;">' + escapeHtml(b.name) + '</span>' : '') +
                         (vencido ? ' · <span style="color:#888;">vencido</span>' : ' · <span style="color:#00ff88;">vigente</span>') + '</div>' +
                     '<button class="btn btn-secondary btn-sm" onclick="toggleNotifBatchDetail(\'' + b.id + '\')">👥 Ver lote</button>' +
                 '</div>' +
                 '<div style="color:#999;margin-top:.25rem;">' + fecha + ' · envió <b>' + escapeHtml(b.sentBy || '-') + '</b> · ' +
-                    b.total + ' destinatarios · ' + b.delivered + ' notificados · ' + b.claimed + ' con bono' +
+                    b.total + ' destinatarios · ' + envio + ' · ' + b.claimed + ' con bono' +
                     (b.sinNotis ? ' · <span style="color:#ff9d76;">' + b.sinNotis + ' sin notis</span>' : '') + '</div>' +
                 '<div id="notifBatchDetail_' + b.id + '" style="display:none;margin-top:.5rem;"></div>' +
             '</div>';
@@ -10893,8 +10946,12 @@ async function toggleNotifBatchDetail(id) {
         const j = await r.json();
         if (!r.ok) { box.innerHTML = '<p style="color:#ff6b6b;font-size:.8rem">' + escapeHtml(j.error || 'Error') + '</p>'; return; }
         const recs = j.recipients || [];
+        // Lotes grandes (completo/inactivos): renderizar hasta 400 filas para
+        // no reventar el DOM; los totales de la fila de arriba son completos.
+        const MAX_ROWS = 400;
+        const shown = recs.slice(0, MAX_ROWS);
         box.innerHTML = '<div style="max-height:260px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:6px;padding:.5rem;">' +
-            recs.map((u) => {
+            shown.map((u) => {
                 let estado;
                 if (u.bonusStatus === 'used') estado = '<span style="color:#888;">✔ usado por ' + escapeHtml(u.usedBy || '-') + '</span>';
                 else if (u.bonusStatus === 'active') estado = '<span style="color:#00ff88;">🎁 bono ACTIVO</span>';
@@ -10904,12 +10961,13 @@ async function toggleNotifBatchDetail(id) {
                 const entrega = u.delivery === 'socket' ? '🟢 en la app' :
                     u.delivery === 'push' ? '🔔 push' :
                     u.delivery === 'error' ? '<span style="color:#ff6b6b;">⚠ push falló</span>' :
-                    u.delivery === 'none' ? '<span style="color:#ff9d76;">solo chat</span>' : '⏳';
+                    u.delivery === 'none' ? '<span style="color:#ff9d76;">solo chat</span>' : '⏳ enviando';
                 return '<div style="display:flex;justify-content:space-between;gap:.5rem;padding:2px 4px;font-size:.78rem;border-bottom:1px solid rgba(255,255,255,0.05);">' +
                     '<span>' + escapeHtml(u.username) + ' ' + _giftBatchChannelChip(u.channel) + '</span>' +
                     '<span>' + entrega + ' · ' + estado + '</span>' +
                 '</div>';
             }).join('') +
+            (recs.length > MAX_ROWS ? '<div style="color:#999;font-size:.78rem;padding:4px;text-align:center;">… y ' + (recs.length - MAX_ROWS) + ' más</div>' : '') +
         '</div>';
     } catch (e) {
         box.innerHTML = '<p style="color:#ff6b6b;font-size:.8rem">Error de conexión</p>';

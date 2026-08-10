@@ -157,8 +157,18 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   **EncuestaVote/EncuestaFire** (motor encuesta — bonos apagados),
   **InactividadFire** (motor inactivos — APAGADO).
 - **NotifBatch** (2026-08-10) — LOTE de notificaciones con regalo enviado por un
-  agente (roles admin|depositor; withdrawer solo lee el historial): lista explícita
-  de usuarios + regalo (`percent` próxima carga o `fixed` $) + `validHours` (1-168).
+  agente (roles admin|depositor; withdrawer solo lee el historial): audiencia
+  (`audienceType`: 'list' usernames pegados / 'inactive' sin login ≥ N días con
+  cupo opcional, los más recientes primero / 'all' lote completo — tope de
+  sanidad 20k) + regalo (`percent` próxima carga o `fixed` $) + `validHours`
+  (1-168). **El envío lo hace un MOTOR reanudable** (`_processNotifBatchQueue`,
+  cron 45s + kick al crear): cada destinatario arranca `delivery:null` y se
+  procesa con CLAIM ATÓMICO ($elemMatch delivery:null → 'sending' via
+  findOneAndUpdate con proyección posicional) → deploy/reinicio a mitad de lote
+  se retoma solo ('sending' colgado >10 min se recupera) y dos instancias EB
+  nunca duplican a nadie. El PromoBonus del modo window también lo crea el
+  motor (idempotente por promoBonusId). `sendDone:true` cuando no quedan
+  pendientes.
   Modo **'code'**: el código (uppercase, exclusivo del lote, sin colisión con el
   código de bienvenida ni con otro lote activo) se canjea en la PWA por el MISMO
   endpoint `/api/community-code/claim` (los lotes se chequean PRIMERO vía

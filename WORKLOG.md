@@ -8,6 +8,46 @@
 
 ## Sesión 2026-08-10
 
+### 161. Lotes SIN límite práctico + audiencias (inactivos con cupo / lote completo) + motor de envío que NUNCA pierde un lote
+- **Pedido del owner (sobre #160):** poder enviar a la cantidad que quiera
+  (ej. "lote de 300 a inactivos de cierto tiempo", o el lote completo), que
+  el envío "nunca falle" y sea seguro.
+- **Audiencias** (`_resolveNotifBatchAudience`, mismo body en preview y create):
+  - `list` — usernames pegados (flujo original).
+  - `inactive` — sin login hace ≥ N días (mismo criterio `lastLogin` que los
+    segmentos del push masivo), orden lastLogin DESC (los "más frescos"
+    primero = más probables de volver) y **cupo opcional** (ej. 300).
+  - `all` — lote completo (todos los clientes activos, sin bloqueados).
+  - Tope de 500 → **20.000** (tope de sanidad, no de negocio; la base hoy
+    tiene ~1.6k). El descriptor queda en el lote (audienceType/Days/Limit) y
+    se muestra en el historial ("😴 inactivos ≥15d (cupo 300)" / "🌍 todos").
+- **Motor de envío reanudable** (el "nunca falle"): el envío ya NO vive en la
+  request. Los recipients nacen `delivery:null` y `_processNotifBatchQueue`
+  (cron cada 45s + kick al crear el lote) los procesa de a uno con **claim
+  atómico** ($elemMatch delivery:null → 'sending', findOneAndUpdate con
+  proyección posicional para saber a quién reclamó sin traer 20k subdocs):
+  - Deploy/reinicio a mitad de lote → el cron lo retoma donde quedó; un
+    'sending' colgado >10 min se recupera solo.
+  - Multi-instancia EB → dos instancias pueden procesar el mismo lote SIN
+    duplicar a nadie (el claim por destinatario es la barrera).
+  - El PromoBonus del modo window también lo crea el motor (salta si el
+    recipient ya tiene promoBonusId → sin bonos dobles tras un retome).
+  - Ritmo: pausa de 35ms entre destinatarios (lote completo ~1-2 min).
+  - `sendDone:true` (index) cuando no queda nadie pendiente.
+- **Panel:** selector de audiencia en la card (📋 Lista / 😴 Inactivos con
+  días+cupo / 🌍 Lote completo con aviso). "Validar lista" muestra totales
+  COMPLETOS y hasta 150 chips (server recorta la lista visible). El envío
+  corre el preview por atrás para confirmar con el CONTEO REAL. Historial:
+  audiencia + progreso en vivo ("⏳ enviando (120/300)") vía campo
+  `pendientes`; detalle capado a 400 filas en DOM. admin-sw **v30**.
+- **Validado:** `node --check` OK (server.js, NotifBatch.js, admin.js,
+  admin-sw v30). Sin datos que migrar (#160 nunca se deployó). **Back
+  necesita redeploy**; panel, recargar. PROBAR: (1) lote a "inactivos ≥1 día,
+  cupo 3" → preview muestra 3 y quiénes; (2) lote completo → confirm con el
+  total real; (3) crear un lote grande y reiniciar el server a mitad → al
+  minuto sigue solo y termina (historial pasa de "⏳ enviando" a totales);
+  (4) los pendientes de un lote viejo nunca se re-mandan al completarse.
+
 ### 160. LOTES de notificaciones con REGALO (código exclusivo o ventana horaria) + historial + fixes de push
 - **Pedido del owner:** enviar notificaciones a LOTES de personas con regalo
   (bonificación % en próxima carga o regalo de $X); canje por CÓDIGO exclusivo
