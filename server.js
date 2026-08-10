@@ -13238,6 +13238,173 @@ app.get('/api/admin/datos', authMiddleware, adminMiddleware, async (req, res) =>
 // ============================================
 const ART_TZ = 'America/Argentina/Buenos_Aires';
 
+// ============================================================
+// DATOS 2.0 — COHORTES de retención (owner 2026-08-10)
+// ============================================================
+// La sección "Datos" mira el PERÍODO (cuánto entró/cargó tal día). Esta mira
+// las COHORTES: cada día es la camada de usuarios que SE REGISTRÓ ese día, y
+// se la sigue en el tiempo — % que cargó 1+/2+/3+ veces, cuánta plata dejó,
+// y RETENCIÓN a 1/3/7/14/30 días (si su ÚLTIMA carga fue >= X días después
+// del registro, sigue "vivo" a los X días — capta también a los que vuelven
+// a las semanas). Es la vista para evaluar la PAUTA: cada día de gasto trae
+// una camada, y acá se ve qué retención dejó cada camada + el desglose por
+// campaña (User.acquisitionCampaign).
+//
+// "Carga real" = type:'deposit' excluyendo payout_refund (mismo criterio que
+// /api/admin/datos e ingresos diarios; los regalos no son type deposit).
+// Días en hora ARGENTINA (UTC-3 fijo, sin DST — mismo criterio del resto).
+app.get('/api/admin/datos2', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 7), 90);
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const ART_OFF = 3 * 60 * 60 * 1000;
+    const artDayKey = (d) => new Date(d.getTime() - ART_OFF).toISOString().slice(0, 10);
+    // Arranque de la ventana: 00:00 ART de hace (days-1) días.
+    const todayKey = artDayKey(new Date());
+    const windowStartUTC = new Date(new Date(`${todayKey}T03:00:00.000Z`).getTime() - (days - 1) * DAY_MS);
+
+    // 1) Cohortes: todos los clientes registrados en la ventana.
+    const cohortUsers = await User.find({ role: 'user', createdAt: { $gte: windowStartUTC } })
+      .select('id username createdAt acquisitionCampaign createdByEmployeeId').lean();
+
+    // 2) Sus cargas reales de TODA la vida (son usuarios nuevos: su vida entera
+    //    cabe en la ventana). Se agrupa por username (siempre presente e indexado).
+    const usernames = cohortUsers.map((u) => u.username);
+    const depRows = usernames.length ? await Transaction.aggregate([
+      { $match: {
+        type: 'deposit',
+        'metadata.source': { $ne: 'payout_refund' },
+        username: { $in: usernames }
+      } },
+      { $group: {
+        _id: '$username',
+        count: { $sum: 1 },
+        total: { $sum: '$amount' },
+        lastAt: { $max: '$timestamp' },
+        // Días DISTINTOS con carga (hora ART): 3 cargas el mismo día ≠ volvió 3 días.
+        dias: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp', timezone: ART_TZ } } }
+      } }
+    ]) : [];
+    const depByUser = new Map(depRows.map((r) => [r._id, r]));
+
+    // 3) Métricas por usuario → acumular por cohorte (día ART de registro) y
+    //    por campaña de adquisición.
+    const RET_DAYS = [1, 3, 7, 14, 30];
+    const now = Date.now();
+    const mkAcc = () => ({
+      nuevos: 0, dePauta: 0, deAgente: 0, organicos: 0,
+      c1: 0, c2: 0, c3: 0, cargas: 0, diasConCarga: 0, depositado: 0,
+      ret: Object.fromEntries(RET_DAYS.map((d) => [d, { ok: 0, eligible: 0 }]))
+    });
+    const porDia = new Map();
+    const porCampania = new Map();
+    for (const u of cohortUsers) {
+      const created = new Date(u.createdAt);
+      const dayKey = artDayKey(created);
+      const campKey = u.acquisitionCampaign ? String(u.acquisitionCampaign)
+        : (u.createdByEmployeeId ? '__agente__' : '__organico__');
+      if (!porDia.has(dayKey)) porDia.set(dayKey, mkAcc());
+      if (!porCampania.has(campKey)) porCampania.set(campKey, mkAcc());
+      const dep = depByUser.get(u.username);
+      for (const acc of [porDia.get(dayKey), porCampania.get(campKey)]) {
+        acc.nuevos++;
+        if (u.acquisitionCampaign) acc.dePauta++;
+        else if (u.createdByEmployeeId) acc.deAgente++;
+        else acc.organicos++;
+        if (dep) {
+          if (dep.count >= 1) acc.c1++;
+          if (dep.count >= 2) acc.c2++;
+          if (dep.count >= 3) acc.c3++;
+          acc.cargas += dep.count;
+          acc.diasConCarga += (dep.dias || []).length;
+          acc.depositado += dep.total || 0;
+        }
+        for (const d of RET_DAYS) {
+          // Elegible recién cuando la cohorte YA cumplió esos días de vida
+          // (si no, el % daría falso bajo). ok = su última carga fue >= d días
+          // después del registro (sigue depositando a los d días).
+          if (now - created.getTime() >= d * DAY_MS) {
+            acc.ret[d].eligible++;
+            if (dep && (new Date(dep.lastAt).getTime() - created.getTime()) >= d * DAY_MS) acc.ret[d].ok++;
+          }
+        }
+      }
+    }
+
+    const pct = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
+    const packRet = (acc) => Object.fromEntries(RET_DAYS.map((d) => [
+      'd' + d,
+      acc.ret[d].eligible > 0
+        ? { ok: acc.ret[d].ok, eligible: acc.ret[d].eligible, pct: pct(acc.ret[d].ok, acc.ret[d].eligible) }
+        : null // todavía no pasaron d días para nadie de la cohorte
+    ]));
+    const packAcc = (acc) => ({
+      nuevos: acc.nuevos, dePauta: acc.dePauta, deAgente: acc.deAgente, organicos: acc.organicos,
+      c1: acc.c1, c1Pct: pct(acc.c1, acc.nuevos),
+      c2: acc.c2, c2Pct: pct(acc.c2, acc.nuevos),
+      c3: acc.c3, c3Pct: pct(acc.c3, acc.nuevos),
+      cargasProm: acc.c1 > 0 ? Math.round((acc.cargas / acc.c1) * 10) / 10 : 0,
+      diasConCargaProm: acc.c1 > 0 ? Math.round((acc.diasConCarga / acc.c1) * 10) / 10 : 0,
+      depositado: Math.round(acc.depositado),
+      porNuevo: acc.nuevos > 0 ? Math.round(acc.depositado / acc.nuevos) : 0,
+      ret: packRet(acc)
+    });
+
+    // Cohortes día a día (más reciente primero), incluyendo días sin registros.
+    const cohortes = [];
+    for (let i = 0; i < days; i++) {
+      const key = artDayKey(new Date(new Date(`${todayKey}T03:00:00.000Z`).getTime() - i * DAY_MS + 12 * 3600 * 1000));
+      cohortes.push({ date: key, ...packAcc(porDia.get(key) || mkAcc()) });
+    }
+
+    // Rendimiento por campaña (con nombre del publicista si existe).
+    const campCodes = [...porCampania.keys()].filter((k) => !k.startsWith('__'));
+    const campDocs = campCodes.length ? await Campaign.find({ code: { $in: campCodes } })
+      .select('code publisher name').lean() : [];
+    const campInfo = new Map(campDocs.map((c) => [c.code, c]));
+    const campanias = [...porCampania.entries()]
+      .map(([key, acc]) => ({
+        code: key === '__agente__' ? 'CREADOS POR AGENTE' : (key === '__organico__' ? 'ORGÁNICO / DIRECTO' : key),
+        publisher: (campInfo.get(key) || {}).publisher || null,
+        esPauta: !key.startsWith('__'),
+        ...packAcc(acc)
+      }))
+      .sort((a, b) => b.nuevos - a.nuevos);
+
+    // Resumen: totales de la ventana + el headline pedido — promedio del % de
+    // 3+ cargas de las cohortes de los últimos 10 días (ponderado por nuevos).
+    const totalAcc = mkAcc();
+    for (const acc of porDia.values()) {
+      totalAcc.nuevos += acc.nuevos; totalAcc.dePauta += acc.dePauta;
+      totalAcc.deAgente += acc.deAgente; totalAcc.organicos += acc.organicos;
+      totalAcc.c1 += acc.c1; totalAcc.c2 += acc.c2; totalAcc.c3 += acc.c3;
+      totalAcc.cargas += acc.cargas; totalAcc.diasConCarga += acc.diasConCarga;
+      totalAcc.depositado += acc.depositado;
+      for (const d of RET_DAYS) {
+        totalAcc.ret[d].ok += acc.ret[d].ok;
+        totalAcc.ret[d].eligible += acc.ret[d].eligible;
+      }
+    }
+    const last10 = cohortes.slice(0, 10);
+    const n10 = last10.reduce((s, c) => s + c.nuevos, 0);
+    const c3_10 = last10.reduce((s, c) => s + c.c3, 0);
+
+    res.json({
+      days,
+      resumen: {
+        ...packAcc(totalAcc),
+        c3Pct10d: pct(c3_10, n10),
+        nuevos10d: n10
+      },
+      cohortes,
+      campanias
+    });
+  } catch (error) {
+    console.error('Error obteniendo datos 2.0:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 // Ingresos diarios: total depositado por día (hora ARG), últimos N días.
 app.get('/api/admin/central/ingresos', authMiddleware, adminMiddleware, async (req, res) => {
   try {

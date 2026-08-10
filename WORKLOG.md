@@ -8,6 +8,41 @@
 
 ## Sesión 2026-08-10
 
+### 162. DATOS 2.0 — retención por COHORTES (camadas diarias) + rendimiento de la pauta por campaña
+- **Pedido del owner:** % de gente que cargó más de 3 veces con historial día
+  a día ("en 10 días ver qué retención dejó"), seguimiento a 1/3/7 días, etc;
+  y una hoja nueva "Datos 2.0" con lo que recomiende para analizar el
+  rendimiento de la pauta (gastan a diario, entra gente nueva todo el tiempo,
+  algunos se quedan, otros se van o vuelven a los días/semanas).
+- **Concepto (distinto del recuadro Datos, que mira el PERÍODO):** cada día es
+  una **cohorte/camada** = los usuarios que SE REGISTRARON ese día, y se la
+  sigue en el tiempo. La retención Dx se define como "su ÚLTIMA carga real fue
+  ≥ x días después del registro" — capta también a los que se van y VUELVEN.
+  Una cohorte solo es "elegible" para Dx cuando ya cumplió x días (si no, la
+  celda muestra "—", nunca un % falso bajo).
+- **Endpoint nuevo `GET /api/admin/datos2?days=7..90`** (default 30; mismo
+  gate que /datos: cualquier rol de staff). Por cohorte (día ART, UTC-3 fijo
+  como el resto): nuevos (desglose 📣 pauta = acquisitionCampaign / 🧑‍💼
+  agente = createdByEmployeeId / 🌱 orgánico), % cargó ≥1/≥2/**≥3** veces,
+  cargas promedio por depositante, días distintos con carga, $ depositado y
+  **$/nuevo** (para comparar contra el costo por registro de la pauta),
+  retención D1/D3/D7/D14/D30. "Carga real" = type:'deposit' sin
+  payout_refund (mismo criterio que /datos e ingresos diarios). Además:
+  **resumen** (totales + headline pedido: % de 3+ cargas promediado sobre las
+  camadas de los últimos 10 días) y **breakdown por campaña** (con publisher
+  de Campaign; buckets CREADOS POR AGENTE y ORGÁNICO/DIRECTO aparte).
+- **Panel:** nav nuevo **"📊 Datos 2.0"** (después de Datos) con: explicación
+  en criollo arriba, selector 10/14/30/60/90 días, 4 cards resumen (nuevos
+  con desglose, % cargó, **% 3+ últimos 10 días**, $ depositado y $/nuevo),
+  tabla "📅 Camada por camada" (Día | Nuevos 📣/🧑‍💼/🌱 | ≥1 | ≥2 | ≥3 |
+  cargas prom | $ | $/nuevo | D1..D30 con semáforo de color y tooltip "X de
+  Y seguían cargando") y tabla "🎯 Rendimiento por campaña" (nuevos, % cargó,
+  3+, $, $/nuevo, Ret. D7) con tip de lectura. admin-sw **v31**.
+- **Validado:** `node --check` OK (server.js, admin.js, admin-sw). **Back
+  necesita redeploy**; panel, recargar. PROBAR: abrir Datos 2.0 → cohortes de
+  los últimos 30 días con las camadas recientes mostrando "—" en D7+; cambiar
+  a 10 días; comparar una campaña de pauta contra ORGÁNICO en la tabla 🎯.
+
 ### 161. Lotes SIN límite práctico + audiencias (inactivos con cupo / lote completo) + motor de envío que NUNCA pierde un lote
 - **Pedido del owner (sobre #160):** poder enviar a la cantidad que quiera
   (ej. "lote de 300 a inactivos de cierto tiempo", o el lote completo), que

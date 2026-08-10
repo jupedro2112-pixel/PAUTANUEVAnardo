@@ -186,6 +186,14 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   automáticamente (ya existía), aplica también a los de lote.
 - **DailyRouletteSpin** — 1 giro/día (índices únicos userId+dateKey y
   username+dateKey). Auto-crédito en 1girox; `credit_failed` → retry desde panel.
+- **Datos 2.0** (2026-08-10, sin modelo nuevo): `GET /api/admin/datos2?days=7..90`
+  — análisis por COHORTES: cada día ART es la camada de Users registrados ese
+  día; por camada: % con 1+/2+/3+ cargas reales (type deposit sin
+  payout_refund), $ depositado, $/nuevo y retención D1/3/7/14/30 (última carga
+  ≥ x días post-registro; cohortes sin esa edad → null, el panel muestra "—")
+  + breakdown por `acquisitionCampaign` (pauta) vs creados-por-agente vs
+  orgánico. Sección "📊 Datos 2.0" del panel (`loadDatos2`, admin.js). Distinta
+  de "Datos" (métricas del período) y de publisherAnalytics (por publicista).
 - **Review** (1 por user, moderada), **OtpCode** (TTL 5 min, hash bcrypt, 3 intentos),
   **FbAdsWebhookQueue** (cola de reintentos al sistema externo fb-ads),
   **RefundClaim** (índice único userId+type+periodKey contra doble cobro),

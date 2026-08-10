@@ -3911,6 +3911,122 @@ async function loadDatos() {
 }
 
 // ============================================
+// DATOS 2.0 — cohortes de retención (owner 2026-08-10)
+// ============================================
+function _d2Money(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+
+// Celda de % con semáforo (verde intenso = mejor). null → "—" (aún no medible).
+function _d2PctCell(entry, title) {
+    if (!entry || entry.pct == null) return '<td style="text-align:center;color:#555;">—</td>';
+    const p = entry.pct;
+    const bg = p >= 40 ? 'rgba(0,200,83,0.35)' : p >= 25 ? 'rgba(0,200,83,0.22)' :
+               p >= 15 ? 'rgba(255,209,102,0.20)' : p >= 5 ? 'rgba(255,157,118,0.15)' : 'rgba(255,107,107,0.12)';
+    const tip = title ? ` title="${entry.ok} de ${entry.eligible} ${title}"` : '';
+    return `<td style="text-align:center;background:${bg};font-weight:700;"${tip}>${p}%</td>`;
+}
+
+function _d2SimplePct(p) {
+    return p == null ? '—' : (p + '%');
+}
+
+async function loadDatos2() {
+    const box = document.getElementById('datos2Body');
+    if (!box) return;
+    box.innerHTML = '<p style="color:#888;text-align:center;">Cargando cohortes...</p>';
+    const days = (document.getElementById('datos2Days') || {}).value || 30;
+    try {
+        const r = await authFetch('/api/admin/datos2?days=' + days);
+        const j = await r.json();
+        if (!r.ok) { box.innerHTML = '<p style="color:#ff6b6b;text-align:center;">' + escapeHtml(j.error || 'Error') + '</p>'; return; }
+        const s = j.resumen || {};
+        const TH = 'padding:6px 8px;font-size:10.5px;color:#d4af37;text-align:center;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,0.15);';
+        const TD = 'padding:5px 8px;font-size:11.5px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06);';
+
+        // ---- Cards resumen ----
+        let html = '<div class="stats-grid" style="margin-bottom:16px;">' +
+            '<div class="stat-card"><span style="font-size:1.3rem">👥</span>' +
+                '<span class="stat-number">' + (s.nuevos || 0) + '</span><span class="stat-label">Nuevos en el período</span>' +
+                '<span style="display:block;font-size:0.7em;color:#888;margin-top:4px;">📣 ' + (s.dePauta || 0) + ' pauta · 🧑‍💼 ' + (s.deAgente || 0) + ' agente · 🌱 ' + (s.organicos || 0) + ' orgánico</span></div>' +
+            '<div class="stat-card" style="border-color:#00c853"><span style="font-size:1.3rem">💰</span>' +
+                '<span class="stat-number" style="color:#00c853">' + _d2SimplePct(s.c1Pct) + '</span><span class="stat-label">Cargó al menos 1 vez</span>' +
+                '<span style="display:block;font-size:0.7em;color:#888;margin-top:4px;">' + (s.c1 || 0) + ' de ' + (s.nuevos || 0) + ' nuevos</span></div>' +
+            '<div class="stat-card" style="border-color:#d4af37"><span style="font-size:1.3rem">🔥</span>' +
+                '<span class="stat-number" style="color:#d4af37">' + _d2SimplePct(s.c3Pct10d) + '</span><span class="stat-label">Cargó 3+ veces (últ. 10 días)</span>' +
+                '<span style="display:block;font-size:0.7em;color:#888;margin-top:4px;">promedio de las camadas de los últimos 10 días (' + (s.nuevos10d || 0) + ' nuevos) · período completo: ' + _d2SimplePct(s.c3Pct) + '</span></div>' +
+            '<div class="stat-card" style="border-color:#80deea"><span style="font-size:1.3rem">🏦</span>' +
+                '<span class="stat-number" style="color:#80deea">' + _d2Money(s.depositado) + '</span><span class="stat-label">Depositado por los nuevos</span>' +
+                '<span style="display:block;font-size:0.7em;color:#888;margin-top:4px;">' + _d2Money(s.porNuevo) + ' por cada registro (para comparar contra lo gastado en pauta)</span></div>' +
+        '</div>';
+
+        // ---- Tabla cohortes día a día ----
+        html += '<h3 style="font-size:0.95rem;color:#d4af37;margin:0 0 8px;">📅 Camada por camada (día de registro, hora ARG)</h3>' +
+            '<div style="overflow-x:auto;background:var(--bg-secondary,#1a1a2e);border-radius:10px;padding:8px;margin-bottom:18px;">' +
+            '<table style="width:100%;border-collapse:collapse;min-width:900px;">' +
+            '<tr>' +
+                '<th style="' + TH + 'text-align:left;">Día</th>' +
+                '<th style="' + TH + '" title="pauta / agente / orgánico">Nuevos (📣/🧑‍💼/🌱)</th>' +
+                '<th style="' + TH + '">Cargó ≥1</th><th style="' + TH + '">≥2</th><th style="' + TH + '">≥3</th>' +
+                '<th style="' + TH + '" title="cargas promedio por depositante">Cargas prom.</th>' +
+                '<th style="' + TH + '">$ camada</th><th style="' + TH + '" title="depositado dividido TODOS los nuevos del día">$/nuevo</th>' +
+                '<th style="' + TH + '">D1</th><th style="' + TH + '">D3</th><th style="' + TH + '">D7</th><th style="' + TH + '">D14</th><th style="' + TH + '">D30</th>' +
+            '</tr>' +
+            (j.cohortes || []).map((c) => {
+                const [y, m, d] = c.date.split('-');
+                const pctTxt = (n, p) => n ? (n + ' <span style="color:#888;font-size:10px;">(' + _d2SimplePct(p) + ')</span>') : '<span style="color:#555;">0</span>';
+                return '<tr>' +
+                    '<td style="' + TD + 'text-align:left;white-space:nowrap;">' + d + '/' + m + '</td>' +
+                    '<td style="' + TD + '"><b>' + c.nuevos + '</b> <span style="color:#888;font-size:10px;">(' + c.dePauta + '/' + c.deAgente + '/' + c.organicos + ')</span></td>' +
+                    '<td style="' + TD + '">' + pctTxt(c.c1, c.c1Pct) + '</td>' +
+                    '<td style="' + TD + '">' + pctTxt(c.c2, c.c2Pct) + '</td>' +
+                    '<td style="' + TD + 'font-weight:700;">' + pctTxt(c.c3, c.c3Pct) + '</td>' +
+                    '<td style="' + TD + '">' + (c.cargasProm || '—') + '</td>' +
+                    '<td style="' + TD + 'white-space:nowrap;">' + _d2Money(c.depositado) + '</td>' +
+                    '<td style="' + TD + 'white-space:nowrap;">' + _d2Money(c.porNuevo) + '</td>' +
+                    _d2PctCell(c.ret && c.ret.d1, 'seguían cargando al día 1') +
+                    _d2PctCell(c.ret && c.ret.d3, 'seguían cargando al día 3') +
+                    _d2PctCell(c.ret && c.ret.d7, 'seguían cargando al día 7') +
+                    _d2PctCell(c.ret && c.ret.d14, 'seguían cargando al día 14') +
+                    _d2PctCell(c.ret && c.ret.d30, 'seguían cargando al día 30') +
+                '</tr>';
+            }).join('') +
+            '</table></div>';
+
+        // ---- Tabla por campaña ----
+        const camps = j.campanias || [];
+        html += '<h3 style="font-size:0.95rem;color:#d4af37;margin:0 0 8px;">🎯 Rendimiento por campaña (de dónde vino cada uno)</h3>' +
+            '<div style="overflow-x:auto;background:var(--bg-secondary,#1a1a2e);border-radius:10px;padding:8px;">' +
+            '<table style="width:100%;border-collapse:collapse;min-width:760px;">' +
+            '<tr>' +
+                '<th style="' + TH + 'text-align:left;">Campaña</th>' +
+                '<th style="' + TH + '">Nuevos</th><th style="' + TH + '">Cargó ≥1</th><th style="' + TH + '">3+ cargas</th>' +
+                '<th style="' + TH + '">$ total</th><th style="' + TH + '">$/nuevo</th>' +
+                '<th style="' + TH + '" title="% que seguía cargando 7 días después de registrarse">Ret. D7</th>' +
+            '</tr>' +
+            camps.map((c) => '<tr>' +
+                '<td style="' + TD + 'text-align:left;">' + (c.esPauta ? '📣 ' : '') + escapeHtml(c.code) +
+                    (c.publisher ? ' <span style="color:#888;font-size:10px;">(' + escapeHtml(c.publisher) + ')</span>' : '') + '</td>' +
+                '<td style="' + TD + '"><b>' + c.nuevos + '</b></td>' +
+                '<td style="' + TD + '">' + c.c1 + ' <span style="color:#888;font-size:10px;">(' + _d2SimplePct(c.c1Pct) + ')</span></td>' +
+                '<td style="' + TD + 'font-weight:700;">' + c.c3 + ' <span style="color:#888;font-size:10px;">(' + _d2SimplePct(c.c3Pct) + ')</span></td>' +
+                '<td style="' + TD + 'white-space:nowrap;">' + _d2Money(c.depositado) + '</td>' +
+                '<td style="' + TD + 'white-space:nowrap;">' + _d2Money(c.porNuevo) + '</td>' +
+                _d2PctCell(c.ret && c.ret.d7, 'seguían cargando al día 7') +
+            '</tr>').join('') +
+            '</table>' +
+            '<p style="color:#777;font-size:10.5px;margin:8px 4px 2px;line-height:1.5;">' +
+                '💡 <b>$/nuevo</b> = lo depositado por la camada dividido TODOS sus registros — compará ese número contra lo que te cuesta traer cada registro con la pauta. ' +
+                '<b>Ret. D7</b> alto = esa campaña trae gente que se queda; <b>3+ cargas</b> alto = gente que se engancha de verdad.' +
+            '</p>' +
+            '</div>';
+
+        box.innerHTML = html;
+    } catch (e) {
+        console.error('Error loading datos2:', e);
+        box.innerHTML = '<p style="color:#ff6b6b;text-align:center;">Error de conexión</p>';
+    }
+}
+
+// ============================================
 // STATS
 // ============================================
 async function loadStats() {
@@ -4730,6 +4846,7 @@ function switchSection(section) {
     }
     if (section === 'commands') loadCommands();
     if (section === 'datos') loadDatos();
+    if (section === 'datos2') loadDatos2();
     if (section === 'notifications') loadNotificationsPanel();
     if (section === 'referrals') loadAdminReferralSummary();
     if (section === 'roulette') loadRouletteAdmin();

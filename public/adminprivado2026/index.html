@@ -124,6 +124,10 @@ document.addEventListener('change', function (ev) {
                     <span class="icon icon-chart"></span>
                     <span>Datos</span>
                 </a>
+                <a href="#" class="nav-item" data-section="datos2">
+                    <span>📊</span>
+                    <span>Datos 2.0</span>
+                </a>
                 <div class="nav-group-title" style="padding:13px 16px 5px;font-size:9.5px;font-weight:900;letter-spacing:1.2px;color:#d4af37;text-transform:uppercase;opacity:.7;">Central</div>
                 <a href="#" class="nav-item" data-section="centralIngresos">
                     <span>📈</span>
@@ -1052,6 +1056,40 @@ document.addEventListener('change', function (ev) {
                         </div>
                     </div>
                 </div>
+            </section>
+
+            <!-- ============================================================
+                 DATOS 2.0 — Cohortes de retención (owner 2026-08-10).
+                 Cada día = la camada que SE REGISTRÓ ese día; se la sigue en
+                 el tiempo (% 1+/2+/3+ cargas, $ que dejó, retención D1..D30)
+                 + rendimiento por campaña de pauta. Endpoint /api/admin/datos2.
+                 ============================================================ -->
+            <section id="datos2Section" class="section">
+                <div class="panel-header">
+                    <h2>📊 Datos 2.0 — Retención por camadas</h2>
+                    <button class="refresh-btn" onclick="loadDatos2()" title="Refrescar">🔄</button>
+                </div>
+                <div style="background:rgba(212,175,55,0.06);border:1px solid rgba(212,175,55,0.30);border-radius:10px;padding:12px;margin-bottom:14px;">
+                    <p style="margin:0;color:#bbb;font-size:11.5px;line-height:1.6;">
+                        Acá cada fila es una <b>CAMADA</b>: la gente que se registró ese día. La seguimos en el tiempo para ver
+                        <b>cuántos cargaron 1, 2 y 3+ veces</b>, cuánta plata dejó la camada, y la <b>RETENCIÓN</b>:
+                        qué % seguía cargando 1 / 3 / 7 / 14 / 30 días después de registrarse (cuenta también a los que se van y vuelven —
+                        se mira su ÚLTIMA carga). Como la pauta trae gente nueva todos los días, esta vista te dice
+                        <b>qué retención dejó cada día de gasto</b> y qué campaña trae gente que se queda. Un "—" significa que a esa camada
+                        todavía no le pasaron esos días (no se puede medir aún).
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+                    <label style="color:#aaa;font-size:12px;">Últimos:</label>
+                    <select id="datos2Days" onchange="loadDatos2()" style="background:#0a0a0a;color:#fff;border:1px solid rgba(255,255,255,0.20);padding:5px 9px;border-radius:6px;font-size:12px;">
+                        <option value="10">10 días</option>
+                        <option value="14">14 días</option>
+                        <option value="30" selected>30 días</option>
+                        <option value="60">60 días</option>
+                        <option value="90">90 días</option>
+                    </select>
+                </div>
+                <div id="datos2Body"><p style="color:#888;text-align:center;">Cargando...</p></div>
             </section>
 
             <!-- ============================================================
