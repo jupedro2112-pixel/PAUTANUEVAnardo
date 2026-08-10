@@ -173,9 +173,15 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   código de bienvenida ni con otro lote activo) se canjea en la PWA por el MISMO
   endpoint `/api/community-code/claim` (los lotes se chequean PRIMERO vía
   `_tryClaimNotifBatchCode`; quien no está en el lote recibe "código no válido").
-  Modo **'window'**: el bono se activa a todos al enviar. En ambos casos se crea un
+  Modo **'window'**: el bono se activa a todos al enviar. El bono es un
   **PromoBonus** con `expiresAt` del lote → cartel verde del chat + "Marcar usado"
-  existentes. Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
+  existentes — **EXCEPTO fichas por código** (2026-08-10): el regalo `fixed`
+  canjeado con código se ACREDITA AUTOMÁTICO como bono girox
+  (`creditUserBalance` con `multiplier=rolloverX` del lote, validado contra
+  `bonus.multipliers`; reference `vip-nbatch-{batchId}-{userId}`; guard
+  bono-sobre-bono antes de la reserva; auto-claim v1.7; Transaction
+  `source:'notif_batch'`) — sin cartel, el agente recibe nota "no hay que hacer
+  nada". Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
   SEGUNDO PLANO (la respuesta HTTP no espera); la entrega queda en
   `recipients[].delivery` ('socket'|'push'|'none'|'error') y el canal en
   `recipients[].channel` ('app'|'browser'|'none', misma clasificación que el badge

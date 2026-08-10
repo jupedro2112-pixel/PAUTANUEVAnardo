@@ -14,6 +14,39 @@
 > tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158). ⚠️ #167 es POSTERIOR a ese
 > deploy: necesita un redeploy más.
 
+### 169. Regalo de FICHAS por código: acreditación AUTOMÁTICA como bono (rollover x0 configurable por lote)
+- **Pedido del owner:** el regalo de fichas (giftType fixed) canjeado con
+  CÓDIGO se acredita SOLO (bono girox, rollover x0 default, modificable
+  desde el panel); el % en próxima carga sigue con cartel verde + marcar
+  usado. Modo POR TIEMPO no cambia (fichas y % van con cartel del agente —
+  auto-acreditar a todo un lote sin acción del cliente sería regalar plata
+  masiva con un click; si algún día se quiere, es un cambio chico).
+- **Modelo:** `NotifBatch.rolloverX` (default 0) + `recipients[].creditedAt`
+  / `creditTxId`.
+- **Create:** acepta `rolloverX` (fixed): rango 0-50 y validado contra
+  `bonus.multipliers` de 1girox (mismo criterio que el welcome code #143 —
+  el canje nunca falla en la cara del cliente por un multiplier inválido).
+- **Canje (fichas+código), espejo del welcome code cash (#148):** guard
+  bono-sobre-bono ANTES de la reserva (bonusLocked/claimableTotal → rechazo
+  sin quemar el canje; si no se puede leer la cuenta → 503 reintentable);
+  reserva atómica; `creditUserBalance` con multiplier=rolloverX y reference
+  estable **`vip-nbatch-{batchId}-{userId}`** (reintento tras fallo falso →
+  duplicate:true, jamás doble pago; si el crédito falla se libera la reserva
+  y puede reintentar); auto-claim v1.7 (`claimPendingBonus`); Transaction
+  type bonus `metadata.source:'notif_batch'`; mensaje al cliente "ya está
+  ACREDITADO" (+ nota de rollover si >0) y nota admin-only "no hay que hacer
+  nada". Respuesta status 'credited' → la PWA muestra la tarjeta verde y
+  refresca el saldo (render existente, sin cambios de PWA).
+- **Panel:** input "🎯 Rollover (x)" visible solo con Fichas+Código; el
+  confirm del envío avisa "⚠️ la plata se acredita AUTOMÁTICAMENTE al
+  canjear"; el detalle del lote muestra "💰 acreditado automático"; guía ❓ y
+  textos actualizados con la regla nueva de quién pone la plata. admin-sw
+  **v36**. **Back necesita redeploy.** PROBAR: lote fichas+código con
+  rollover 0 → canjear → saldo acreditado al toque y nota al agente; con
+  rollover inválido (ej. 3 si la config permite [0,2,5,10,20,40]) → el
+  guardado del lote lo rechaza con la lista; lote % → cartel verde como
+  siempre.
+
 ### 168. Botón "❓ Cómo funciona" en la card "🎁 Lote con regalo"
 - Guía completa para agentes desplegable en la card (misma mecánica que los
   ❓ de Datos/Datos 2.0): qué es un lote, la regla de oro ("el regalo NUNCA

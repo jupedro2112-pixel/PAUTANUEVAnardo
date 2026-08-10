@@ -28,10 +28,17 @@ const notifBatchSchema = new mongoose.Schema({
 
   mode: { type: String, enum: ['code', 'window'], required: true },
 
-  // percent = % extra sobre la próxima carga; fixed = regalo de $ fijo.
-  // En ambos casos lo APLICA EL AGENTE en la carga (no se acredita solo).
+  // percent = % extra sobre la próxima carga (lo APLICA EL AGENTE en la
+  // carga, cartel verde). fixed = regalo de fichas: en modo 'code' se
+  // ACREDITA AUTOMÁTICO al canjear (bono girox con rolloverX); en modo
+  // 'window' va con cartel del agente como el %.
   giftType: { type: String, enum: ['percent', 'fixed'], required: true },
   amount: { type: Number, required: true, min: 1 },
+
+  // Rollover del regalo de fichas auto-acreditado (owner 2026-08-10):
+  // 0 = sin rollover (retirable), x2/x5/etc = debe apostar N× el bono.
+  // Se valida contra bonus.multipliers de 1girox al crear el lote.
+  rolloverX: { type: Number, default: 0, min: 0 },
 
   // Solo modo 'code'. SIEMPRE en mayúsculas (el canje compara uppercased).
   code: { type: String, default: null, uppercase: true, trim: true, index: true },
@@ -81,6 +88,10 @@ const notifBatchSchema = new mongoose.Schema({
       // Modo 'code': cuándo canjeó. Modo 'window': = sentAt (bono directo).
       claimedAt: { type: Date, default: null },
       promoBonusId: { type: String, default: null },
+      // Solo regalo de fichas por código (auto-acreditado): cuándo y con qué
+      // transferencia se le acreditó el bono en 1girox.
+      creditedAt: { type: Date, default: null },
+      creditTxId: { type: String, default: null },
       _id: false
     }],
     default: []
