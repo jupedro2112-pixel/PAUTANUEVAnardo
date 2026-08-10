@@ -4,7 +4,34 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-07**
+> **Última actualización: 2026-08-10**
+
+## Sesión 2026-08-10
+
+### 158. Lentitud reportada → Atlas upgradeado de FREE a M10 (autoscaling hasta M50) + fanout hgcash apagado
+- **Reclamo del owner:** "la página anda lenta". Diagnóstico con video del panel
+  (post-upgrade) + tail de 100 líneas de las 2 instancias EB.
+- **Acción del owner:** cluster de Atlas subido de **M0 free a M10 con
+  autoscaling hasta M50**. El free tier (CPU compartida + throttling de ops) era
+  el sospechoso principal de la lentitud con 1644 usuarios y ~28k mensajes.
+  Restart de la app 14:28–14:30 ART; conectó bien al cluster nuevo.
+- **Diagnóstico post-upgrade:** logs de ambas instancias SANOS — cargas/retiros
+  en ~1s, Socket.IO multi-instancia con Redis OK, sin errores de DB ni timeouts.
+  En el video cada chat tarda ~2s en cargar, pero el owner navega por Tor
+  (Tails): 0,5–1,5s de latencia por request es el piso de Tor, y abrir un chat
+  dispara varias requests. **Verificar con un agente sin Tor** si quedó rápido;
+  si no, mirar Atlas → Metrics y EB → Health (P90/P99).
+- **Fanout hgcash APAGADO:** los logs mostraban `[hgcash-fanout]` fallando con
+  404 contra `https://www.autoreembolsos.com/api/hgcash/webhook` en CADA webhook
+  (+ los pagos del hermano cayendo acá como "webhook de pago sin payout local").
+  No frena nada local (es fire-and-forget) pero ensuciaba logs. El owner agregó
+  `HGCASH_FANOUT_URL=off` en SSM `/nardo1girox/prod/` (no existía; el código
+  usaba el default hardcodeado). ⚠️ **Aplica recién al próximo restart/deploy**
+  (SSM se carga en el bootstrap). Si autoreembolsos revive con el endpoint,
+  volver a ponerle su URL.
+- **Pendiente menor detectado:** warning al boot por índice duplicado en
+  `nextRetryAt` (index:true + schema.index() en el mismo campo) — cosmético,
+  limpiar cuando se toque ese schema.
 
 ## Sesión 2026-08-07
 
