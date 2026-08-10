@@ -1552,7 +1552,34 @@ document.addEventListener('change', function (ev) {
                      exclusivo del lote o por VENTANA de tiempo. El bono es un
                      PromoBonus → cartel verde del chat + "Marcar usado". -->
                 <div class="commands-section" style="background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
-                    <h3 style="margin-bottom:1rem;font-size:1rem;color:#d4af37">🎁 Lote con regalo</h3>
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
+                        <h3 style="margin:0;font-size:1rem;color:#d4af37">🎁 Lote con regalo</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="var e=document.getElementById('giftBatchAyuda');e.style.display=(e.style.display==='none'?'':'none')">❓ Cómo funciona</button>
+                    </div>
+                    <!-- Guía completa para agentes (owner 2026-08-10). Toggle con ❓. -->
+                    <div id="giftBatchAyuda" style="display:none;background:rgba(83,189,235,0.06);border:1px solid rgba(83,189,235,0.35);border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#ccc;font-size:12px;line-height:1.7;">
+                        <div style="font-weight:900;color:#53bdeb;font-size:13px;margin-bottom:6px;">🎁 LOTES CON REGALO — Guía completa</div>
+                        <p style="margin:0 0 8px;">Herramienta para mandar una notificación a un <b>grupo de clientes</b> con un regalo enganchado. La usan el admin general y los cajeros de carga (retiros solo mira el historial).</p>
+                        <p style="margin:0 0 8px;color:#ffd166;"><b>⚠️ Lo primero: el regalo NUNCA se acredita solo.</b> La plata la pone el agente A MANO cuando el cliente carga. El sistema solo avisa, controla quién tiene derecho y muestra el cartel verde. Vos aplicás el bono en la carga y lo marcás como usado.</p>
+                        <ul style="margin:0 0 8px;padding-left:18px;">
+                            <li><b>Tipos de regalo:</b> <b>% extra en la próxima carga</b> (ej. +50%: carga $10.000 → le acreditás $15.000) o <b>$ fijo</b> (ej. $5.000: se lo sumás a su próxima carga).</li>
+                            <li><b>🔑 CON CÓDIGO:</b> la notificación lleva un código que el cliente canjea en su app (menú ☰ → "Reclamar Bono con Código"). <b>Solo funciona para los que están EN el lote</b> — si lo comparten en un grupo, al resto le dice "código no válido". Una sola vez por persona, hasta que venza el plazo. Recién al canjearlo aparece el bono (y el cartel verde).</li>
+                            <li><b>⏰ POR TIEMPO:</b> sin código — al enviar, el bono queda ACTIVADO solo para todos los del lote por las horas que elijas. Ideal promos relámpago ("tenés 2 horas para cargar con +30%"). Al vencer desaparece solo.</li>
+                            <li><b>Audiencias:</b> 📋 lista pegada (usuarios a dedo) · 😴 inactivos (sin entrar hace ≥ X días, con cupo — ej. los 300 más recientes) · 🌍 lote completo (todos).</li>
+                            <li><b>🔍 Validar lista SIEMPRE antes de enviar:</b> muestra cuántos son y quién puede recibir: 📱 app instalada = push al celular · 🌐 navegador = notificación del navegador · 🔕 sin notis = NO le llega push, pero el mensaje igual le queda en el chat de la app (lo ve cuando entra).</li>
+                            <li>El envío sale en segundo plano y <b>no se pierde nunca</b> (si el server se reinicia a mitad de un lote, sigue solo donde quedó).</li>
+                        </ul>
+                        <p style="margin:0 0 6px;font-weight:900;color:#34d36b;">El cartel VERDE (lo más importante para el cajero):</p>
+                        <ul style="margin:0 0 8px;padding-left:18px;">
+                            <li>Cuando un cliente del lote tiene el bono activo, al abrir su chat aparece el cartel verde: "BONO VIGENTE: 50% en la carga" o "REGALO PENDIENTE: $5.000", con el vencimiento y de qué lote salió.</li>
+                            <li>Flujo: cliente va a cargar → ves el cartel → le sumás el regalo a la carga → tocás <b>"✓ Marcar usado"</b> (si cargaste con el campo bonus se marca solo). Vale por UNA sola carga.</li>
+                            <li>Sin cartel verde = no tiene nada pendiente: o ya lo usó (queda registrado quién lo marcó), o venció, o nunca estuvo en el lote.</li>
+                        </ul>
+                        <p style="margin:0 0 6px;font-weight:900;color:#53bdeb;">📤 Lotes enviados (historial):</p>
+                        <p style="margin:0 0 8px;">Cada lote queda registrado: quién lo envió, cuándo, qué regalo, a cuántos; y con "👥 Ver lote" el detalle persona por persona — si le llegó, si canjeó, y si el bono se usó y qué agente lo aplicó. Los lotes grandes muestran el progreso en vivo ("⏳ enviando 120/300").</p>
+                        <p style="margin:0 0 6px;font-weight:900;">Respuestas rápidas para clientes:</p>
+                        <p style="margin:0;color:#999;">"Me dice código no válido" → no está en el lote o venció. · "Ya lo canjeé, ¿y ahora?" → que avise al cargar, el agente ve el cartel y lo aplica. · "No me llegó la notificación" → sin notis activadas no hay push, pero el mensaje está en su chat igual.</p>
+                    </div>
                     <p style="margin:0 0 1rem;color:#bbb;font-size:.82rem;line-height:1.5;">
                         Mandá una notificación a una <b>lista de clientes</b> con un regalo: <b>% extra en su próxima carga</b> o un <b>regalo de $ fijo</b>
                         (en ambos casos lo aplicás VOS en la carga y lo marcás usado desde el cartel verde del chat).

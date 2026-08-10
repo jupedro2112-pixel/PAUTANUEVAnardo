@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v34'; // v34: paginador de Cerrados con números de a 6 + salto directo por N° de página
+const CACHE_VERSION = 'v35'; // v35: botón "❓ Cómo funciona" con la guía completa en la card de Lote con regalo
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

@@ -14,6 +14,14 @@
 > tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158). ⚠️ #167 es POSTERIOR a ese
 > deploy: necesita un redeploy más.
 
+### 168. Botón "❓ Cómo funciona" en la card "🎁 Lote con regalo"
+- Guía completa para agentes desplegable en la card (misma mecánica que los
+  ❓ de Datos/Datos 2.0): qué es un lote, la regla de oro ("el regalo NUNCA
+  se acredita solo"), tipos de regalo, modo código vs por tiempo, audiencias,
+  validar lista (📱/🌐/🔕), el cartel verde y el flujo del cajero, historial,
+  y respuestas rápidas para clientes. Solo HTML estático con toggle inline.
+  admin-sw **v35**. Solo front: recargar panel.
+
 ### 167. Paginador de Cerrados con NÚMEROS (de a 6) + salto directo por N° (sobre #165)
 - **Pedido del owner:** con muchas páginas (ej. 48) avanzar de a 1 es lento;
   que haya números de a 6 o poder escribir el número. El reset a página 1 al
