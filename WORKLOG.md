@@ -11,7 +11,25 @@
 > ✅ **DEPLOYADO:** el owner confirmó (2026-08-10, fin del día) que TODO lo de
 > esta sesión (#158–#166) ya está deployado en AWS EB. Los "Back necesita
 > redeploy" de las entradas de abajo quedan cumplidos. Con ese restart también
-> tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158).
+> tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158). ⚠️ #167 es POSTERIOR a ese
+> deploy: necesita un redeploy más.
+
+### 167. Paginador de Cerrados con NÚMEROS (de a 6) + salto directo por N° (sobre #165)
+- **Pedido del owner:** con muchas páginas (ej. 48) avanzar de a 1 es lento;
+  que haya números de a 6 o poder escribir el número. El reset a página 1 al
+  salir y volver a Cerrados QUEDA así a propósito (lo confirmó).
+- **Backend:** la respuesta de closed suma `totalPages`
+  (`countDocuments` sobre el match de 48hs — usa el índice
+  `{status, lastMessageAt}`, barato).
+- **Panel:** el paginador ahora es `‹ [21][22][23][24][25][26] › [N°] Página
+  23 de 48 · últimas 48hs` — ventana de 6 números centrada en la actual
+  (con ≤6 páginas se ven todas), botón activo resaltado en dorado, y un
+  input para escribir el número y saltar con Enter (`closedChatsGoTo`, con
+  clamp 1..total). Si el total baja (chats saliendo de la ventana de 48hs)
+  y quedaste más allá de la última página, se reacomoda solo. admin-sw
+  **v34**. **Back necesita redeploy** + recargar panel. PROBAR: Cerrados →
+  números visibles, saltar con un número escrito + Enter, ‹ › siguen
+  funcionando.
 
 ### 166. CASO ASENTADO: loop "requiere Chrome" al abrir la app en algunos Android (WebAPK) — NO es bug nuestro
 - **Reporte (agente admin, con video):** en algunos teléfonos, al abrir la app

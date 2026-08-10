@@ -1650,6 +1650,7 @@ function updateConversationInList(message) {
 // página, para poder auditar la atención vieja sin bajar cientos de KB.
 let closedChatsPage = 1;
 let closedChatsHasMore = false;
+let closedChatsTotalPages = 1;
 
 // El cache por pestaña guarda SOLO la página 1 de cerrados (las otras páginas
 // no deben pisarlo — al volver a la pestaña se muestra siempre lo más nuevo).
@@ -1666,22 +1667,41 @@ function updateClosedPager() {
     const label = document.getElementById('closedPagerLabel');
     const prev = document.getElementById('closedPagerPrev');
     const next = document.getElementById('closedPagerNext');
-    if (label) label.textContent = 'Página ' + closedChatsPage + ' · últimas 48hs';
+    const nums = document.getElementById('closedPagerNums');
+    const input = document.getElementById('closedPagerInput');
+    if (label) label.textContent = 'Página ' + closedChatsPage + ' de ' + closedChatsTotalPages + ' · últimas 48hs';
     if (prev) prev.disabled = closedChatsPage <= 1;
-    if (next) next.disabled = !closedChatsHasMore;
+    if (next) next.disabled = closedChatsPage >= closedChatsTotalPages && !closedChatsHasMore;
+    if (input) input.max = closedChatsTotalPages;
+    // Ventana de 6 números centrada en la página actual (owner: avanzar más
+    // rápido que de a 1). Con ≤6 páginas se muestran todas.
+    if (nums) {
+        const total = closedChatsTotalPages;
+        let start = Math.max(1, Math.min(closedChatsPage - 2, total - 5));
+        const end = Math.min(total, start + 5);
+        let html = '';
+        for (let p = start; p <= end; p++) {
+            const activo = p === closedChatsPage;
+            html += '<button onclick="closedChatsGoTo(' + p + ')" ' + (activo ? 'disabled ' : '') +
+                'style="min-width:28px;padding:4px 6px;border-radius:6px;font-size:11px;cursor:' + (activo ? 'default' : 'pointer') + ';' +
+                (activo
+                    ? 'background:rgba(212,175,55,0.30);border:1px solid rgba(212,175,55,0.70);color:#d4af37;font-weight:800;'
+                    : 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);color:#ccc;') +
+                '">' + p + '</button>';
+        }
+        nums.innerHTML = html;
+    }
 }
 
-function closedChatsPrev() {
-    if (closedChatsPage <= 1) return;
-    closedChatsPage--;
+function closedChatsGoTo(page) {
+    const p = Math.min(Math.max(Math.round(Number(page) || 1), 1), Math.max(closedChatsTotalPages, 1));
+    if (p === closedChatsPage) return;
+    closedChatsPage = p;
     loadConversations(true, { prefetch: false });
 }
 
-function closedChatsNext() {
-    if (!closedChatsHasMore) return;
-    closedChatsPage++;
-    loadConversations(true, { prefetch: false });
-}
+function closedChatsPrev() { closedChatsGoTo(closedChatsPage - 1); }
+function closedChatsNext() { closedChatsGoTo(closedChatsPage + 1); }
 
 async function loadConversations(forceRefresh = false, opts = {}) {
     const { prefetch = true } = opts;
@@ -1714,7 +1734,15 @@ async function loadConversations(forceRefresh = false, opts = {}) {
 
         const data = await response.json();
         conversations = data.conversations || [];
-        if (currentTab === 'closed') closedChatsHasMore = !!data.hasMore;
+        if (currentTab === 'closed') {
+            closedChatsHasMore = !!data.hasMore;
+            closedChatsTotalPages = Math.max(1, parseInt(data.totalPages, 10) || 1);
+            // Si el total bajó (los chats van saliendo de la ventana de 48hs)
+            // y quedamos parados más allá de la última página, reacomodar.
+            if (closedChatsPage > closedChatsTotalPages) {
+                closedChatsPage = closedChatsTotalPages;
+            }
+        }
 
         // Guardar en cache por pestaña (solo página 1)
         _setTabCache();

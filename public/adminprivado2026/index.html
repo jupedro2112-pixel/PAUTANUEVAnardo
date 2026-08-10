@@ -286,11 +286,16 @@ document.addEventListener('change', function (ev) {
                             <input type="text" id="searchUser" placeholder="Buscar usuario...">
                         </div>
                         <!-- Paginador de CERRADOS (48hs de a 100, owner 2026-08-10).
+                             Números de a 6 + salto directo escribiendo el N°.
                              Solo visible en esa pestaña; lo maneja updateClosedPager(). -->
-                        <div id="closedChatsPager" style="display:none;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.08);">
-                            <button id="closedPagerPrev" class="btn btn-secondary btn-sm" onclick="closedChatsPrev()">‹ Más nuevos</button>
-                            <span id="closedPagerLabel" style="font-size:10.5px;color:#999;text-align:center;">Página 1 · últimas 48hs</span>
-                            <button id="closedPagerNext" class="btn btn-secondary btn-sm" onclick="closedChatsNext()">Más viejos ›</button>
+                        <div id="closedChatsPager" style="display:none;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.08);">
+                            <button id="closedPagerPrev" class="btn btn-secondary btn-sm" onclick="closedChatsPrev()" title="Más nuevos">‹</button>
+                            <span id="closedPagerNums" style="display:flex;gap:3px;flex-wrap:wrap;"></span>
+                            <button id="closedPagerNext" class="btn btn-secondary btn-sm" onclick="closedChatsNext()" title="Más viejos">›</button>
+                            <input id="closedPagerInput" type="number" min="1" placeholder="N°" title="Escribí el número de página y Enter"
+                                onkeydown="if(event.key==='Enter'){closedChatsGoTo(Number(this.value));this.value='';}"
+                                style="width:52px;background:#0a0a0a;color:#fff;border:1px solid rgba(255,255,255,0.20);border-radius:6px;padding:4px 6px;font-size:11px;">
+                            <span id="closedPagerLabel" style="font-size:10.5px;color:#999;margin-left:auto;">Página 1 · últimas 48hs</span>
                         </div>
                         <div id="conversationsList" class="conversations-list">
                             <div class="empty-state">

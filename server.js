@@ -14484,7 +14484,15 @@ app.get('/api/admin/conversations', authMiddleware, adminMiddleware, async (req,
     const hasMore = isClosed && conversations.length > 100;
     if (hasMore) conversations = conversations.slice(0, 100);
 
-    res.json({ conversations, page, hasMore });
+    // Total de páginas para el paginador numerado del panel (solo closed).
+    // countDocuments sobre el índice {status, lastMessageAt} — barato.
+    let totalPages = 1;
+    if (isClosed) {
+      const totalClosed = await ChatStatus.countDocuments(match);
+      totalPages = Math.max(1, Math.ceil(totalClosed / 100));
+    }
+
+    res.json({ conversations, page, hasMore, totalPages });
   } catch (error) {
     console.error('Error obteniendo conversaciones:', error);
     res.status(500).json({ error: 'Error del servidor' });

@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v33'; // v33: pestaña Cerrados paginada de a 100 (48hs) con botones más nuevos/más viejos
+const CACHE_VERSION = 'v34'; // v34: paginador de Cerrados con números de a 6 + salto directo por N° de página
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).
