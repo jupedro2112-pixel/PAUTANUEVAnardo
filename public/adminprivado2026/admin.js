@@ -1371,19 +1371,15 @@ function initSocket() {
         updateUserStatus(data.userId, false);
     });
     
-    // Actualizar estado de app de notificaciones en tiempo real
+    // Actualizar estado de app de notificaciones en tiempo real.
+    // El evento solo trae el contexto del ÚLTIMO token registrado — clasificar
+    // con eso pisaba el badge: un cliente CON app que abría Chrome (token
+    // 'browser' nuevo) pasaba a "NOTIS EN NAVEGADOR" aunque la app siguiera
+    // instalada. Se re-fetchea el user completo y el badge lo recalcula
+    // loadUserInfo con la MISMA lógica multi-token de siempre.
     socket.on('user_app_status', (data) => {
-        if (data.userId === selectedUserId && elements.chatAppStatus) {
-            if (data.appInstalled && data.fcmTokenContext === 'standalone') {
-                elements.chatAppStatus.textContent = '📱 APP INSTALADA';
-                elements.chatAppStatus.style.color = '#00ff88';
-            } else if (data.appInstalled && data.fcmTokenContext !== 'standalone') {
-                elements.chatAppStatus.textContent = '🌐 NOTIS EN NAVEGADOR';
-                elements.chatAppStatus.style.color = '#4fc3f7';
-            } else {
-                elements.chatAppStatus.textContent = '📵 NOTIS INACTIVAS';
-                elements.chatAppStatus.style.color = '#aaa';
-            }
+        if (data.userId === selectedUserId && typeof loadUserInfo === 'function') {
+            loadUserInfo(data.userId);
         }
     });
     
@@ -6703,7 +6699,8 @@ async function loadNotificationsPanel() {
         loadNotifUsers(1, filter),
         loadNotifStrategy(),
         loadSchedules(),
-        loadTagBroadcastOptions()
+        loadTagBroadcastOptions(),
+        loadNotifBatches()
     ]);
 }
 
@@ -10699,11 +10696,21 @@ async function loadChatPromoBonus(username) {
             return;
         }
         const mins = Math.max(0, Math.round((new Date(b.expiresAt).getTime() - Date.now()) / 60000));
+        const minsTxt = mins >= 120 ? Math.round(mins / 60) + ' hs' : mins + ' min';
+        // Lotes con regalo (2026-08-10): pueden ser % o REGALO de $ fijo — el
+        // agente lo suma en la carga igual que un %. El origen muestra el lote.
+        const esFijo = Number(b.montoFijoARS) > 0 && !(Number(b.percent) > 0);
+        const tituloBono = esFijo
+            ? 'REGALO PENDIENTE: $' + Number(b.montoFijoARS).toLocaleString('es-AR') + ' — sumáselo en su próxima carga'
+            : 'BONO VIGENTE: ' + b.percent + '% en la carga';
+        const origen = b.sourceRuleCode === 'lote'
+            ? escapeHtml(b.sourceRuleName || 'lote')
+            : 'regla ' + escapeHtml(b.sourceRuleCode || '-');
         el.style.background = 'linear-gradient(90deg,#0f8a2f,#0a6b25)';
         el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">' +
             '<span style="font-size:18px;">🎁</span>' +
-            '<div style="flex:1;min-width:120px;"><strong style="font-size:13px;">BONO VIGENTE: ' + b.percent + '% en la carga</strong>' +
-            '<div style="font-size:11px;opacity:0.9;">Vence en ' + mins + ' min · regla ' + escapeHtml(b.sourceRuleCode || '-') + '</div></div>' +
+            '<div style="flex:1;min-width:120px;"><strong style="font-size:13px;">' + tituloBono + '</strong>' +
+            '<div style="font-size:11px;opacity:0.9;">Vence en ' + minsTxt + ' · ' + origen + '</div></div>' +
             '<button onclick="markChatPromoBonusUsed(\'' + b.id + '\')" style="background:#fff;color:#0a7a2f;border:none;border-radius:7px;padding:6px 11px;font-weight:800;font-size:11.5px;cursor:pointer;">✓ Marcar usado</button>' +
             '</div>';
     } catch (e) {
@@ -10729,6 +10736,185 @@ async function markChatPromoBonusUsed(id) {
     } catch (e) { showToast('Error de conexión', 'error'); }
 }
 
+
+// =========================================================================
+// LOTES DE NOTIFICACIONES CON REGALO (owner 2026-08-10)
+// Card "🎁 Lote con regalo" + historial "📤 Lotes enviados" (sección
+// Notificaciones). El bono resultante es un PromoBonus → cartel verde del
+// chat + "Marcar usado" de siempre.
+// =========================================================================
+function updateGiftBatchModeUI() {
+    const mode = document.querySelector('input[name="giftBatchMode"]:checked');
+    const wrap = document.getElementById('giftBatchCodeWrap');
+    if (wrap) wrap.style.display = (mode && mode.value === 'window') ? 'none' : '';
+}
+
+function genGiftBatchCode() {
+    const AB = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let c = '';
+    for (let i = 0; i < 8; i++) c += AB[Math.floor(Math.random() * AB.length)];
+    const input = document.getElementById('giftBatchCode');
+    if (input) input.value = c;
+}
+
+function _giftBatchUsernames() {
+    const raw = (document.getElementById('giftBatchUsers') || {}).value || '';
+    return raw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+function _giftBatchChannelChip(ch) {
+    if (ch === 'app') return '<span style="color:#00ff88;">📱 app</span>';
+    if (ch === 'browser') return '<span style="color:#4fc3f7;">🌐 navegador</span>';
+    return '<span style="color:#ff9d76;">🔕 sin notis</span>';
+}
+
+async function previewGiftBatch() {
+    const usernames = _giftBatchUsernames();
+    const box = document.getElementById('giftBatchPreview');
+    if (!usernames.length) { showToast('Pegá al menos un username', 'error'); return; }
+    if (box) box.innerHTML = '<p style="color:#888;font-size:.82rem">Validando lista...</p>';
+    try {
+        const r = await authFetch('/api/admin/notif-batches/preview', {
+            method: 'POST', body: JSON.stringify({ usernames })
+        });
+        const j = await r.json();
+        if (!r.ok) { if (box) box.innerHTML = ''; showToast(j.error || 'No se pudo validar', 'error'); return; }
+        const t = j.totals || {};
+        let html = '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.75rem;font-size:.82rem;">' +
+            '<div style="margin-bottom:.5rem;color:#ccc;"><b>' + t.ok + '</b> válidos — ' +
+            '📱 ' + t.app + ' con app · 🌐 ' + t.browser + ' navegador · 🔕 <b style="color:#ff9d76;">' + t.none + ' SIN notis</b> (solo les llega el mensaje al chat)</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:.35rem;">' +
+            (j.users || []).map((u) => '<span style="background:rgba(0,0,0,0.3);border-radius:6px;padding:2px 8px;">' + escapeHtml(u.username) + ' ' + _giftBatchChannelChip(u.channel) + '</span>').join('') +
+            '</div>';
+        if (j.notFound && j.notFound.length) {
+            html += '<div style="margin-top:.5rem;color:#ff6b6b;">❌ No existen: ' + j.notFound.map(escapeHtml).join(', ') + '</div>';
+        }
+        if (j.skipped && j.skipped.length) {
+            html += '<div style="margin-top:.25rem;color:#ffaa44;">🚫 Bloqueados (no se les envía): ' + j.skipped.map(escapeHtml).join(', ') + '</div>';
+        }
+        html += '</div>';
+        if (box) box.innerHTML = html;
+    } catch (e) {
+        if (box) box.innerHTML = '';
+        showToast('Error de conexión', 'error');
+    }
+}
+
+async function sendGiftBatch() {
+    const mode = (document.querySelector('input[name="giftBatchMode"]:checked') || {}).value || 'code';
+    const giftType = (document.querySelector('input[name="giftBatchType"]:checked') || {}).value || 'percent';
+    const amount = Number((document.getElementById('giftBatchAmount') || {}).value);
+    const validHours = Number((document.getElementById('giftBatchHours') || {}).value);
+    const message = ((document.getElementById('giftBatchMessage') || {}).value || '').trim();
+    const usernames = _giftBatchUsernames();
+    if (!Number.isFinite(amount) || amount < 1) { showToast('Poné el monto del regalo (% o $)', 'error'); return; }
+    if (!Number.isFinite(validHours) || validHours < 1 || validHours > 168) { showToast('La vigencia va de 1 a 168 horas', 'error'); return; }
+    if (message.length < 5) { showToast('Escribí el mensaje (mínimo 5 caracteres)', 'error'); return; }
+    if (!usernames.length) { showToast('Pegá al menos un username', 'error'); return; }
+    const regaloTxt = giftType === 'percent' ? ('+' + amount + '% en próxima carga') : ('$' + amount.toLocaleString('es-AR') + ' fijo');
+    const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (bono activo ya para todos, ' + validHours + 'hs)');
+    if (!confirm('¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nDestinatarios: ' + usernames.length + '\n\nEl regalo lo aplicás VOS en la carga (cartel verde del chat).')) return;
+    const btn = document.getElementById('giftBatchSendBtn');
+    const st = document.getElementById('giftBatchStatus');
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = 'Enviando...';
+    try {
+        const r = await authFetch('/api/admin/notif-batches', {
+            method: 'POST',
+            body: JSON.stringify({
+                mode, giftType, amount, validHours, message, usernames,
+                name: ((document.getElementById('giftBatchName') || {}).value || '').trim(),
+                title: ((document.getElementById('giftBatchTitle') || {}).value || '').trim(),
+                code: mode === 'code' ? ((document.getElementById('giftBatchCode') || {}).value || '').trim() : null
+            })
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+            showToast(j.error || 'No se pudo enviar el lote', 'error');
+            if (st) st.textContent = '';
+            return;
+        }
+        const t = j.totals || {};
+        showToast('Lote enviado a ' + t.recipients + ' usuarios' + (j.code ? ' — código ' + j.code : ''), 'success');
+        if (st) st.textContent = '✅ ' + t.recipients + ' destinatarios' + (j.code ? ' · código ' + j.code : '') + ' · las notificaciones salen en segundo plano';
+        ['giftBatchAmount', 'giftBatchMessage', 'giftBatchUsers', 'giftBatchName', 'giftBatchCode', 'giftBatchTitle'].forEach((id) => {
+            const el = document.getElementById(id); if (el) el.value = '';
+        });
+        const prev = document.getElementById('giftBatchPreview'); if (prev) prev.innerHTML = '';
+        loadNotifBatches();
+    } catch (e) {
+        showToast('Error de conexión', 'error');
+        if (st) st.textContent = '';
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function loadNotifBatches() {
+    const box = document.getElementById('notifBatchesList');
+    if (!box) return;
+    try {
+        const r = await authFetch('/api/admin/notif-batches');
+        if (!r.ok) { box.innerHTML = '<p style="color:#888;text-align:center;font-size:.85rem">Sin permiso para ver el historial.</p>'; return; }
+        const j = await r.json();
+        const rows = j.batches || [];
+        if (!rows.length) { box.innerHTML = '<p style="color:#888;text-align:center;font-size:.85rem">Todavía no se envió ningún lote.</p>'; return; }
+        box.innerHTML = rows.map((b) => {
+            const fecha = new Date(b.sentAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            const vencido = new Date(b.expiresAt).getTime() <= Date.now();
+            const regalo = b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'));
+            const modo = b.mode === 'code' ? ('🔑 ' + escapeHtml(b.code || '')) : ('⏰ ' + b.validHours + 'hs');
+            return '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.7rem .9rem;margin-bottom:.5rem;font-size:.82rem;">' +
+                '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.4rem;align-items:center;">' +
+                    '<div><b style="color:#d4af37;">' + regalo + '</b> · ' + modo +
+                        (b.name ? ' · <span style="color:#ccc;">' + escapeHtml(b.name) + '</span>' : '') +
+                        (vencido ? ' · <span style="color:#888;">vencido</span>' : ' · <span style="color:#00ff88;">vigente</span>') + '</div>' +
+                    '<button class="btn btn-secondary btn-sm" onclick="toggleNotifBatchDetail(\'' + b.id + '\')">👥 Ver lote</button>' +
+                '</div>' +
+                '<div style="color:#999;margin-top:.25rem;">' + fecha + ' · envió <b>' + escapeHtml(b.sentBy || '-') + '</b> · ' +
+                    b.total + ' destinatarios · ' + b.delivered + ' notificados · ' + b.claimed + ' con bono' +
+                    (b.sinNotis ? ' · <span style="color:#ff9d76;">' + b.sinNotis + ' sin notis</span>' : '') + '</div>' +
+                '<div id="notifBatchDetail_' + b.id + '" style="display:none;margin-top:.5rem;"></div>' +
+            '</div>';
+        }).join('');
+    } catch (e) {
+        box.innerHTML = '<p style="color:#888;text-align:center;font-size:.85rem">Error cargando el historial.</p>';
+    }
+}
+
+async function toggleNotifBatchDetail(id) {
+    const box = document.getElementById('notifBatchDetail_' + id);
+    if (!box) return;
+    if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+    box.style.display = '';
+    box.innerHTML = '<p style="color:#888;font-size:.8rem">Cargando detalle...</p>';
+    try {
+        const r = await authFetch('/api/admin/notif-batches/' + id);
+        const j = await r.json();
+        if (!r.ok) { box.innerHTML = '<p style="color:#ff6b6b;font-size:.8rem">' + escapeHtml(j.error || 'Error') + '</p>'; return; }
+        const recs = j.recipients || [];
+        box.innerHTML = '<div style="max-height:260px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:6px;padding:.5rem;">' +
+            recs.map((u) => {
+                let estado;
+                if (u.bonusStatus === 'used') estado = '<span style="color:#888;">✔ usado por ' + escapeHtml(u.usedBy || '-') + '</span>';
+                else if (u.bonusStatus === 'active') estado = '<span style="color:#00ff88;">🎁 bono ACTIVO</span>';
+                else if (u.bonusStatus === 'expired') estado = '<span style="color:#888;">⏰ bono vencido</span>';
+                else if (u.claimedAt) estado = '<span style="color:#00ff88;">canjeado</span>';
+                else estado = '<span style="color:#aaa;">sin canjear</span>';
+                const entrega = u.delivery === 'socket' ? '🟢 en la app' :
+                    u.delivery === 'push' ? '🔔 push' :
+                    u.delivery === 'error' ? '<span style="color:#ff6b6b;">⚠ push falló</span>' :
+                    u.delivery === 'none' ? '<span style="color:#ff9d76;">solo chat</span>' : '⏳';
+                return '<div style="display:flex;justify-content:space-between;gap:.5rem;padding:2px 4px;font-size:.78rem;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+                    '<span>' + escapeHtml(u.username) + ' ' + _giftBatchChannelChip(u.channel) + '</span>' +
+                    '<span>' + entrega + ' · ' + estado + '</span>' +
+                '</div>';
+            }).join('') +
+        '</div>';
+    } catch (e) {
+        box.innerHTML = '<p style="color:#ff6b6b;font-size:.8rem">Error de conexión</p>';
+    }
+}
 
 // =========================================================================
 // ESTRATEGIA DE BONOS POR ENCUESTA — panel admin

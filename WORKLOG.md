@@ -8,6 +8,91 @@
 
 ## Sesión 2026-08-10
 
+### 160. LOTES de notificaciones con REGALO (código exclusivo o ventana horaria) + historial + fixes de push
+- **Pedido del owner:** enviar notificaciones a LOTES de personas con regalo
+  (bonificación % en próxima carga o regalo de $X); canje por CÓDIGO exclusivo
+  del lote (quien no está en el lote no puede usarlo) o por LAPSO horario
+  configurable (1h, 3h...); cartel verde para el agente con "marcar como
+  usado"; recuadro de lotes enviados (quién envió y a quiénes); y revisar la
+  detección de quién puede recibir push (FCM/PWA).
+- **Diseño clave — se REUTILIZA PromoBonus:** el bono del lote es un
+  PromoBonus con `sourceRuleCode:'lote'` → el cartel verde del chat
+  (`loadChatPromoBonus` → `GET /api/admin/promo-bonus`) y el botón "Marcar
+  usado" (`POST /api/admin/promo-bonus/:id/use`) existentes funcionan sin
+  duplicar nada. Además el depósito con bonus ya marcaba el PromoBonus activo
+  como usado solo — aplica también a los de lote.
+  - `_getActivePromoBonus(username, {includeFixed})`: el endpoint ADMIN ahora
+    incluye regalos de $ FIJO (`montoFijoARS`, antes filtrados por
+    `percent>0`) y los bonos 'lote' están EXENTOS del cap de lectura 30%
+    (ese cap es de los bonos AUTOMÁTICOS; el lote lo configura un agente).
+    El endpoint de la PWA (`/api/promo-bonus/mine`) NO cambió.
+  - Cartel del panel: renderiza "REGALO PENDIENTE: $X" para monto fijo y
+    muestra el origen ("Lote de <agente>" en vez de "regla -").
+- **Modelo nuevo `src/models/NotifBatch.js`:** id, name, mode ('code'|'window'),
+  giftType ('percent' 1-200 | 'fixed' 1-500k), amount, code (uppercase, índice),
+  validHours (1-168), sentAt/expiresAt, title/message, sentBy/sentByRole,
+  recipients[] {userId, username, channel ('app'|'browser'|'none'), delivery
+  ('socket'|'push'|'none'|'error'|null), claimedAt, promoBonusId}.
+- **Endpoints nuevos (server.js, junto a PromoBonus):**
+  - `POST /api/admin/notif-batches` (roles admin|depositor): valida todo
+    (código sin colisión con el de bienvenida ni con otro lote ACTIVO; máx
+    500 destinatarios; usernames case-insensitive vía collation), crea el
+    lote, en modo window activa el PromoBonus de todos al toque, y notifica
+    EN SEGUNDO PLANO (Message de chat con el regalo/código/vigencia +
+    `sendPushIfOffline`), registrando la entrega por destinatario.
+  - `POST /api/admin/notif-batches/preview`: valida la lista ANTES de enviar
+    — existentes/bloqueados/no encontrados + canal de push de cada uno
+    (misma clasificación que el badge APP INSTALADA / NAVEGADOR / SIN NOTIS).
+  - `GET /api/admin/notif-batches` (+`/:id`; también withdrawer): historial
+    con quién lo envió, totales (notificados, canjeados, sin notis) y
+    detalle por usuario con estado del bono (activo/usado por quién/vencido).
+- **Canje modo código:** enganchado al claim existente
+  (`POST /api/community-code/claim`): los códigos de LOTE se chequean PRIMERO
+  (`_tryClaimNotifBatchCode`); solo canjea quien está EN el lote (para el
+  resto: "código no válido", sin revelar que existe), una vez por usuario
+  (reserva atómica con $elemMatch claimedAt:null), vigente hasta expiresAt
+  del lote (un solo reloj: código canjeable Y bono valen hasta ahí). Al
+  canjear: PromoBonus + mensaje al cliente + nota admin-only al agente.
+  Sin gate de app instalada (a diferencia del código de bienvenida): la
+  exclusividad ES la membresía del lote.
+- **PWA:** el modal "Código de Bienvenida" pasó a **"🎁 Reclamar Bono con
+  Código"** (menú ☰ ídem) y ahora SIEMPRE muestra el input — antes, quien ya
+  había canjeado el código de bienvenida no podía escribir ningún código más
+  (bloqueaba los códigos de lote). Los estados pending/used/credited muestran
+  su tarjeta + "¿Te llegó otro código por notificación?". La respuesta del
+  canje de lote reusa el shape del claim (status pending + type
+  next_charge/cash) así el render existente funciona sin JS nuevo. SW **v98**.
+- **Panel:** en Notificaciones, cards nuevas **"🎁 Lote con regalo"**
+  (modo/regalo/monto/vigencia/código con 🎲 autogenerar/título/mensaje/
+  destinatarios + "🔍 Validar lista" con preview de canales + confirm) y
+  **"📤 Lotes enviados"** (fecha, quién, regalo, código, vigente/vencido,
+  totales, "👥 Ver lote" expandible con canal/entrega/canje/usado-por de cada
+  usuario). admin-sw **v29**.
+- **Fixes de push (auditoría pedida):**
+  1. `sendPushIfOffline` ahora devuelve `{delivery, sent, failed, cleaned}`
+     (los callers viejos ignoran el retorno) y acepta `{forcePush}`.
+  2. **Socket fantasma:** `_maybeSendPushFallback` (chat) llamaba a
+     `sendPushIfOffline` que re-chequeaba `connectedUsers` → al fantasma
+     (socket sin ack en 3s, sigue en el Map) le RE-EMITÍA por el mismo socket
+     muerto y el push real nunca salía. Ahora pasa `forcePush:true` (en sus
+     dos casos el socket ya falló; el tag 'chat-message' colapsa duplicados).
+  3. **Badge en vivo del panel:** el handler de `user_app_status` clasificaba
+     con el contexto del ÚLTIMO token → un cliente CON app que abría Chrome
+     pasaba a "NOTIS EN NAVEGADOR" hasta recargar. Ahora re-fetchea el user
+     (`loadUserInfo`) y el badge usa la lógica multi-token completa.
+  - Revisado y documentado (sin cambio): `_rouletteHasAppInstalled` acepta
+    tokens standalone viejos sin validar que sigan vivos.
+- **Validado:** `node --check` OK (server.js, NotifBatch.js, admin.js, ambos
+  SW) + parse de los scripts inline de index.html (el único fallo del checker
+  es un comentario HTML pre-existente, no código). **Back necesita redeploy**;
+  PWA y panel se actualizan con los SW. PROBAR: (1) lote modo código a 2-3
+  usuarios → les llega push+chat con el código; canjear desde uno del lote →
+  cartel verde al agente; canjear desde uno DE AFUERA → "código no válido";
+  (2) lote por tiempo 1h → cartel verde inmediato a todos, desaparece al
+  vencer; (3) marcar usado desde el cartel → figura "usado por X" en el
+  detalle del lote; (4) historial muestra agente y lote completo; (5) usuario
+  que YA usó su código de bienvenida puede canjear un código de lote.
+
 ### 159. MÍNIMO para cobrar el reembolso (semanal $1.500 / mensual $5.000), editable desde el panel
 - **Pedido del owner:** que haya un mínimo de reembolso semanal y mensual para
   poder cobrarlo; si el cliente tiene reembolso > $0 pero no llega, error

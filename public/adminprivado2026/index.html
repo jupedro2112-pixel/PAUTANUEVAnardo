@@ -1460,6 +1460,80 @@ document.addEventListener('change', function (ev) {
                     </div>
                 </div>
 
+                <!-- LOTE CON REGALO (owner 2026-08-10): notificación a una lista
+                     de usuarios con bono (% próxima carga o $ fijo), por CÓDIGO
+                     exclusivo del lote o por VENTANA de tiempo. El bono es un
+                     PromoBonus → cartel verde del chat + "Marcar usado". -->
+                <div class="commands-section" style="background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
+                    <h3 style="margin-bottom:1rem;font-size:1rem;color:#d4af37">🎁 Lote con regalo</h3>
+                    <p style="margin:0 0 1rem;color:#bbb;font-size:.82rem;line-height:1.5;">
+                        Mandá una notificación a una <b>lista de clientes</b> con un regalo: <b>% extra en su próxima carga</b> o un <b>regalo de $ fijo</b>
+                        (en ambos casos lo aplicás VOS en la carga y lo marcás usado desde el cartel verde del chat).
+                        <b>Con código</b>: solo los del lote pueden canjearlo. <b>Por tiempo</b>: el bono se les activa solo, por las horas que elijas.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Nombre del lote (opcional, para el historial)</label>
+                        <input type="text" id="giftBatchName" class="form-input" placeholder="Ej: Recupero viernes" maxlength="60" />
+                    </div>
+                    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.75rem">
+                        <div>
+                            <label class="form-label" style="display:block;margin-bottom:.3rem">Modo</label>
+                            <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchMode" value="code" checked onchange="updateGiftBatchModeUI()"> 🔑 Con código</label>
+                            <label style="font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchMode" value="window" onchange="updateGiftBatchModeUI()"> ⏰ Por tiempo</label>
+                        </div>
+                        <div>
+                            <label class="form-label" style="display:block;margin-bottom:.3rem">Regalo</label>
+                            <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="percent" checked> ％ en próxima carga</label>
+                            <label style="font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="fixed"> 💵 $ fijo</label>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.75rem;align-items:flex-end">
+                        <div>
+                            <label class="form-label" style="display:block;margin-bottom:.3rem">Monto (% o $)</label>
+                            <input type="number" id="giftBatchAmount" class="form-input" min="1" step="1" placeholder="Ej: 50" style="width:120px" />
+                        </div>
+                        <div>
+                            <label class="form-label" style="display:block;margin-bottom:.3rem">Vigencia (horas)</label>
+                            <input type="number" id="giftBatchHours" class="form-input" min="1" max="168" step="1" value="24" style="width:110px" />
+                        </div>
+                        <div id="giftBatchCodeWrap">
+                            <label class="form-label" style="display:block;margin-bottom:.3rem">Código del lote</label>
+                            <div style="display:flex;gap:.4rem">
+                                <input type="text" id="giftBatchCode" class="form-input" placeholder="vacío = auto" maxlength="30" style="width:150px;text-transform:uppercase" />
+                                <button class="btn btn-secondary btn-sm" onclick="genGiftBatchCode()" title="Generar código">🎲</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:.75rem">
+                        <label class="form-label">Título del push</label>
+                        <input type="text" id="giftBatchTitle" class="form-input" placeholder="🎁 Tenés un regalo" maxlength="100" />
+                    </div>
+                    <div class="form-group" style="margin-top:.75rem">
+                        <label class="form-label">Mensaje *</label>
+                        <textarea id="giftBatchMessage" class="form-input" rows="3" maxlength="500" placeholder="Ej: ¡Te extrañamos! Volvé y aprovechá este regalo." style="resize:vertical"></textarea>
+                        <div style="color:#777;font-size:.75rem;margin-top:.25rem">El regalo, el código (si hay) y la vigencia se agregan solos al final del mensaje.</div>
+                    </div>
+                    <div class="form-group" style="margin-top:.75rem">
+                        <label class="form-label">Destinatarios * (usernames separados por coma, espacio o enter)</label>
+                        <textarea id="giftBatchUsers" class="form-input" rows="4" placeholder="gxjuan123&#10;gxana456&#10;gxpedro789" style="resize:vertical"></textarea>
+                    </div>
+                    <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                        <button class="btn btn-secondary" onclick="previewGiftBatch()">🔍 Validar lista</button>
+                        <button id="giftBatchSendBtn" class="btn btn-primary" onclick="sendGiftBatch()">🚀 Enviar lote</button>
+                        <span id="giftBatchStatus" style="font-size:.85rem;color:#a5b4fc"></span>
+                    </div>
+                    <div id="giftBatchPreview" style="margin-top:.75rem"></div>
+                </div>
+
+                <!-- Historial de lotes enviados: quién lo mandó y a quiénes -->
+                <div class="commands-section" style="background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+                        <h3 style="font-size:1rem;color:#d4af37">📤 Lotes enviados</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="loadNotifBatches()">🔄 Actualizar</button>
+                    </div>
+                    <div id="notifBatchesList"><p style="color:#888;text-align:center;font-size:.85rem">Cargando...</p></div>
+                </div>
+
                 <!-- Resultado del último envío -->
                 <div id="notifResult" style="display:none;background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
                     <h3 style="margin-bottom:1rem;font-size:1rem;color:var(--text-secondary,#aaa)">📋 Resultado del envío</h3>

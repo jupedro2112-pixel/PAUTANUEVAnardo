@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v97'; // v97: "cerrar todas las sesiones" ya no desloguea al que lo tilda (token fresco)
+const CACHE_VERSION = 'v98'; // v98: "Reclamar Bono con Código" (códigos de lote canjeables siempre, aparte del de bienvenida)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

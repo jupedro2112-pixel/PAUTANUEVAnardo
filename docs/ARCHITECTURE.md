@@ -151,9 +151,29 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   tracking de ROI), **NotifTemplate** (tipos: invitacion|regalo|reembolso — bono_50/100
   ELIMINADOS), **ScheduledNotif** (once/daily/weekly, worker cada 60s), **PromoBonus**
   (bono de carga vigente ≤30%, 1 sola carga, cap de LECTURA a 30% en
-  `_getActivePromoBonus`), **BonusStrategyConfig** + **StrategyEnrollment** (estrategia
-  por voto de encuesta — APAGADA), **EncuestaVote/EncuestaFire** (motor encuesta —
-  bonos apagados), **InactividadFire** (motor inactivos — APAGADO).
+  `_getActivePromoBonus` — los bonos de LOTE `sourceRuleCode:'lote'` están EXENTOS
+  del cap y pueden ser de $ FIJO vía `montoFijoARS`), **BonusStrategyConfig** +
+  **StrategyEnrollment** (estrategia por voto de encuesta — APAGADA),
+  **EncuestaVote/EncuestaFire** (motor encuesta — bonos apagados),
+  **InactividadFire** (motor inactivos — APAGADO).
+- **NotifBatch** (2026-08-10) — LOTE de notificaciones con regalo enviado por un
+  agente (roles admin|depositor; withdrawer solo lee el historial): lista explícita
+  de usuarios + regalo (`percent` próxima carga o `fixed` $) + `validHours` (1-168).
+  Modo **'code'**: el código (uppercase, exclusivo del lote, sin colisión con el
+  código de bienvenida ni con otro lote activo) se canjea en la PWA por el MISMO
+  endpoint `/api/community-code/claim` (los lotes se chequean PRIMERO vía
+  `_tryClaimNotifBatchCode`; quien no está en el lote recibe "código no válido").
+  Modo **'window'**: el bono se activa a todos al enviar. En ambos casos se crea un
+  **PromoBonus** con `expiresAt` del lote → cartel verde del chat + "Marcar usado"
+  existentes. Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
+  SEGUNDO PLANO (la respuesta HTTP no espera); la entrega queda en
+  `recipients[].delivery` ('socket'|'push'|'none'|'error') y el canal en
+  `recipients[].channel` ('app'|'browser'|'none', misma clasificación que el badge
+  del chat). Endpoints: `POST /api/admin/notif-batches` (+ `/preview`),
+  `GET /api/admin/notif-batches` (+ `/:id` con estado del bono por usuario, leído
+  del PromoBonus). Panel: cards "🎁 Lote con regalo" y "📤 Lotes enviados" en
+  Notificaciones. El depósito con bonus marca el PromoBonus activo como usado
+  automáticamente (ya existía), aplica también a los de lote.
 - **DailyRouletteSpin** — 1 giro/día (índices únicos userId+dateKey y
   username+dateKey). Auto-crédito en 1girox; `credit_failed` → retry desde panel.
 - **Review** (1 por user, moderada), **OtpCode** (TTL 5 min, hash bcrypt, 3 intentos),
