@@ -17513,6 +17513,98 @@ async function _resolveNotifBatchAudience(b) {
   return { users, notFound: [], skipped: [], audience: { audienceType: 'inactive', audienceDays: days, audienceLimit: limit } };
 }
 
+// ============================================================
+// ACREDITACIÓN AUTOMÁTICA de fichas de lote + candados anti-abuso
+// ============================================================
+// TODO regalo de FICHAS se acredita solo (owner 2026-08-10): por código al
+// canjear, por tiempo al enviarse el lote. Para que "automático" no se vuelva
+// fichas infinitas si alguien encuentra un bug, hay TOPES DUROS por usuario
+// (independientes del lote): máx acreditaciones en 24hs y máx $ en 7 días,
+// contados de las Transaction source 'notif_batch' (permanentes). Superar un
+// tope BLOQUEA el crédito y dispara una ALERTA URGENTE: log ERROR, nota roja
+// en el chat del usuario y aviso en vivo a todos los admins conectados
+// (socket 'security_alert' → toast rojo en el panel).
+const NOTIF_BATCH_USER_MAX_CREDITS_24H = 3;
+const NOTIF_BATCH_USER_MAX_ARS_7D = 300000;
+
+function _emitNotifBatchSecurityAlert(uDoc, detalle) {
+  const msg = `🚨 URGENTE — POSIBLE ABUSO DE REGALOS DE LOTE: ${uDoc.username} ${detalle}. ` +
+    `El crédito se BLOQUEÓ automáticamente. Revisar su historial de bonos antes de acreditarle nada a mano.`;
+  logger.error(`[notif-batch][ALERTA] ${msg}`);
+  _emitAdminOnlyChatNote(uDoc.id, uDoc.username, msg).catch(() => {});
+  try {
+    io.to('admins').emit('security_alert', { username: uDoc.username, message: msg, at: new Date() });
+  } catch (_) { /* socket no disponible: quedan el log y la nota */ }
+}
+
+// Topes por usuario. Devuelve null si está OK, o el string del motivo.
+async function _notifBatchCreditCapCheck(uDoc, amount) {
+  const since7d = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const since24 = new Date(Date.now() - 24 * 3600 * 1000);
+  const rows = await Transaction.aggregate([
+    { $match: { type: 'bonus', 'metadata.source': 'notif_batch', userId: uDoc.id, timestamp: { $gte: since7d } } },
+    { $group: {
+      _id: null,
+      count24: { $sum: { $cond: [{ $gte: ['$timestamp', since24] }, 1, 0] } },
+      total7d: { $sum: '$amount' }
+    } }
+  ]);
+  const r = rows[0] || { count24: 0, total7d: 0 };
+  if (r.count24 >= NOTIF_BATCH_USER_MAX_CREDITS_24H) {
+    return `ya recibió ${r.count24} regalos de lote en 24hs (tope ${NOTIF_BATCH_USER_MAX_CREDITS_24H})`;
+  }
+  if (r.total7d + amount > NOTIF_BATCH_USER_MAX_ARS_7D) {
+    return `acumularía $${(r.total7d + amount).toLocaleString('es-AR')} en regalos de lote en 7 días (tope $${NOTIF_BATCH_USER_MAX_ARS_7D.toLocaleString('es-AR')})`;
+  }
+  return null;
+}
+
+// Acredita el regalo de fichas de un lote a un usuario, con TODOS los guards.
+// Devuelve { ok:true, txId } o { ok:false, reason, blocked, retryable }:
+//  - blocked=true → tope de seguridad (alerta ya emitida) o bono activo.
+//  - retryable=true → fallo transitorio (API caída): se puede reintentar.
+// Idempotente: reference vip-nbatch-{batchId}-{userId} — reintentar tras un
+// fallo FALSO da duplicate:true en la plataforma, jamás doble pago.
+async function _creditNotifBatchGift(uDoc, batch) {
+  const capMsg = await _notifBatchCreditCapCheck(uDoc, batch.amount);
+  if (capMsg) {
+    _emitNotifBatchSecurityAlert(uDoc, capMsg);
+    return { ok: false, blocked: true, reason: 'tope de seguridad' };
+  }
+  // GUARD bono-sobre-bono (v1.7): otorgar un bono a quien ya tiene uno activo
+  // lo PISA y le debita el resto — mejor no acreditar.
+  const pInfo = await girox.getUserInfoByName(uDoc.username);
+  if (!pInfo) return { ok: false, retryable: true, reason: 'no se pudo leer la cuenta del casino' };
+  if (Number(pInfo.bonusLocked) > 0 || Number(pInfo.claimableTotal) > 0) {
+    return { ok: false, blocked: true, reason: 'bono activo en el casino' };
+  }
+  const rollover = Math.max(0, Number(batch.rolloverX) || 0);
+  const _ref = `vip-nbatch-${batch.id}-${uDoc.id}`.slice(0, 100);
+  const credit = await girox.creditUserBalance(
+    uDoc.username, batch.amount, _ref,
+    { multiplier: rollover, description: `Regalo por notificación — lote de ${batch.sentBy}` }
+  );
+  if (!credit.success) {
+    logger.warn(`[notif-batch] crédito de fichas falló para ${uDoc.username} (lote ${batch.id}): ${credit.error || 's/detalle'}`);
+    return { ok: false, retryable: true, reason: credit.error || 'fallo de la plataforma' };
+  }
+  // v1.7: liberar el bono YA (sin esto queda "a reclamar" en el casino).
+  try {
+    const _claimRes = await girox.claimPendingBonus(uDoc.username);
+    if (!_claimRes.success) logger.warn(`[notif-batch] auto-claim falló para ${uDoc.username}: ${_claimRes.error} — puede reclamarlo desde el casino`);
+  } catch (e) {
+    logger.warn(`[notif-batch] auto-claim excepción para ${uDoc.username}: ${e.message}`);
+  }
+  const txId = (credit.data && (credit.data.transfer_id || credit.data.transferId)) || null;
+  await Transaction.create({
+    id: uuidv4(), type: 'bonus', userId: uDoc.id, username: uDoc.username,
+    amount: batch.amount, description: `Regalo por notificación — lote de ${batch.sentBy}${batch.name ? ' ("' + batch.name + '")' : ''}`,
+    transactionId: txId, metadata: { source: 'notif_batch', batchId: batch.id },
+    timestamp: new Date()
+  }).catch((e) => logger.warn(`[notif-batch] no se pudo guardar la Transaction: ${e.message}`));
+  return { ok: true, txId };
+}
+
 // Texto que ve el cliente en el chat (el push lleva title + message pelado).
 function _notifBatchChatContent(batch) {
   if (batch.mode === 'code') {
@@ -17587,34 +17679,86 @@ async function _processOneNotifBatch(batchId) {
     if (!rec) break; // sin pendientes reclamables (puede quedar un 'sending' vivo en otra instancia)
 
     let delivery = 'error';
+    let dejarEnSending = false; // fallo transitorio del crédito → reintento automático
     try {
       const u = await User.findOne({ id: rec.userId })
         .select('id username fcmToken fcmTokens').lean();
       if (u) {
-        if (batch.mode === 'window' && !rec.promoBonusId) {
+        let mensajeChat = chatContent;
+        let notificar = true;
+        if (batch.mode === 'window' && batch.giftType === 'fixed') {
+          // FICHAS POR TIEMPO = acreditación AUTOMÁTICA al enviar (owner
+          // 2026-08-10), con los mismos guards anti-abuso que el canje por
+          // código. Idempotente ante retomes: si ya tiene creditedAt (claim
+          // stale re-procesado) no se acredita de nuevo — y la reference fija
+          // hace imposible el doble pago igual.
+          if (rec.creditedAt) {
+            // ya acreditado en un pase anterior: solo asegurar la notificación
+          } else {
+            const res2 = await _creditNotifBatchGift(u, batch);
+            if (!res2.ok && res2.retryable) {
+              // API caída/lenta: dejar el recipient EN 'sending' — el claim
+              // vence a los 10 min y el motor lo reintenta solo (la reference
+              // fija hace imposible pagar dos veces si en realidad entró).
+              await NotifBatch.updateOne(
+                { id: batchId, 'recipients.userId': u.id },
+                { $set: { 'recipients.$.creditError': res2.reason || 'error transitorio' } }
+              ).catch(() => {});
+              dejarEnSending = true;
+              notificar = false;
+            } else if (!res2.ok) {
+              // Bloqueo definitivo (tope de seguridad / bono activo): sin
+              // crédito no se le promete nada — ni mensaje ni push.
+              await NotifBatch.updateOne(
+                { id: batchId, 'recipients.userId': u.id },
+                { $set: { 'recipients.$.creditError': res2.reason || 'bloqueado', 'recipients.$.claimedAt': null } }
+              ).catch(() => {});
+              notificar = false;
+            } else {
+              await NotifBatch.updateOne(
+                { id: batchId, 'recipients.userId': u.id },
+                { $set: { 'recipients.$.creditedAt': new Date(), 'recipients.$.creditTxId': res2.txId, 'recipients.$.creditError': null } }
+              ).catch(() => {});
+            }
+          }
+          if (notificar) {
+            const rollover = Math.max(0, Number(batch.rolloverX) || 0);
+            const rollTxt = rollover > 0
+              ? ` (bono con rollover x${rollover}: apostá ${rollover}× el monto y después podés retirar)`
+              : '';
+            mensajeChat = `${batch.message}\n\n💰 ¡Te ACREDITAMOS $${Number(batch.amount).toLocaleString('es-AR')} en fichas${rollTxt}! Ya están en tu cuenta. ¡A jugarlas! 🎰`;
+          }
+        } else if (batch.mode === 'window' && !rec.promoBonusId) {
+          // % por tiempo: cartel verde del agente (PromoBonus), como siempre.
           const pb = await _activateBatchPromoBonus(u, batch);
           await NotifBatch.updateOne(
             { id: batchId, 'recipients.userId': u.id },
             { $set: { 'recipients.$.promoBonusId': pb.id } }
           ).catch(() => {});
         }
-        await Message.create({
-          id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
-          receiverId: u.id, receiverRole: 'user', content: chatContent,
-          type: 'system', timestamp: new Date(), read: false
-        });
-        const r = await sendPushIfOffline(u, pushTitle, pushBody, { tag: 'notif-batch' });
-        delivery = (r && r.delivery) || 'none';
+        if (notificar) {
+          await Message.create({
+            id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+            receiverId: u.id, receiverRole: 'user', content: mensajeChat,
+            type: 'system', timestamp: new Date(), read: false
+          });
+          const r = await sendPushIfOffline(u, pushTitle, pushBody, { tag: 'notif-batch' });
+          delivery = (r && r.delivery) || 'none';
+        } else {
+          delivery = 'none';
+        }
       } else {
         delivery = 'error'; // usuario borrado entre el armado y el envío
       }
     } catch (e) {
       logger.warn(`[notif-batch] error notificando a ${rec.username}: ${e.message}`);
     }
-    await NotifBatch.updateOne(
-      { id: batchId, 'recipients.userId': rec.userId },
-      { $set: { 'recipients.$.delivery': delivery, 'recipients.$.deliveryAt': new Date() } }
-    ).catch(() => {});
+    if (!dejarEnSending) {
+      await NotifBatch.updateOne(
+        { id: batchId, 'recipients.userId': rec.userId },
+        { $set: { 'recipients.$.delivery': delivery, 'recipients.$.deliveryAt': new Date() } }
+      ).catch(() => {});
+    }
     procesados++;
     await new Promise((r) => setTimeout(r, NOTIF_BATCH_SEND_PAUSE_MS));
   }
@@ -17701,21 +17845,6 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
   const esFichas = batch.giftType === 'fixed';
   const montoFmt = Number(batch.amount).toLocaleString('es-AR');
 
-  // Regalo de FICHAS (owner 2026-08-10): se acredita AUTOMÁTICO como BONO en
-  // 1girox con el rollover del lote. GUARD bono-sobre-bono (v1.7) ANTES de la
-  // reserva: otorgar un bono a quien ya tiene uno activo lo PISA y le debita
-  // el resto — mejor rechazar sin quemar el canje. Mismo criterio que el
-  // código de bienvenida tipo cash.
-  if (esFichas) {
-    const pInfo = await girox.getUserInfoByName(uDoc.username);
-    if (!pInfo) {
-      return { http: 503, body: { error: 'No pudimos verificar tu cuenta del casino. Probá de nuevo en unos segundos.' } };
-    }
-    if (Number(pInfo.bonusLocked) > 0 || Number(pInfo.claimableTotal) > 0) {
-      return { http: 400, body: { error: 'Tenés un bono activo (o sin reclamar) en el casino. Terminalo y después canjeá tu código.' } };
-    }
-  }
-
   // Reserva atómica en el lote: si dos requests concurrentes entran, una sola
   // matchea claimedAt:null — la otra no modifica nada.
   const upd = await NotifBatch.updateOne(
@@ -17728,45 +17857,29 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
 
   // ============ REGALO DE FICHAS: acreditación AUTOMÁTICA ============
   if (esFichas) {
-    // Reference estable por lote+usuario: un reintento tras un fallo FALSO
-    // (acreditó pero se perdió la respuesta) manda la MISMA reference y la
-    // plataforma responde duplicate:true sin pagar dos veces.
-    const _ref = `vip-nbatch-${batch.id}-${uDoc.id}`.slice(0, 100);
-    const rollover = Math.max(0, Number(batch.rolloverX) || 0);
-    const credit = await girox.creditUserBalance(
-      uDoc.username, batch.amount, _ref,
-      { multiplier: rollover, description: `Regalo por notificación — lote de ${batch.sentBy}` }
-    );
-    if (!credit.success) {
-      // Liberar la reserva para que pueda reintentar (la reference fija evita
-      // el doble pago si en realidad SÍ se acreditó).
+    const res2 = await _creditNotifBatchGift(uDoc, batch);
+    if (!res2.ok) {
+      // Liberar la reserva: en fallo transitorio puede reintentar (la
+      // reference fija evita el doble pago si en realidad SÍ se acreditó);
+      // en bloqueo, que hable con soporte sin quemar el código.
       await NotifBatch.updateOne(
         { id: batch.id, 'recipients.userId': uDoc.id },
-        { $set: { 'recipients.$.claimedAt': null } }
+        { $set: { 'recipients.$.claimedAt': null, 'recipients.$.creditError': res2.reason || null } }
       ).catch(() => {});
-      logger.warn(`[notif-batch] crédito de fichas falló para ${uDoc.username} (lote ${batch.id}): ${credit.error || 's/detalle'}`);
+      if (res2.blocked && res2.reason === 'bono activo en el casino') {
+        return { http: 400, body: { error: 'Tenés un bono activo (o sin reclamar) en el casino. Terminalo y después canjeá tu código.' } };
+      }
+      if (res2.blocked) {
+        return { http: 400, body: { error: 'No pudimos acreditar tu regalo. Hablá con el soporte desde el chat.' } };
+      }
       return { http: 502, body: { error: 'No pudimos acreditar el regalo en este momento. Probá de nuevo en unos minutos.' } };
     }
-    // v1.7: liberar el bono YA (sin esto queda "a reclamar" en el casino).
-    try {
-      const _claimRes = await girox.claimPendingBonus(uDoc.username);
-      if (!_claimRes.success) logger.warn(`[notif-batch] auto-claim falló para ${uDoc.username}: ${_claimRes.error} — puede reclamarlo desde el casino`);
-    } catch (e) {
-      logger.warn(`[notif-batch] auto-claim excepción para ${uDoc.username}: ${e.message}`);
-    }
-    const _txId = (credit.data && (credit.data.transfer_id || credit.data.transferId)) || null;
     await NotifBatch.updateOne(
       { id: batch.id, 'recipients.userId': uDoc.id },
-      { $set: { 'recipients.$.creditedAt': new Date(), 'recipients.$.creditTxId': _txId } }
+      { $set: { 'recipients.$.creditedAt': new Date(), 'recipients.$.creditTxId': res2.txId, 'recipients.$.creditError': null } }
     ).catch(() => {});
-    // Analítica: type bonus + source de REGALO (no cuenta como carga real).
-    await Transaction.create({
-      id: uuidv4(), type: 'bonus', userId: uDoc.id, username: uDoc.username,
-      amount: batch.amount, description: `Regalo por notificación — lote de ${batch.sentBy}${batch.name ? ' ("' + batch.name + '")' : ''}`,
-      transactionId: _txId, metadata: { source: 'notif_batch', batchId: batch.id },
-      timestamp: new Date()
-    }).catch((e) => logger.warn(`[notif-batch] no se pudo guardar la Transaction: ${e.message}`));
 
+    const rollover = Math.max(0, Number(batch.rolloverX) || 0);
     const rollTxt = rollover > 0
       ? ` (bono con rollover x${rollover}: apostá ${rollover}× el monto y después podés retirar)`
       : '';
@@ -17890,10 +18003,11 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
       return res.status(400).json({ error: 'La vigencia tiene que estar entre 1 y 168 horas.' });
     }
 
-    // Rollover del regalo de fichas auto-acreditado (solo giftType fixed +
-    // modo code). Se valida contra bonus.multipliers de 1girox (⚠️ NO los de
-    // depósito) para que el canje jamás falle en la cara del cliente — mismo
-    // criterio que el código de bienvenida (#143).
+    // Rollover del regalo de fichas (giftType fixed, cualquier modo — las
+    // fichas SIEMPRE se acreditan solas: por código al canjear, por tiempo al
+    // enviar). Se valida contra bonus.multipliers de 1girox (⚠️ NO los de
+    // depósito) para que la acreditación jamás falle — mismo criterio que el
+    // código de bienvenida (#143).
     let rolloverX = 0;
     if (giftType === 'fixed') {
       rolloverX = Number(b.rolloverX);
@@ -17901,17 +18015,15 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
         return res.status(400).json({ error: 'El rollover debe ser un número entre 0 y 50 (0 = sin rollover).' });
       }
       rolloverX = Math.round(rolloverX);
-      if (mode === 'code') {
-        try {
-          const cfg = await girox.getPlatformConfig();
-          const allowed = cfg.success && cfg.config && cfg.config.bonus && cfg.config.bonus.multipliers;
-          if (Array.isArray(allowed) && allowed.length && !allowed.map(Number).includes(rolloverX)) {
-            return res.status(400).json({
-              error: `La plataforma solo permite estos multiplicadores para bonos: ${allowed.join(', ')}. Elegí uno de esos.`
-            });
-          }
-        } catch (_) { /* config no disponible: rango 0-50 ya validado */ }
-      }
+      try {
+        const cfg = await girox.getPlatformConfig();
+        const allowed = cfg.success && cfg.config && cfg.config.bonus && cfg.config.bonus.multipliers;
+        if (Array.isArray(allowed) && allowed.length && !allowed.map(Number).includes(rolloverX)) {
+          return res.status(400).json({
+            error: `La plataforma solo permite estos multiplicadores para bonos: ${allowed.join(', ')}. Elegí uno de esos.`
+          });
+        }
+      } catch (_) { /* config no disponible: rango 0-50 ya validado */ }
     }
 
     const message = String(b.message || '').trim();
@@ -18047,6 +18159,7 @@ app.get('/api/admin/notif-batches/:id', authMiddleware, adminMiddleware, async (
         delivery: r.delivery,
         claimedAt: r.claimedAt,
         creditedAt: r.creditedAt || null,
+        creditError: r.creditError || null,
         bonusStatus: pb ? pb.status : null,
         usedBy: pb ? pb.usedBy : null,
         usedAt: pb ? pb.usedAt : null

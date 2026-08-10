@@ -175,13 +175,18 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   `_tryClaimNotifBatchCode`; quien no está en el lote recibe "código no válido").
   Modo **'window'**: el bono se activa a todos al enviar. El bono es un
   **PromoBonus** con `expiresAt` del lote → cartel verde del chat + "Marcar usado"
-  existentes — **EXCEPTO fichas por código** (2026-08-10): el regalo `fixed`
-  canjeado con código se ACREDITA AUTOMÁTICO como bono girox
-  (`creditUserBalance` con `multiplier=rolloverX` del lote, validado contra
-  `bonus.multipliers`; reference `vip-nbatch-{batchId}-{userId}`; guard
-  bono-sobre-bono antes de la reserva; auto-claim v1.7; Transaction
-  `source:'notif_batch'`) — sin cartel, el agente recibe nota "no hay que hacer
-  nada". Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
+  existentes — **EXCEPTO fichas (`fixed`)**, que SIEMPRE se acreditan
+  automáticas como bono girox (por código: al canjear; por tiempo: al enviar,
+  las acredita el motor) vía `_creditNotifBatchGift` (`creditUserBalance` con
+  `multiplier=rolloverX` del lote validado contra `bonus.multipliers`;
+  reference idempotente `vip-nbatch-{batchId}-{userId}`; auto-claim v1.7;
+  Transaction `source:'notif_batch'`). **Candados anti-abuso** en toda
+  acreditación: topes por usuario cruzando lotes (3 créditos/24h,
+  $300k/7d — constantes `NOTIF_BATCH_USER_MAX_*`) → bloqueo + ALERTA URGENTE
+  (log ERROR, nota admin-only, socket `security_alert` → toast rojo en el
+  panel); guard bono-sobre-bono; fallos transitorios reintentan solos (el
+  recipient queda 'sending' y vence a los 10 min); lo no acreditado queda en
+  `recipients[].creditError`. Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
   SEGUNDO PLANO (la respuesta HTTP no espera); la entrega queda en
   `recipients[].delivery` ('socket'|'push'|'none'|'error') y el canal en
   `recipients[].channel` ('app'|'browser'|'none', misma clasificación que el badge

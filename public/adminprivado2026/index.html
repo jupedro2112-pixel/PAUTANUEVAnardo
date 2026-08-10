@@ -1560,9 +1560,10 @@ document.addEventListener('change', function (ev) {
                     <div id="giftBatchAyuda" style="display:none;background:rgba(83,189,235,0.06);border:1px solid rgba(83,189,235,0.35);border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#ccc;font-size:12px;line-height:1.7;">
                         <div style="font-weight:900;color:#53bdeb;font-size:13px;margin-bottom:6px;">🎁 LOTES CON REGALO — Guía completa</div>
                         <p style="margin:0 0 8px;">Herramienta para mandar una notificación a un <b>grupo de clientes</b> con un regalo enganchado. La usan el admin general y los cajeros de carga (retiros solo mira el historial).</p>
-                        <p style="margin:0 0 8px;color:#ffd166;"><b>⚠️ Regla de oro — quién pone la plata:</b> el <b>% en próxima carga</b> lo aplica SIEMPRE el agente a mano (cartel verde + marcar usado). El <b>regalo de FICHAS canjeado con CÓDIGO se acredita SOLO</b> — al canjear, la plata entra automática como BONO con el rollover que elegiste al armar el lote (0 = sin rollover, retirable; x2/x5 = tiene que apostar N× antes de retirar). En modo "por tiempo", las fichas también las aplica el agente (cartel verde).</p>
+                        <p style="margin:0 0 8px;color:#ffd166;"><b>⚠️ Regla de oro — quién pone la plata:</b> el <b>% en próxima carga</b> lo aplica SIEMPRE el agente a mano (cartel verde + marcar usado). Las <b>FICHAS se acreditan SOLAS, siempre</b>: con código, al canjearlo; por tiempo, apenas se envía el lote a todos. Entran como BONO con el rollover que elegiste al armar el lote (0 = sin rollover, retirable; x2/x5 = tiene que apostar N× antes de retirar). El agente no hace nada con las fichas — le llega una nota informativa.</p>
+                        <p style="margin:0 0 8px;color:#ff9d76;"><b>🛡️ Candados anti-abuso (automáticos):</b> cada usuario tiene tope de regalos de lote (máx 3 acreditaciones en 24hs y $300.000 en 7 días). Si alguien lo supera, el crédito SE BLOQUEA solo y salta una <b>alerta roja urgente</b> a todos los admins conectados + una nota en el chat de ese usuario. Tampoco se acredita si ya tiene un bono activo en el casino (se pisarían). Todo lo bloqueado queda visible en el detalle del lote ("⚠ sin acreditar").</p>
                         <ul style="margin:0 0 8px;padding-left:18px;">
-                            <li><b>Tipos de regalo:</b> <b>% extra en la próxima carga</b> (ej. +50%: carga $10.000 → le acreditás $15.000, siempre a mano) o <b>fichas</b> (ej. $5.000 — automático si es por código, a mano si es por tiempo).</li>
+                            <li><b>Tipos de regalo:</b> <b>% extra en la próxima carga</b> (ej. +50%: carga $10.000 → le acreditás $15.000, siempre a mano) o <b>fichas</b> (ej. $5.000 — SIEMPRE automático).</li>
                             <li><b>🔑 CON CÓDIGO:</b> la notificación lleva un código que el cliente canjea en su app (menú ☰ → "Reclamar Bono con Código"). <b>Solo funciona para los que están EN el lote</b> — si lo comparten en un grupo, al resto le dice "código no válido". Una sola vez por persona, hasta que venza el plazo. Si el regalo es %, al canjear aparece el cartel verde; si es fichas, la plata entra al toque y al agente le llega una nota "no hay que hacer nada". Si el cliente ya tiene un bono activo en el casino, el canje de fichas se rechaza (que lo termine y vuelva a intentar).</li>
                             <li><b>⏰ POR TIEMPO:</b> sin código — al enviar, el bono queda ACTIVADO solo para todos los del lote por las horas que elijas. Ideal promos relámpago ("tenés 2 horas para cargar con +30%"). Al vencer desaparece solo.</li>
                             <li><b>Audiencias:</b> 📋 lista pegada (usuarios a dedo) · 😴 inactivos (sin entrar hace ≥ X días, con cupo — ej. los 300 más recientes) · 🌍 lote completo (todos).</li>
@@ -1582,9 +1583,9 @@ document.addEventListener('change', function (ev) {
                     </div>
                     <p style="margin:0 0 1rem;color:#bbb;font-size:.82rem;line-height:1.5;">
                         Mandá una notificación a una <b>lista de clientes</b> con un regalo: <b>% extra en su próxima carga</b> (lo aplica el agente,
-                        cartel verde) o <b>fichas</b> — que con CÓDIGO <b>se acreditan solas al canjear</b> (bono con el rollover que elijas).
-                        <b>Con código</b>: solo los del lote pueden canjearlo. <b>Por tiempo</b>: el bono se les activa solo, por las horas que elijas
-                        (y lo aplica el agente).
+                        cartel verde) o <b>fichas</b> — que <b>se acreditan SOLAS</b> (bono con el rollover que elijas): con código al canjearlo,
+                        por tiempo apenas se envía el lote. <b>Con código</b>: solo los del lote pueden canjearlo. Con topes anti-abuso y alerta
+                        urgente si alguien intenta farmear regalos.
                     </p>
                     <div class="form-group">
                         <label class="form-label">Nombre del lote (opcional, para el historial)</label>
@@ -1608,7 +1609,7 @@ document.addEventListener('change', function (ev) {
                             <input type="number" id="giftBatchAmount" class="form-input" min="1" step="1" placeholder="Ej: 50" style="width:120px" />
                         </div>
                         <div id="giftBatchRolloverWrap" style="display:none">
-                            <label class="form-label" style="display:block;margin-bottom:.3rem" title="Solo regalo de fichas canjeado con CÓDIGO: se acredita solo como BONO con este rollover. 0 = sin rollover (retirable).">🎯 Rollover (x)</label>
+                            <label class="form-label" style="display:block;margin-bottom:.3rem" title="Regalo de fichas: se acredita solo como BONO con este rollover. 0 = sin rollover (retirable); x2/x5 = debe apostar N× antes de retirar.">🎯 Rollover (x)</label>
                             <input type="number" id="giftBatchRollover" class="form-input" min="0" max="50" step="1" value="0" style="width:90px" />
                         </div>
                         <div>

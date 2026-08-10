@@ -14,6 +14,46 @@
 > tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158). ⚠️ #167 es POSTERIOR a ese
 > deploy: necesita un redeploy más.
 
+### 170. FICHAS SIEMPRE automáticas (también por tiempo) + TOPES anti-abuso con ALERTA URGENTE
+- **Pedido del owner (sobre #169):** todo lo que sea acreditar fichas,
+  automático (para que el agente no pierda tiempo con tantos chats) — pero
+  "que no sea un descontrol": si alguien encuentra un bug y farmea fichas,
+  que salte un aviso URGENTE.
+- **Fichas por TIEMPO = acreditación automática AL ENVIAR:** el motor
+  acredita a cada destinatario del lote (helper único `_creditNotifBatchGift`
+  compartido con el canje por código). Sin PromoBonus/cartel para fichas: el
+  cliente recibe "💰 Te ACREDITAMOS $X" y el agente no interviene. El confirm
+  del panel avisa en grande el gasto TOTAL (monto × destinatarios) antes de
+  enviar. El % sigue igual (cartel verde, ambos modos).
+- **Candados anti-abuso (en TODA acreditación de lote):**
+  1. Topes duros por usuario, cruzando TODOS los lotes (Transaction
+     source 'notif_batch', permanente): máx **3 acreditaciones en 24hs** y
+     máx **$300.000 en 7 días** (constantes NOTIF_BATCH_USER_MAX_*).
+  2. Superar un tope BLOQUEA el crédito y dispara **alerta urgente**:
+     log ERROR `[notif-batch][ALERTA]`, nota roja admin-only en el chat del
+     usuario, y socket `security_alert` a la sala admins → **toast rojo en
+     vivo** en todos los paneles conectados (listener nuevo en admin.js).
+  3. Guard bono-sobre-bono (no se acredita si tiene bono activo en el casino
+     — lo pisaría) y reference idempotente `vip-nbatch-{batchId}-{userId}`
+     (jamás doble pago, ni en reintentos ni entre instancias).
+  4. Todo lo NO acreditado queda visible en el detalle del lote
+     ("⚠ sin acreditar: <motivo>", campo recipients[].creditError).
+- **Resiliencia:** fallo transitorio de la API (girox caído) → el recipient
+  queda EN 'sending' y el motor lo reintenta solo a los 10 min (sin doble
+  pago por la reference fija); bloqueo definitivo → sin mensaje ni push (no
+  se le promete nada), registrado. Rollover ahora se valida contra
+  bonus.multipliers para fichas en CUALQUIER modo.
+- **⚠️ Nota de rate limit:** un lote de fichas por tiempo hace ~3 requests a
+  girox por destinatario (info + credit + claim) paseadas por el limitador
+  local (55 rpm) — un lote de 300 tarda ~15-20 min en completar en segundo
+  plano. Normal, no es un cuelgue (se ve el progreso en el historial).
+- **Validado:** `node --check` OK (server.js, NotifBatch.js, admin.js,
+  admin-sw v37). **Back necesita redeploy.** PROBAR: (1) lote fichas POR
+  TIEMPO a 2 cuentas de prueba → confirm muestra el total → saldo acreditado
+  solo + mensaje "Te ACREDITAMOS"; (2) mandarle 4 lotes seguidos a la misma
+  cuenta → el 4° crédito se bloquea y salta el toast rojo + nota en su chat;
+  (3) % por tiempo → cartel verde como siempre.
+
 ### 169. Regalo de FICHAS por código: acreditación AUTOMÁTICA como bono (rollover x0 configurable por lote)
 - **Pedido del owner:** el regalo de fichas (giftType fixed) canjeado con
   CÓDIGO se acredita SOLO (bono girox, rollover x0 default, modificable

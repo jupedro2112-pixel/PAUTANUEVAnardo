@@ -88,10 +88,13 @@ const notifBatchSchema = new mongoose.Schema({
       // Modo 'code': cuándo canjeó. Modo 'window': = sentAt (bono directo).
       claimedAt: { type: Date, default: null },
       promoBonusId: { type: String, default: null },
-      // Solo regalo de fichas por código (auto-acreditado): cuándo y con qué
-      // transferencia se le acreditó el bono en 1girox.
+      // Solo regalo de fichas (auto-acreditado): cuándo y con qué
+      // transferencia se le acreditó el bono en 1girox. creditError = por qué
+      // NO se le acreditó (bono activo en el casino, tope de seguridad, fallo
+      // de la API) — visible en el detalle del lote para resolverlo a mano.
       creditedAt: { type: Date, default: null },
       creditTxId: { type: String, default: null },
+      creditError: { type: String, default: null },
       _id: false
     }],
     default: []

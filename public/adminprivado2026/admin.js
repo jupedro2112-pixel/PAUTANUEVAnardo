@@ -1384,6 +1384,13 @@ function initSocket() {
             loadUserInfo(data.userId);
         }
     });
+
+    // ALERTA DE SEGURIDAD de los regalos de lote (server: 'security_alert'):
+    // un usuario superó los topes anti-abuso → toast rojo bien visible para
+    // todos los admins conectados (además queda nota roja en su chat y log).
+    socket.on('security_alert', (data) => {
+        if (data && data.message) showToast(data.message, 'error');
+    });
     
     // CHAT UPDATED - Actualizar lista lateral en tiempo real cuando llega un mensaje
     socket.on('chat_updated', (data) => {
@@ -10940,14 +10947,12 @@ function updateGiftBatchModeUI() {
     updateGiftBatchTypeUI();
 }
 
-// El rollover solo aplica al regalo de FICHAS canjeado con CÓDIGO (ahí se
-// acredita automático como bono). Con % o en modo por-tiempo no hay
-// acreditación automática → se oculta.
+// El rollover aplica a todo regalo de FICHAS (siempre se acreditan solas:
+// por código al canjear, por tiempo al enviarse el lote). Con % se oculta.
 function updateGiftBatchTypeUI() {
     const tipo = (document.querySelector('input[name="giftBatchType"]:checked') || {}).value || 'percent';
-    const modo = (document.querySelector('input[name="giftBatchMode"]:checked') || {}).value || 'code';
     const wrap = document.getElementById('giftBatchRolloverWrap');
-    if (wrap) wrap.style.display = (tipo === 'fixed' && modo === 'code') ? '' : 'none';
+    if (wrap) wrap.style.display = (tipo === 'fixed') ? '' : 'none';
 }
 
 function updateGiftBatchAudienceUI() {
@@ -11056,17 +11061,22 @@ async function sendGiftBatch() {
     const count = (prev.totals && prev.totals.ok) || 0;
     if (!count) { showToast('La audiencia quedó vacía', 'error'); return; }
     const rolloverX = Number((document.getElementById('giftBatchRollover') || {}).value) || 0;
-    const esAutoCredito = giftType === 'fixed' && mode === 'code';
+    const esFichas = giftType === 'fixed';
     const regaloTxt = giftType === 'percent'
         ? ('+' + amount + '% en próxima carga (lo aplica el agente)')
-        : ('$' + amount.toLocaleString('es-AR') + ' en fichas' + (esAutoCredito ? ' — SE ACREDITA SOLO al canjear el código (rollover x' + rolloverX + ')' : ' (lo aplica el agente)'));
-    const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (bono activo ya para todos, ' + validHours + 'hs)');
+        : ('$' + amount.toLocaleString('es-AR') + ' en fichas — SE ACREDITAN SOLAS (rollover x' + rolloverX + ')');
+    const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (' + validHours + 'hs)');
     const audTxt = audience.audienceType === 'all' ? '🌍 LOTE COMPLETO' :
         audience.audienceType === 'inactive' ? ('😴 inactivos ≥' + audience.audienceDays + ' días' + (audience.audienceLimit ? ' (cupo ' + audience.audienceLimit + ')' : '')) :
         '📋 lista pegada';
-    const notaFinal = esAutoCredito
-        ? '⚠️ La plata se acredita AUTOMÁTICAMENTE cuando cada uno canjea su código — sin intervención del agente.'
-        : 'El regalo lo aplicás VOS en la carga (cartel verde del chat).';
+    let notaFinal;
+    if (esFichas && mode === 'code') {
+        notaFinal = '⚠️ La plata se acredita AUTOMÁTICAMENTE cuando cada uno canjea su código — sin intervención del agente.';
+    } else if (esFichas) {
+        notaFinal = '🚨 ATENCIÓN: se le acreditan $' + amount.toLocaleString('es-AR') + ' A CADA UNO apenas se envíe el lote — TOTAL ≈ $' + (amount * count).toLocaleString('es-AR') + ', automático, sin intervención del agente.';
+    } else {
+        notaFinal = 'El regalo lo aplicás VOS en la carga (cartel verde del chat).';
+    }
     if (!confirm('¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nAudiencia: ' + audTxt + '\nDestinatarios: ' + count + '\n\n' + notaFinal + ' El envío sale en segundo plano y se reanuda solo si el server se reinicia.')) return;
     const btn = document.getElementById('giftBatchSendBtn');
     const st = document.getElementById('giftBatchStatus');
@@ -11162,6 +11172,7 @@ async function toggleNotifBatchDetail(id) {
             shown.map((u) => {
                 let estado;
                 if (u.creditedAt) estado = '<span style="color:#00ff88;">💰 acreditado automático</span>';
+                else if (u.creditError) estado = '<span style="color:#ff6b6b;" title="' + escapeHtml(u.creditError) + '">⚠ sin acreditar: ' + escapeHtml(u.creditError) + '</span>';
                 else if (u.bonusStatus === 'used') estado = '<span style="color:#888;">✔ usado por ' + escapeHtml(u.usedBy || '-') + '</span>';
                 else if (u.bonusStatus === 'active') estado = '<span style="color:#00ff88;">🎁 bono ACTIVO</span>';
                 else if (u.bonusStatus === 'expired') estado = '<span style="color:#888;">⏰ bono vencido</span>';
