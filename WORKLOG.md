@@ -8,6 +8,23 @@
 
 ## Sesión 2026-08-10
 
+### 164. Pestaña CERRADOS del chat: ahora muestra las últimas 48 HORAS (antes top 100)
+- **Pedido del owner:** ver las últimas 48hs de chats para auditar la
+  atención de chats viejos; preguntó si afecta la velocidad.
+- **Causa de que "desaparecieran":** `/api/admin/conversations` traía el TOP
+  100 por actividad de cada pestaña — con el volumen actual, en Cerrados eso
+  cubría solo unas horas. No era un corte por tiempo ni el TTL de mensajes.
+- **Fix:** solo para `status='closed'`: `lastMessageAt >= ahora-48h`, tope de
+  sanidad 500. Abiertos/pagos/comunidad SIN cambios (un chat abierto viejo es
+  trabajo pendiente y debe aparecer siempre, como hasta ahora). Los mensajes
+  viven 72h (TTL) así que las 48hs siempre tienen su historial completo.
+- **Performance:** sin impacto real — la query usa el índice compuesto
+  existente `{status, lastMessageAt}` de ChatStatus; solo crece la respuesta
+  de la pestaña Cerrados (hasta 500 filas) y su render, con cache de 30s por
+  pestaña en el panel. Solo back: **necesita redeploy**. PROBAR: pestaña
+  Cerrados → aparecen los cerrados de ayer y anteayer; Abiertos igual que
+  siempre.
+
 ### 163. Botón "❓ Cómo leer esta hoja" en Datos y Datos 2.0
 - **Pedido del owner:** dejar la explicación de qué muestra cada hoja (escrita
   para que el admin principal se la explique a cajeros/empleados) como un

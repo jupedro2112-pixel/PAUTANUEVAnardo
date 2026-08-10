@@ -14392,11 +14392,22 @@ app.get('/api/admin/conversations', authMiddleware, adminMiddleware, async (req,
       return res.status(403).json({ error: 'Acceso denegado. Los withdrawers solo pueden ver chats de pagos.' });
     }
     
+    // Ventana de la lista (owner 2026-08-10): CERRADOS muestra las últimas 48
+    // HORAS (antes: top 100 por actividad — con el volumen actual eso cubría
+    // solo unas horas y no se podía auditar la atención del día anterior).
+    // Tope de sanidad 500. Abiertos/pagos/comunidad quedan como estaban: un
+    // chat ABIERTO viejo es trabajo pendiente y tiene que aparecer siempre.
+    // Los mensajes viven 72h (TTL) así que 48h siempre tiene el historial.
+    const isClosed = status === 'closed';
+    const match = isClosed
+      ? { status, lastMessageAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } }
+      : { status };
+
     // AGREGACIÓN OPTIMIZADA: Todo en una sola query
     const pipeline = [
-      { $match: { status } },
+      { $match: match },
       { $sort: { lastMessageAt: -1 } },
-      { $limit: 100 },
+      { $limit: isClosed ? 500 : 100 },
       {
         $lookup: {
           from: 'users',
