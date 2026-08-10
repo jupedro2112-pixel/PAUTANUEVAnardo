@@ -852,7 +852,25 @@ document.addEventListener('change', function (ev) {
             <section id="datosSection" class="section">
                 <div class="panel-header">
                     <h2><span class="icon icon-chart"></span> Datos</h2>
-                    <button class="btn btn-secondary btn-sm" onclick="loadDatos()" title="Actualizar">🔄</button>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="var e=document.getElementById('datosAyuda');e.style.display=(e.style.display==='none'?'':'none')">❓ Cómo leer esta hoja</button>
+                        <button class="btn btn-secondary btn-sm" onclick="loadDatos()" title="Actualizar">🔄</button>
+                    </div>
+                </div>
+
+                <!-- Ayuda para agentes/empleados (owner 2026-08-10): explicación
+                     en criollo de qué mide la hoja. Toggle con el botón ❓. -->
+                <div id="datosAyuda" style="display:none;background:rgba(83,189,235,0.06);border:1px solid rgba(83,189,235,0.35);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#ccc;font-size:12px;line-height:1.7;">
+                    <div style="font-weight:900;color:#53bdeb;font-size:13px;margin-bottom:6px;">📊 DATOS — "¿Cómo nos fue en el día?"</div>
+                    <p style="margin:0 0 8px;">Esta hoja responde: <b>en tal fecha (o rango), ¿cuánta gente entró y cuánta plata se movió?</b> Elegís el período arriba y TODO lo que ves es de ese período:</p>
+                    <ul style="margin:0 0 8px;padding-left:18px;">
+                        <li><b>Adquisición</b>: cuántos se registraron, cuántos hicieron su PRIMERA carga, el % de conversión (de los que se registran, cuántos ponen plata) y cuántos nunca cargaron nada.</li>
+                        <li><b>Actividad de depósitos</b>: cuántas cargas hubo, cuántas personas distintas cargaron, cuántas eran primerizas y cuántas eran clientes que ya venían de antes.</li>
+                        <li><b>Calidad económica</b>: la plata — total depositado, ticket promedio por carga, promedio por persona, y cuánto pusieron los nuevos vs. los de siempre.</li>
+                        <li><b>Recurrencia</b>: cuántos de los que cargaron son repetidores (más de una carga en el período).</li>
+                        <li><b>Retención (abajo de todo)</b>: independiente del período — cuánta gente cargó en los últimos 3/7/15/30 días. Es la foto de cuántos clientes "vivos" tenemos AHORA.</li>
+                    </ul>
+                    <p style="margin:0;color:#999;">👉 En una frase: <b>Datos es la foto del día</b> — el control diario de caja y movimiento. Lo que NO te dice es si la gente que entró hoy es buena o mala: un día puede verse bárbaro y a la semana esos clientes no volvieron más. Para eso está <b>Datos 2.0</b>.</p>
                 </div>
 
                 <!-- Selector de período -->
@@ -1067,7 +1085,10 @@ document.addEventListener('change', function (ev) {
             <section id="datos2Section" class="section">
                 <div class="panel-header">
                     <h2>📊 Datos 2.0 — Retención por camadas</h2>
-                    <button class="refresh-btn" onclick="loadDatos2()" title="Refrescar">🔄</button>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary btn-sm" onclick="var e=document.getElementById('datos2Ayuda');e.style.display=(e.style.display==='none'?'':'none')">❓ Cómo leer esta hoja</button>
+                        <button class="refresh-btn" onclick="loadDatos2()" title="Refrescar">🔄</button>
+                    </div>
                 </div>
                 <div style="background:rgba(212,175,55,0.06);border:1px solid rgba(212,175,55,0.30);border-radius:10px;padding:12px;margin-bottom:14px;">
                     <p style="margin:0;color:#bbb;font-size:11.5px;line-height:1.6;">
@@ -1078,6 +1099,22 @@ document.addEventListener('change', function (ev) {
                         <b>qué retención dejó cada día de gasto</b> y qué campaña trae gente que se queda. Un "—" significa que a esa camada
                         todavía no le pasaron esos días (no se puede medir aún).
                     </p>
+                </div>
+
+                <!-- Ayuda completa para agentes/empleados (owner 2026-08-10). -->
+                <div id="datos2Ayuda" style="display:none;background:rgba(83,189,235,0.06);border:1px solid rgba(83,189,235,0.35);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#ccc;font-size:12px;line-height:1.7;">
+                    <div style="font-weight:900;color:#53bdeb;font-size:13px;margin-bottom:6px;">📊 DATOS 2.0 — "La gente que entró tal día, ¿valió la pena?"</div>
+                    <p style="margin:0 0 8px;">Esta hoja mira al revés que Datos: no mira el día, mira a <b>las personas</b>. Cada fila es una <b>camada</b> (todos los que se registraron ese día) y la seguimos aunque pasen semanas:</p>
+                    <ul style="margin:0 0 8px;padding-left:18px;">
+                        <li><b>Nuevos (📣/🧑‍💼/🌱)</b>: cuántos entraron y de dónde vinieron — 📣 publicidad, 🧑‍💼 creados por un agente, 🌱 solos/orgánico.</li>
+                        <li><b>Cargó ≥1 / ≥2 / ≥3</b>: de esa camada, cuántos cargaron al menos 1, 2 y <b>3 o más veces</b>. El de 3+ es EL número: el que cargó 3 veces ya no está probando — le gustó y se quedó. Un día de pauta que deja mucho 3+ fue plata bien gastada.</li>
+                        <li><b>$ camada y $/nuevo</b>: cuánta plata dejó la camada hasta hoy, y cuánto dejó cada registro en promedio. Ese <b>$/nuevo se compara directo contra lo que cuesta traer un registro con la publicidad</b>: si el registro cuesta más de lo que deja, esa campaña pierde plata.</li>
+                        <li><b>D1 / D3 / D7 / D14 / D30 (retención)</b>: qué % de la camada SEGUÍA CARGANDO 1, 3, 7, 14 y 30 días después de registrarse. Se mira la ÚLTIMA carga de cada uno, así que el que se fue y volvió a las 2 semanas cuenta como retenido. Verde = bueno.</li>
+                        <li><b>El "—"</b> significa "todavía no se puede medir": a la camada de anteayer no le podés pedir retención de 7 días porque aún no vivió 7 días. No es un error ni un cero.</li>
+                        <li><b>Tabla 🎯 por campaña</b>: los mismos números separados por campaña de publicidad (y aparte agentes y orgánicos). Ahí se ve qué campaña trae gente que SE QUEDA y cuál trae gente que carga una vez (o ninguna) y desaparece.</li>
+                    </ul>
+                    <p style="margin:0 0 8px;color:#999;">👉 En una frase: <b>Datos es la foto del día; Datos 2.0 es la película de cada camada.</b> Regla práctica: Datos todas las mañanas (control de caja); Datos 2.0 cada 2-3 días mirando la columna ≥3 y la D7 de las camadas de la semana pasada — si vienen verdes, la pauta trae clientes; si vienen flojas, trae curiosos.</p>
+                    <p style="margin:0;color:#888;font-style:italic;">Ejemplo: el lunes entraron 60 personas (eso lo ves en Datos). Hoy viernes, en Datos 2.0 buscás la fila del lunes: de esos 60, 25 cargaron alguna vez, 9 cargaron 3+ veces, dejaron $800.000 ($13.300 por registro) y el 18% seguía cargando al día 3. Esa es la historia completa de lo que compró la pauta del lunes.</p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
                     <label style="color:#aaa;font-size:12px;">Últimos:</label>

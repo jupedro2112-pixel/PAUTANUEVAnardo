@@ -8,6 +8,18 @@
 
 ## Sesión 2026-08-10
 
+### 163. Botón "❓ Cómo leer esta hoja" en Datos y Datos 2.0
+- **Pedido del owner:** dejar la explicación de qué muestra cada hoja (escrita
+  para que el admin principal se la explique a cajeros/empleados) como un
+  botón dentro del panel.
+- Botón "❓ Cómo leer esta hoja" en el header de AMBAS secciones → despliega
+  un recuadro celeste con la explicación en criollo: Datos = "la foto del día"
+  (qué mide cada bloque y qué NO te dice); Datos 2.0 = "la película de cada
+  camada" (qué significa cada columna, el "—", el $/nuevo vs costo de pauta,
+  la regla práctica de uso y un ejemplo concreto lunes→viernes). Solo HTML
+  estático con toggle inline — sin JS nuevo. admin-sw **v32**. Solo front:
+  recargar el panel.
+
 ### 162. DATOS 2.0 — retención por COHORTES (camadas diarias) + rendimiento de la pauta por campaña
 - **Pedido del owner:** % de gente que cargó más de 3 veces con historial día
   a día ("en 10 días ver qué retención dejó"), seguimiento a 1/3/7 días, etc;
