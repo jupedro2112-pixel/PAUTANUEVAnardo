@@ -10960,9 +10960,20 @@ function updateGiftBatchAudienceUI() {
     const listW = document.getElementById('giftBatchListWrap');
     const inacW = document.getElementById('giftBatchInactiveWrap');
     const allN = document.getElementById('giftBatchAllNote');
+    const pubW = document.getElementById('giftBatchPublicWrap');
     if (listW) listW.style.display = aud === 'list' ? '' : 'none';
     if (inacW) inacW.style.display = aud === 'inactive' ? 'flex' : 'none';
     if (allN) allN.style.display = aud === 'all' ? '' : 'none';
+    if (pubW) pubW.style.display = aud === 'public' ? '' : 'none';
+    // Código público: siempre es "con código" (no hay a quién notificar) →
+    // forzar el modo y ocultar la fila de modo para no confundir.
+    if (aud === 'public') {
+        const codeRadio = document.querySelector('input[name="giftBatchMode"][value="code"]');
+        if (codeRadio) codeRadio.checked = true;
+        updateGiftBatchModeUI();
+    }
+    const modeRadios = document.querySelectorAll('input[name="giftBatchMode"]');
+    modeRadios.forEach((r) => { r.disabled = aud === 'public' && r.value === 'window'; });
 }
 
 // Arma la parte de AUDIENCIA del body (compartida por preview y envío).
@@ -10979,6 +10990,10 @@ function _giftBatchAudiencePayload() {
         if (!Number.isFinite(days) || days < 1) { showToast('Poné los días de inactividad', 'error'); return null; }
         const limitRaw = ((document.getElementById('giftBatchInactiveLimit') || {}).value || '').trim();
         return { audienceType: 'inactive', audienceDays: days, audienceLimit: limitRaw === '' ? null : Number(limitRaw) };
+    }
+    if (aud === 'public') {
+        const maxRaw = ((document.getElementById('giftBatchMaxClaims') || {}).value || '').trim();
+        return { audienceType: 'public', maxClaims: maxRaw === '' ? null : Number(maxRaw) };
     }
     return { audienceType: 'all' };
 }
@@ -11052,32 +11067,45 @@ async function sendGiftBatch() {
     const message = ((document.getElementById('giftBatchMessage') || {}).value || '').trim();
     if (!Number.isFinite(amount) || amount < 1) { showToast('Poné el monto del regalo (% o $)', 'error'); return; }
     if (!Number.isFinite(validHours) || validHours < 1 || validHours > 168) { showToast('La vigencia va de 1 a 168 horas', 'error'); return; }
-    if (message.length < 5) { showToast('Escribí el mensaje (mínimo 5 caracteres)', 'error'); return; }
     const audience = _giftBatchAudiencePayload();
     if (!audience) return;
-    // El conteo REAL sale del server (para inactivos/todos no se sabe client-side).
-    const prev = await _runGiftBatchPreview(false);
-    if (!prev) return;
-    const count = (prev.totals && prev.totals.ok) || 0;
-    if (!count) { showToast('La audiencia quedó vacía', 'error'); return; }
+    const esPublico = audience.audienceType === 'public';
+    if (!esPublico && message.length < 5) { showToast('Escribí el mensaje (mínimo 5 caracteres)', 'error'); return; }
+    // El conteo REAL sale del server (para inactivos/todos no se sabe
+    // client-side). El código público no tiene audiencia que validar.
+    let count = 0;
+    if (!esPublico) {
+        const prev = await _runGiftBatchPreview(false);
+        if (!prev) return;
+        count = (prev.totals && prev.totals.ok) || 0;
+        if (!count) { showToast('La audiencia quedó vacía', 'error'); return; }
+    }
     const rolloverX = Number((document.getElementById('giftBatchRollover') || {}).value) || 0;
     const esFichas = giftType === 'fixed';
     const regaloTxt = giftType === 'percent'
         ? ('+' + amount + '% en próxima carga (lo aplica el agente)')
         : ('$' + amount.toLocaleString('es-AR') + ' en fichas — SE ACREDITAN SOLAS (rollover x' + rolloverX + ')');
     const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (' + validHours + 'hs)');
-    const audTxt = audience.audienceType === 'all' ? '🌍 LOTE COMPLETO' :
+    const audTxt = esPublico ? ('📣 CÓDIGO PÚBLICO — cualquier cliente registrado' + (audience.maxClaims ? ' (cupo ' + audience.maxClaims + ' canjes)' : ' (SIN cupo)')) :
+        audience.audienceType === 'all' ? '🌍 LOTE COMPLETO' :
         audience.audienceType === 'inactive' ? ('😴 inactivos ≥' + audience.audienceDays + ' días' + (audience.audienceLimit ? ' (cupo ' + audience.audienceLimit + ')' : '')) :
         '📋 lista pegada';
     let notaFinal;
-    if (esFichas && mode === 'code') {
+    if (esPublico && esFichas) {
+        notaFinal = '⚠️ Cualquier cliente que consiga el código recibe $' + amount.toLocaleString('es-AR') + ' AUTOMÁTICO (una vez por cuenta' + (audience.maxClaims ? ', máx ' + audience.maxClaims + ' canjes en total' : ', SIN CUPO TOTAL — pensalo bien') + '). Los topes anti-abuso por usuario aplican igual.';
+    } else if (esPublico) {
+        notaFinal = 'Cualquier cliente que consiga el código activa su +' + amount + '% (cartel verde al agente), una vez por cuenta.';
+    } else if (esFichas && mode === 'code') {
         notaFinal = '⚠️ La plata se acredita AUTOMÁTICAMENTE cuando cada uno canjea su código — sin intervención del agente.';
     } else if (esFichas) {
         notaFinal = '🚨 ATENCIÓN: se le acreditan $' + amount.toLocaleString('es-AR') + ' A CADA UNO apenas se envíe el lote — TOTAL ≈ $' + (amount * count).toLocaleString('es-AR') + ', automático, sin intervención del agente.';
     } else {
         notaFinal = 'El regalo lo aplicás VOS en la carga (cartel verde del chat).';
     }
-    if (!confirm('¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nAudiencia: ' + audTxt + '\nDestinatarios: ' + count + '\n\n' + notaFinal + ' El envío sale en segundo plano y se reanuda solo si el server se reinicia.')) return;
+    const confirmMsg = esPublico
+        ? '¿Crear el código público?\n\nRegalo: ' + regaloTxt + '\nAudiencia: ' + audTxt + '\nVigencia: ' + validHours + 'hs\n\n' + notaFinal + ' No se envía ninguna notificación: el código lo subís vos a Telegram/redes.'
+        : '¿Enviar el lote?\n\nRegalo: ' + regaloTxt + '\nModo: ' + modoTxt + '\nAudiencia: ' + audTxt + '\nDestinatarios: ' + count + '\n\n' + notaFinal + ' El envío sale en segundo plano y se reanuda solo si el server se reinicia.';
+    if (!confirm(confirmMsg)) return;
     const btn = document.getElementById('giftBatchSendBtn');
     const st = document.getElementById('giftBatchStatus');
     if (btn) btn.disabled = true;
@@ -11100,8 +11128,13 @@ async function sendGiftBatch() {
             return;
         }
         const t = j.totals || {};
-        showToast('Lote enviado a ' + t.recipients + ' usuarios' + (j.code ? ' — código ' + j.code : ''), 'success');
-        if (st) st.textContent = '✅ ' + t.recipients + ' destinatarios' + (j.code ? ' · código ' + j.code : '') + ' · las notificaciones salen en segundo plano';
+        if (j.isPublic) {
+            showToast('Código público ' + j.code + ' creado', 'success');
+            if (st) st.textContent = '✅ ' + (j.message || 'Código ' + j.code + ' listo para subir a Telegram/redes');
+        } else {
+            showToast('Lote enviado a ' + t.recipients + ' usuarios' + (j.code ? ' — código ' + j.code : ''), 'success');
+            if (st) st.textContent = '✅ ' + t.recipients + ' destinatarios' + (j.code ? ' · código ' + j.code : '') + ' · las notificaciones salen en segundo plano';
+        }
         ['giftBatchAmount', 'giftBatchMessage', 'giftBatchUsers', 'giftBatchName', 'giftBatchCode', 'giftBatchTitle'].forEach((id) => {
             const el = document.getElementById(id); if (el) el.value = '';
         });
@@ -11129,10 +11162,13 @@ async function loadNotifBatches() {
             const vencido = new Date(b.expiresAt).getTime() <= Date.now();
             const regalo = b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'));
             const modo = b.mode === 'code' ? ('🔑 ' + escapeHtml(b.code || '')) : ('⏰ ' + b.validHours + 'hs');
-            const aud = b.audienceType === 'all' ? '🌍 todos' :
+            const aud = b.isPublic ? ('📣 código público' + (b.maxClaims ? ' (cupo ' + b.maxClaims + ')' : '')) :
+                b.audienceType === 'all' ? '🌍 todos' :
                 b.audienceType === 'inactive' ? ('😴 inactivos ≥' + (b.audienceDays || '?') + 'd' + (b.audienceLimit ? ' (cupo ' + b.audienceLimit + ')' : '')) :
                 '📋 lista';
-            const envio = b.pendientes > 0
+            const envio = b.isPublic
+                ? (b.claimed + ' canjes' + (b.maxClaims ? ' de ' + b.maxClaims : ''))
+                : b.pendientes > 0
                 ? '<span style="color:#ffd166;">⏳ enviando (' + (b.total - b.pendientes) + '/' + b.total + ')</span>'
                 : b.delivered + ' notificados';
             return '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:.7rem .9rem;margin-bottom:.5rem;font-size:.82rem;">' +

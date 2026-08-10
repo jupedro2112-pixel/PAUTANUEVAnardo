@@ -43,6 +43,15 @@ const notifBatchSchema = new mongoose.Schema({
   // Solo modo 'code'. SIEMPRE en mayúsculas (el canje compara uppercased).
   code: { type: String, default: null, uppercase: true, trim: true, index: true },
 
+  // CÓDIGO PÚBLICO (owner 2026-08-10): sin lista de destinatarios — se crea
+  // para subirlo a la Comunidad de Telegram / redes. CUALQUIER cliente
+  // registrado puede canjearlo (una vez cada uno, hasta maxClaims si hay
+  // cupo). Los que canjean se APPENDEAN a recipients (así el historial
+  // muestra quiénes fueron). No se envía ninguna notificación (sendDone nace
+  // true). Misma mecánica de regalo que un lote normal.
+  isPublic: { type: Boolean, default: false },
+  maxClaims: { type: Number, default: null },
+
   // Horas de vigencia (configurable por lote). En 'window': cuánto dura el
   // bono desde el envío. En 'code': hasta cuándo se puede canjear el código
   // Y hasta cuándo vale el bono canjeado (un solo reloj por lote).
@@ -61,7 +70,7 @@ const notifBatchSchema = new mongoose.Schema({
   // Cómo se armó la lista (para el historial): 'list' = usernames pegados,
   // 'inactive' = inactivos ≥ audienceDays sin login (tope audienceLimit,
   // los más recientes primero), 'all' = lote completo (todos los clientes).
-  audienceType: { type: String, enum: ['list', 'inactive', 'all'], default: 'list' },
+  audienceType: { type: String, enum: ['list', 'inactive', 'all', 'public'], default: 'list' },
   audienceDays: { type: Number, default: null },
   audienceLimit: { type: Number, default: null },
 

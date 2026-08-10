@@ -186,7 +186,11 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   (log ERROR, nota admin-only, socket `security_alert` → toast rojo en el
   panel); guard bono-sobre-bono; fallos transitorios reintentan solos (el
   recipient queda 'sending' y vence a los 10 min); lo no acreditado queda en
-  `recipients[].creditError`. Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
+  `recipients[].creditError`. **Código PÚBLICO** (`isPublic:true`,
+  `audienceType:'public'`): sin destinatarios ni envío (se sube a Telegram/
+  redes a mano) — CUALQUIER role:user canjea una vez (append atómico a
+  recipients con cupo opcional `maxClaims` vía `$expr $size`), misma mecánica
+  de regalo y topes. Envío: Message de chat + `sendPushIfOffline` por destinatario, EN
   SEGUNDO PLANO (la respuesta HTTP no espera); la entrega queda en
   `recipients[].delivery` ('socket'|'push'|'none'|'error') y el canal en
   `recipients[].channel` ('app'|'browser'|'none', misma clasificación que el badge

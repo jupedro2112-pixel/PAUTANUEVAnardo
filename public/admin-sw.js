@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v37'; // v37: fichas SIEMPRE automáticas (también por tiempo) + topes anti-abuso con alerta roja
+const CACHE_VERSION = 'v38'; // v38: código PÚBLICO para Telegram/redes (canjeable por cualquier cliente, con cupo opcional)
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

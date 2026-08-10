@@ -17824,19 +17824,24 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
   const now = new Date();
   let batch = await NotifBatch.findOne({ mode: 'code', code: codeUp, expiresAt: { $gt: now } }).lean();
   if (!batch) {
-    const vencido = await NotifBatch.findOne({ mode: 'code', code: codeUp }).select('id recipients.userId').lean();
-    if (vencido && (vencido.recipients || []).some((r) => r.userId === reqUser.userId)) {
+    const vencido = await NotifBatch.findOne({ mode: 'code', code: codeUp }).select('id isPublic recipients.userId').lean();
+    if (vencido && (vencido.isPublic || (vencido.recipients || []).some((r) => r.userId === reqUser.userId))) {
       return { http: 400, body: { error: '⏰ Este código ya venció. Estate atento a la próxima notificación.' } };
     }
     return null; // no es un código de lote (o no es de este usuario) → sigue el flujo normal
   }
   const rec = (batch.recipients || []).find((r) => r.userId === reqUser.userId);
-  if (!rec) {
-    logger.warn(`[notif-batch] ${reqUser.username} intentó canjear el código ${codeUp} sin estar en el lote ${batch.id}`);
-    return { http: 400, body: { error: 'El código no es válido. Fijate bien cómo aparece en la Comunidad.' } };
-  }
-  if (rec.claimedAt) {
-    return { http: 400, body: { error: 'Ya canjeaste este código. Tu bono te lo aplica el agente en tu próxima carga (si todavía no venció).' } };
+  if (!batch.isPublic) {
+    // Lote con destinatarios: EXCLUSIVO de los que están en la lista.
+    if (!rec) {
+      logger.warn(`[notif-batch] ${reqUser.username} intentó canjear el código ${codeUp} sin estar en el lote ${batch.id}`);
+      return { http: 400, body: { error: 'El código no es válido. Fijate bien cómo aparece en la Comunidad.' } };
+    }
+    if (rec.claimedAt) {
+      return { http: 400, body: { error: 'Ya canjeaste este código. Tu bono te lo aplica el agente en tu próxima carga (si todavía no venció).' } };
+    }
+  } else if (rec) {
+    return { http: 400, body: { error: 'Ya canjeaste este código. Es una sola vez por cuenta.' } };
   }
   const uDoc = await User.findOne({ id: reqUser.userId }).select('id username role').lean();
   if (!uDoc || uDoc.role !== 'user') {
@@ -17845,14 +17850,44 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
   const esFichas = batch.giftType === 'fixed';
   const montoFmt = Number(batch.amount).toLocaleString('es-AR');
 
-  // Reserva atómica en el lote: si dos requests concurrentes entran, una sola
-  // matchea claimedAt:null — la otra no modifica nada.
-  const upd = await NotifBatch.updateOne(
-    { id: batch.id, recipients: { $elemMatch: { userId: uDoc.id, claimedAt: null } } },
-    { $set: { 'recipients.$.claimedAt': now } }
-  );
-  if (!upd.modifiedCount) {
-    return { http: 400, body: { error: 'Ya canjeaste este código.' } };
+  // Reserva atómica (una vez por usuario):
+  //  - Lote con lista: $elemMatch claimedAt:null → $set. Dos requests
+  //    concurrentes → una sola matchea.
+  //  - Código PÚBLICO: el usuario se APPENDEA a recipients; el filtro exige
+  //    que NO esté ya (y que haya cupo si maxClaims). Los updates sobre un
+  //    mismo doc se serializan en Mongo, así que dos claims concurrentes no
+  //    pueden duplicarse: el segundo re-evalúa el filtro y no matchea.
+  let upd;
+  if (batch.isPublic) {
+    const filtro = {
+      id: batch.id,
+      expiresAt: { $gt: now },
+      recipients: { $not: { $elemMatch: { userId: uDoc.id } } }
+    };
+    if (batch.maxClaims > 0) {
+      filtro.$expr = { $lt: [{ $size: { $ifNull: ['$recipients', []] } }, batch.maxClaims] };
+    }
+    upd = await NotifBatch.updateOne(filtro, {
+      $push: { recipients: {
+        userId: uDoc.id, username: uDoc.username,
+        channel: 'none', delivery: 'none', deliveryAt: null,
+        claimedAt: now, promoBonusId: null,
+        creditedAt: null, creditTxId: null, creditError: null
+      } }
+    });
+    if (!upd.modifiedCount) {
+      const otra = await NotifBatch.findOne({ id: batch.id, 'recipients.userId': uDoc.id }).select('id').lean();
+      if (otra) return { http: 400, body: { error: 'Ya canjeaste este código. Es una sola vez por cuenta.' } };
+      return { http: 400, body: { error: '⏰ Este código llegó a su límite de canjes (o ya venció). ¡La próxima vez llegá antes!' } };
+    }
+  } else {
+    upd = await NotifBatch.updateOne(
+      { id: batch.id, recipients: { $elemMatch: { userId: uDoc.id, claimedAt: null } } },
+      { $set: { 'recipients.$.claimedAt': now } }
+    );
+    if (!upd.modifiedCount) {
+      return { http: 400, body: { error: 'Ya canjeaste este código.' } };
+    }
   }
 
   // ============ REGALO DE FICHAS: acreditación AUTOMÁTICA ============
@@ -17861,11 +17896,19 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
     if (!res2.ok) {
       // Liberar la reserva: en fallo transitorio puede reintentar (la
       // reference fija evita el doble pago si en realidad SÍ se acreditó);
-      // en bloqueo, que hable con soporte sin quemar el código.
-      await NotifBatch.updateOne(
-        { id: batch.id, 'recipients.userId': uDoc.id },
-        { $set: { 'recipients.$.claimedAt': null, 'recipients.$.creditError': res2.reason || null } }
-      ).catch(() => {});
+      // en bloqueo, que hable con soporte sin quemar el código. En un código
+      // PÚBLICO el usuario se agregó al canjear → se lo saca (no consume cupo).
+      if (batch.isPublic) {
+        await NotifBatch.updateOne(
+          { id: batch.id },
+          { $pull: { recipients: { userId: uDoc.id, creditedAt: null } } }
+        ).catch(() => {});
+      } else {
+        await NotifBatch.updateOne(
+          { id: batch.id, 'recipients.userId': uDoc.id },
+          { $set: { 'recipients.$.claimedAt': null, 'recipients.$.creditError': res2.reason || null } }
+        ).catch(() => {});
+      }
       if (res2.blocked && res2.reason === 'bono activo en el casino') {
         return { http: 400, body: { error: 'Tenés un bono activo (o sin reclamar) en el casino. Terminalo y después canjeá tu código.' } };
       }
@@ -18026,9 +18069,19 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
       } catch (_) { /* config no disponible: rango 0-50 ya validado */ }
     }
 
+    // CÓDIGO PÚBLICO: sin destinatarios ni notificación — el código se sube a
+    // Telegram/redes a mano. El mensaje es opcional (no se envía nada).
+    const esPublico = b.audienceType === 'public';
+    if (esPublico && mode !== 'code') {
+      return res.status(400).json({ error: 'El código público solo funciona en modo CON CÓDIGO.' });
+    }
+
     const message = String(b.message || '').trim();
-    if (message.length < 5 || message.length > 500) {
+    if (!esPublico && (message.length < 5 || message.length > 500)) {
       return res.status(400).json({ error: 'El mensaje tiene que tener entre 5 y 500 caracteres.' });
+    }
+    if (esPublico && message.length > 500) {
+      return res.status(400).json({ error: 'El mensaje puede tener hasta 500 caracteres.' });
     }
     const title = String(b.title || '').trim().slice(0, 100) || '🎁 Tenés un regalo';
     const name = String(b.name || '').trim().slice(0, 60);
@@ -18051,6 +18104,40 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
       }
       const clash = await NotifBatch.findOne({ mode: 'code', code, expiresAt: { $gt: new Date() } }).select('id').lean();
       if (clash) return res.status(400).json({ error: 'Ya hay un lote ACTIVO con ese código. Elegí otro o esperá a que venza.' });
+    }
+
+    // Rama del CÓDIGO PÚBLICO: se crea el "lote" vacío y listo — los que
+    // canjeen se van agregando solos a recipients. Nada que enviar.
+    if (esPublico) {
+      let maxClaims = (b.maxClaims == null || b.maxClaims === '') ? null : Math.round(Number(b.maxClaims));
+      if (maxClaims != null && (!Number.isFinite(maxClaims) || maxClaims < 1 || maxClaims > 100000)) {
+        return res.status(400).json({ error: 'El cupo de canjes tiene que estar entre 1 y 100.000 (o vacío = sin cupo).' });
+      }
+      const sentAtP = new Date();
+      const batchP = {
+        id: uuidv4(),
+        name, mode: 'code', giftType, amount, rolloverX, code, validHours,
+        sentAt: sentAtP, expiresAt: new Date(sentAtP.getTime() + validHours * 3600 * 1000),
+        title: '', message,
+        sentBy: req.user.username, sentByRole: req.user.role,
+        audienceType: 'public', audienceDays: null, audienceLimit: null,
+        isPublic: true, maxClaims,
+        sendDone: true, // no hay nada que enviar
+        recipients: []
+      };
+      await NotifBatch.create(batchP);
+      logger.info(`[notif-batch] CÓDIGO PÚBLICO ${code} creado por ${req.user.username} (${giftType} ${amount}, ${validHours}hs${maxClaims ? ', cupo ' + maxClaims : ''})`);
+      return res.json({
+        success: true,
+        id: batchP.id,
+        code,
+        expiresAt: batchP.expiresAt,
+        isPublic: true,
+        maxClaims,
+        totals: { recipients: 0, app: 0, browser: 0, none: 0 },
+        notFound: [], skipped: [],
+        message: `Código público ${code} creado — subilo a Telegram/redes. Vigente ${validHours}hs${maxClaims ? ', cupo ' + maxClaims + ' canjes' : ', sin cupo'}.`
+      });
     }
 
     const resolved = await _resolveNotifBatchAudience(b);
@@ -18123,6 +18210,7 @@ app.get('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req,
         validHours: 1, sentAt: 1, expiresAt: 1, title: 1, message: 1,
         sentBy: 1, sentByRole: 1,
         audienceType: 1, audienceDays: 1, audienceLimit: 1, sendDone: 1,
+        isPublic: 1, maxClaims: 1,
         total: { $size: { $ifNull: ['$recipients', []] } },
         claimed: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $ne: ['$$r.claimedAt', null] } } } },
         delivered: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $in: ['$$r.delivery', ['socket', 'push']] } } } },

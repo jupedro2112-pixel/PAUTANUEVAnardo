@@ -14,6 +14,35 @@
 > tomó efecto `HGCASH_FANOUT_URL=off` (SSM, #158). ⚠️ #167 es POSTERIOR a ese
 > deploy: necesita un redeploy más.
 
+### 171. CÓDIGO PÚBLICO para Telegram/redes (canjeable por CUALQUIER cliente, con cupo opcional)
+- **Pedido del owner:** que el regalo por código (monto o %) pueda ser un
+  código creado para subir a la Comunidad de Telegram u otras redes (algo
+  externo, sin lote de destinatarios), con la misma mecánica. También aclaró:
+  los topes anti-abuso son POR USUARIO (confirmado, así estaba) y los dos
+  comportamientos de fichas quedan: por tiempo = todos automático; por
+  código = solo los que canjean.
+- **Modelo:** `NotifBatch.isPublic` + `maxClaims` (cupo total de canjes,
+  null = sin cupo); `audienceType` suma 'public'.
+- **Create (`audienceType:'public'`):** solo modo code; mensaje opcional (no
+  se envía NADA — `sendDone:true`, recipients vacío); cupo 1..100.000
+  opcional. El código se sube a mano a Telegram/redes.
+- **Canje:** cualquier `role:'user'` puede canjear UNA vez: el usuario se
+  APPENDEA a recipients con update atómico (filtro "no está ya" + cupo por
+  `$expr $size` + vigencia; los updates por doc se serializan en Mongo → sin
+  dobles por carrera). Fichas → misma acreditación automática con topes
+  anti-abuso y rollover; si el crédito falla, se lo saca con `$pull`
+  (no consume cupo y puede reintentar). % → PromoBonus/cartel verde. Código
+  público vencido responde "venció" (no "no válido").
+- **Panel:** audiencia nueva "📣 Código PÚBLICO (para Telegram/redes)" —
+  oculta destinatarios/modo ventana, muestra cupo, no exige mensaje; confirm
+  especial (fichas sin cupo → "SIN CUPO TOTAL — pensalo bien"); resultado
+  muestra el código listo para copiar; historial "📣 código público · N
+  canjes de M" y el detalle lista a los que canjearon. Guía ❓ actualizada.
+  admin-sw **v38**. **Back necesita redeploy.** PROBAR: crear código público
+  de fichas con cupo 2 → canjear desde 2 cuentas OK, la 3ª "llegó a su
+  límite"; canjear 2 veces desde la misma → "una sola vez"; % público →
+  cartel verde.
+
 ### 170. FICHAS SIEMPRE automáticas (también por tiempo) + TOPES anti-abuso con ALERTA URGENTE
 - **Pedido del owner (sobre #169):** todo lo que sea acreditar fichas,
   automático (para que el agente no pierda tiempo con tantos chats) — pero
