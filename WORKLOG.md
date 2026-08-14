@@ -57,11 +57,15 @@
   los montos: "$X de bono con rollover en curso y $Y de bono SIN RECLAMAR
   (el regalito del casino)" — el agente sabe al toque cuál de los dos casos
   es y qué decirle al cliente (terminarlo o reclamarlo).
+- **Decisión del owner (mismo día):** NO auto-reclamar el regalito (queda
+  solo el aviso con montos) + **piso de $50**: si el total entre rollover en
+  curso y sin reclamar es ≤ $50, la bonificación SALE igual (el vuelto chico
+  se pisa — preferible a rebotarle la operación al agente). Constante
+  `BONUS_GUARD_MIN_ARS` en el guard de `/api/admin/bonus`. Los otros guards
+  (welcome code cash, lotes) siguen estrictos en > $0.
 - **Validado:** `node --check` OK. **Back necesita redeploy.** PROBAR:
-  intentar Bonificación a un cliente con bono pendiente → el toast rojo
-  muestra los montos.
-- **Idea anotada (no hecha):** si SOLO hay claimable (sin rollover activo),
-  auto-reclamárselo y dejar salir la bonificación.
+  intentar Bonificación a un cliente con bono pendiente grande → toast rojo
+  con los montos; con un resto ≤ $50 → la bonificación sale normal.
 
 ## Sesión 2026-08-10
 

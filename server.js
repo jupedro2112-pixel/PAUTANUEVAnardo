@@ -8271,13 +8271,18 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
     //      instante; si el claim fallara, lo reclama él desde el casino.
     // Rollover del bono: GIROX_BONUS_MULTIPLIER (default 1 = apostarlo 1 vez;
     // tiene que ser un multiplicador permitido en la config de 1girox).
+    // Piso del guard (owner 2026-08-14): restos chicos de bono (≤ $50 entre
+    // rollover en curso y sin reclamar) NO bloquean la bonificación — pisar
+    // ese vuelto es preferible a rebotarle la operación al agente. El resto
+    // de los flujos (welcome code, lotes) mantienen el bloqueo estricto.
+    const BONUS_GUARD_MIN_ARS = 50;
     const _playerInfo = await girox.getUserInfoByName(resolvedUsername);
-    if (_playerInfo && (Number(_playerInfo.bonusLocked) > 0 || Number(_playerInfo.claimableTotal) > 0)) {
+    const _bLocked = _playerInfo ? (Number(_playerInfo.bonusLocked) || 0) : 0;
+    const _bClaim = _playerInfo ? (Number(_playerInfo.claimableTotal) || 0) : 0;
+    if (_bLocked + _bClaim > BONUS_GUARD_MIN_ARS) {
       // El bono NO es saldo: un cliente con $0 puede tener igual un bono en
       // rollover o un "regalito" sin reclamar (auto-claim que falló). Se
       // detallan los montos para que el agente entienda POR QUÉ rebota.
-      const _bLocked = Number(_playerInfo.bonusLocked) || 0;
-      const _bClaim = Number(_playerInfo.claimableTotal) || 0;
       const _bDetalle = [
         _bLocked > 0 ? `$${_bLocked.toLocaleString('es-AR')} de bono con rollover en curso` : null,
         _bClaim > 0 ? `$${_bClaim.toLocaleString('es-AR')} de bono SIN RECLAMAR (el regalito del casino)` : null
