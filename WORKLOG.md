@@ -8,6 +8,10 @@
 
 ## Sesión 2026-08-14
 
+> ✅ **DEPLOYADO:** el owner confirmó (2026-08-14) que TODO lo de esta sesión
+> (#172–#174) ya está deployado en AWS EB. Con ese deploy también quedan
+> cumplidos los redeploys pendientes de la sesión anterior (#167, #169–#171).
+
 ### 172. FIX iPhone PWA: overlay del casino respetaba el safe-area (barra bajo el reloj + franja blanca)
 - **Reclamo del owner (captura):** en iPhone, SOLO con la app instalada (PWA
   standalone), los botones "↗ Abrir aparte / ← Volver a Chat de cargas" del
