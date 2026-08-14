@@ -8273,8 +8273,17 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
     // tiene que ser un multiplicador permitido en la config de 1girox).
     const _playerInfo = await girox.getUserInfoByName(resolvedUsername);
     if (_playerInfo && (Number(_playerInfo.bonusLocked) > 0 || Number(_playerInfo.claimableTotal) > 0)) {
+      // El bono NO es saldo: un cliente con $0 puede tener igual un bono en
+      // rollover o un "regalito" sin reclamar (auto-claim que falló). Se
+      // detallan los montos para que el agente entienda POR QUÉ rebota.
+      const _bLocked = Number(_playerInfo.bonusLocked) || 0;
+      const _bClaim = Number(_playerInfo.claimableTotal) || 0;
+      const _bDetalle = [
+        _bLocked > 0 ? `$${_bLocked.toLocaleString('es-AR')} de bono con rollover en curso` : null,
+        _bClaim > 0 ? `$${_bClaim.toLocaleString('es-AR')} de bono SIN RECLAMAR (el regalito del casino)` : null
+      ].filter(Boolean).join(' y ');
       return res.status(400).json({
-        error: 'El cliente ya tiene un bono ACTIVO (o pendiente de reclamar) en el casino. Otorgar otro lo pisaría y le debitaría lo que le queda. Esperá a que lo termine o hacé una carga con bonus.'
+        error: `El cliente ya tiene un bono en el casino: ${_bDetalle}. Otorgar otro lo pisaría y le debitaría lo que le queda. Esperá a que lo termine/reclame o hacé una carga con bonus.`
       });
     }
 

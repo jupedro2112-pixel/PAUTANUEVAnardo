@@ -43,6 +43,26 @@
   También puede haber COMANDOS guardados en la base que mencionen vipcargas
   (la migración de #151 los loguea al arrancar, revisar sección COMANDOS).
 
+### 174. El error "bono activo" de la Bonificación ahora DICE LOS MONTOS (diagnóstico para el agente)
+- **Duda del owner:** al querer dar una Bonificación a un cliente SIN saldo,
+  rebotaba con "ya tiene un bono ACTIVO" y no se entendía por qué (terminó
+  cargando desde el panel de 1girox directo — ⚠️ justo lo que el candado
+  evita: si el cliente tenía bono activo, dárselo desde allá se lo pisa).
+- **Explicación (no era bug):** el bono NO es saldo. Un cliente con $0 puede
+  tener (a) un resto de bono con rollover en curso — el guard salta con
+  CUALQUIER valor > 0, aunque sean centavos — o (b) un "regalito" sin
+  reclamar en el casino (p. ej. un auto-claim que falló y quedó colgado),
+  que no se ve en ningún saldo del panel.
+- **Fix (server.js, guard de `/api/admin/bonus`):** el error ahora detalla
+  los montos: "$X de bono con rollover en curso y $Y de bono SIN RECLAMAR
+  (el regalito del casino)" — el agente sabe al toque cuál de los dos casos
+  es y qué decirle al cliente (terminarlo o reclamarlo).
+- **Validado:** `node --check` OK. **Back necesita redeploy.** PROBAR:
+  intentar Bonificación a un cliente con bono pendiente → el toast rojo
+  muestra los montos.
+- **Idea anotada (no hecha):** si SOLO hay claimable (sin rollover activo),
+  auto-reclamárselo y dejar salir la bonificación.
+
 ## Sesión 2026-08-10
 
 > ✅ **DEPLOYADO:** el owner confirmó (2026-08-10, fin del día) que TODO lo de
