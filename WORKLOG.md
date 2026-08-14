@@ -4,7 +4,32 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-10**
+> **Última actualización: 2026-08-14**
+
+## Sesión 2026-08-14
+
+### 172. FIX iPhone PWA: overlay del casino respetaba el safe-area (barra bajo el reloj + franja blanca)
+- **Reclamo del owner (captura):** en iPhone, SOLO con la app instalada (PWA
+  standalone), los botones "↗ Abrir aparte / ← Volver a Chat de cargas" del
+  casino quedaban pegados arriba abajo del reloj/status bar, y aparecía una
+  franja blanca abajo. En navegador funcionaba bien.
+- **Causa:** la PWA usa `viewport-fit=cover` + status bar `black-translucent`
+  (index.html) → en standalone el viewport ocupa TAMBIÉN la zona del notch y
+  del home indicator. Todo el front compensa con `env(safe-area-inset-*)` en
+  CSS, pero el overlay del casino se arma por JS (`VIP.ui._showCasinoFrame`,
+  ui.js) con estilos inline SIN safe-area: barra con `padding:8px` fijo (bajo
+  el reloj) e iframe hasta el borde físico inferior — la franja blanca era el
+  fondo del casino embebido asomando en la zona del home indicator.
+- **Fix (ui.js, solo estilos inline del overlay):** barra superior con
+  `padding-top:calc(8px + env(safe-area-inset-top,0px))`; overlay con
+  `padding-bottom:env(safe-area-inset-bottom,0px)` (fondo #0d0d1a → la zona
+  del home indicator queda oscura y el iframe termina antes). En navegador
+  los env() valen 0 → cero cambio.
+- **Validado:** `node --check` OK (ui.js, SW). **SW a v99.** Solo front: se
+  actualiza con el SW, sin redeploy de back (aunque subir los estáticos
+  requiere deploy en EB igual). PROBAR en iPhone con la app instalada: abrir
+  el casino → la barra dorada arranca DEBAJO del reloj y no hay franja blanca
+  abajo; en Safari normal sigue igual que antes.
 
 ## Sesión 2026-08-10
 

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v98'; // v98: "Reclamar Bono con Código" (códigos de lote canjeables siempre, aparte del de bienvenida)
+const CACHE_VERSION = 'v99'; // v99: overlay del casino respeta el safe-area de iPhone (barra bajo el reloj + franja blanca)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

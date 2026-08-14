@@ -1030,10 +1030,15 @@ VIP.ui._showCasinoFrame = function() {
     overlay = document.createElement('div');
     overlay.id = 'casinoOverlay';
     overlay.style.cssText =
-      'position:fixed;inset:0;z-index:99999;background:#0d0d1a;display:flex;flex-direction:column;';
+      'position:fixed;inset:0;z-index:99999;background:#0d0d1a;display:flex;flex-direction:column;' +
+      // PWA instalada en iPhone (viewport-fit=cover): sin esto la barra queda
+      // abajo del reloj y el iframe se mete en la zona del home indicator
+      // (donde asomaba una franja blanca del fondo del casino embebido).
+      'padding-bottom:env(safe-area-inset-bottom,0px);';
     overlay.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;' +
-      'padding:8px 12px;background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);' +
+      'padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));' +
+      'background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);' +
       'flex:0 0 auto;">' +
         '<span style="color:#d4af37;font-weight:800;font-size:15px;">🎰 CASINO</span>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
