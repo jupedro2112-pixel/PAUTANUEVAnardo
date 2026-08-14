@@ -54,14 +54,13 @@ reloj y no hay franja blanca abajo; en Safari normal, igual que antes.
 
 ## FEATURE 2 — Marca: limpiar textos visibles con la marca VIEJA
 
-En giroxNARDOnuevoo quedaban 5 textos visibles al cliente que decían
-"VIPCARGAS" (la marca de la era anterior). **⚠️ ADAPTAR: en la repo gemela
-buscá su marca vieja equivalente y reemplazá por SU marca actual** (acá fue
-VIPCARGAS → 1GIROX). Grep por la marca vieja en `public/` y corregí las
-apariciones VISIBLES AL CLIENTE (no comentarios de código, no los clientes
-muertos jugaygana*):
+Quedaban 5 textos visibles al cliente que decían "VIPCARGAS" (la marca de la
+era anterior) — en la gemela es el MISMO reemplazo: **VIPCARGAS → 1GIROX**
+(confirmado por el owner: ambas repos vienen de JUGAYGANA y migraron a
+1girox). Grep por `VIPCARGAS` en `public/` y corregí las apariciones VISIBLES
+AL CLIENTE (no comentarios de código, no los clientes muertos jugaygana*):
 
-Los 5 lugares acá (buscar los equivalentes):
+Los 5 lugares:
 1. `index.html` — subtítulo del modal "Información del Servicio": "Todos los
    beneficios de jugar en …".
 2. `index.html` — banner de atribución de campañas: "✨ Bienvenido a …".
@@ -76,9 +75,9 @@ Servicio → dice la marca nueva; grep de la marca vieja en public/ sin
 resultados visibles al cliente.
 
 **Pendiente conocido (NO resolver sin decisión del owner, solo señalarlo):**
-los SMS de OTP (`src/services/otpService.js`) siguen con la marca vieja, y
-puede haber COMANDOS guardados en la base que la mencionen (la migración que
-loguea "response aún menciona <marca>" al arrancar ya existe desde la era
+los SMS de OTP (`src/services/otpService.js`) siguen diciendo "VIPCARGAS", y
+puede haber COMANDOS guardados en la base que lo mencionen (la migración que
+loguea "response aún menciona vipcargas" al arrancar ya existe desde la era
 /sys_reminder — revisar sección COMANDOS del panel).
 
 ---
