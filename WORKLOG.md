@@ -31,6 +31,18 @@
   el casino → la barra dorada arranca DEBAJO del reloj y no hay franja blanca
   abajo; en Safari normal sigue igual que antes.
 
+### 173. Marca: textos visibles que aún decían "VIPCARGAS" → "1GIROX"
+- **Reclamo del owner (captura del modal "Información del Servicio"):** decía
+  "beneficios de jugar en VIPCARGAS".
+- **Cambiados (los 5 visibles al cliente):** subtítulo de Información del
+  Servicio, banner "✨ Bienvenido a…" de campañas, modales "BIENVENIDO A…" y
+  "BENEFICIOS DE JUGAR EN…" (index.html) y botón "Volver a…" del recuadro de
+  error del casino (ui.js). **SW a v100.** Solo front.
+- **⚠️ Sigue pendiente (decisión de marca, ya señalado en #151):** los SMS de
+  OTP (`otpService.js`) todavía dicen "VIPCARGAS: codigo... vipcargas .com".
+  También puede haber COMANDOS guardados en la base que mencionen vipcargas
+  (la migración de #151 los loguea al arrancar, revisar sección COMANDOS).
+
 ## Sesión 2026-08-10
 
 > ✅ **DEPLOYADO:** el owner confirmó (2026-08-10, fin del día) que TODO lo de
