@@ -3711,7 +3711,11 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     // La landing muestra usuario+clave y ofrece "entrar" con accessUrl (logueado).
     res.status(201).json({ success: true, accessUrl, username, password });
   } catch (error) {
+    // A stdout además del logger de archivo: los 500 de este endpoint tienen que
+    // verse en los logs de EB para diagnosticar (el logger winston va solo a
+    // archivo en producción).
     logger.error(`[landing-signup] error: ${error.message}`);
+    try { console.error(`[landing-signup][500] ${error.stack || error.message}`); } catch (_) {}
     res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
   }
 });

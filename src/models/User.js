@@ -380,7 +380,8 @@ const userSchema = new mongoose.Schema({
   // con el flujo de registro público que no toca este campo.
   acquisitionSource: {
     type: String,
-    enum: ['organic', 'manual'],
+    // 'landing' = alta por la landing puente externa (POST /api/landing/signup).
+    enum: ['organic', 'manual', 'landing'],
     default: 'organic',
     index: true
   },

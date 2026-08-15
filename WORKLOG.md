@@ -35,6 +35,21 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 186. FIX 500 del alta por landing: `acquisitionSource:'landing'` no estaba en el enum del schema
+- **Síntoma (video del owner, landing viva en Vercel):** "CREAR MI CUENTA" →
+  "Error del servidor. Probá de nuevo." La llamada LLEGABA al backend (el CORS
+  abierto de #185 andaba), pero tiraba 500.
+- **Causa:** `User.create` en `/api/landing/signup` seteaba
+  `acquisitionSource:'landing'`, pero el enum del schema solo permitía
+  `['organic','manual']` → Mongoose ValidationError → catch 500.
+- **Fix:** `'landing'` agregado al enum de `acquisitionSource` (User.js) —
+  además queda distinguible en las estadísticas de origen. Y el catch del
+  endpoint ahora espeja el error+stack a **stdout** (`console.error`) para que
+  los 500 se vean en los logs de EB (el logger winston va solo a archivo).
+- **Validado:** `node --check` OK (server.js, User.js). **Back necesita
+  redeploy.** PROBAR: landing de Vercel → nombre → ahora crea la cuenta y
+  muestra usuario+clave.
+
 ### 185. `/api/landing/signup` con CORS abierto → landings rotables sin tocar ALLOWED_ORIGINS
 - **Problema:** el CORS global bloquea todo origen fuera de ALLOWED_ORIGINS,
   así que cada dominio/host puente nuevo (Vercel, Cloudflare, dominio final)
