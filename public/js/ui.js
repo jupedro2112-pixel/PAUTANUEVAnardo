@@ -1022,6 +1022,67 @@ VIP.ui._casinoFrameStuck = function() {
   if (frame) frame.style.display = 'block';
 };
 
+/** Chip del menú de acciones rápidas del pop-up del casino. Declaración de
+ *  función (hoisted) para poder usarla dentro del innerHTML de _showCasinoFrame. */
+function _casinoChip(label, onclick, primary) {
+  const base = primary
+    ? 'background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;'
+    : 'background:rgba(212,175,55,0.12);color:#e3bd48;border:1px solid rgba(212,175,55,0.35);';
+  return '<button type="button" onclick="' + onclick + '" style="' + base +
+    'flex:0 0 auto;white-space:nowrap;border-radius:16px;padding:7px 12px;font-size:12.5px;' +
+    'font-weight:700;cursor:pointer;">' + label + '</button>';
+}
+
+/** Envía un mensaje al cajero desde el pop-up (mismo camino que escribir a mano
+ *  → cae en el panel adminprivado2026). */
+VIP.ui._casinoSendQuick = function(text) {
+  const input = document.getElementById('messageInput');
+  if (!input) return false;
+  input.value = text;
+  try { if (VIP.chat && VIP.chat.sendMessage) VIP.chat.sendMessage(); } catch (e) {}
+  return true;
+};
+
+/** Acciones rápidas del pop-up. TODO termina en el chat del cajero; los botones
+ *  solo le ahorran al cliente tener que escribir. */
+VIP.ui.casinoQuickAction = function(action, arg) {
+  switch (action) {
+    case 'cargar-toggle': {
+      const row = document.getElementById('casinoAmountRow');
+      if (row) row.style.display = (row.style.display === 'none' || !row.style.display) ? 'flex' : 'none';
+      return;
+    }
+    case 'cargar':
+      VIP.ui._casinoSendQuick('🎰 Quiero cargar $' + Number(arg).toLocaleString('es-AR'));
+      break;
+    case 'cargar-otro': {
+      const i = document.getElementById('messageInput');
+      if (i) { i.value = '🎰 Quiero cargar $'; i.focus(); }
+      break;
+    }
+    case 'cbu':
+      try { if (VIP.ui.loadAndShowCBU) VIP.ui.loadAndShowCBU(); } catch (e) {}
+      break;
+    case 'comprobante': {
+      const a = document.getElementById('attachBtn');
+      if (a) a.click();
+      break;
+    }
+    case 'saldo':
+      try { if (VIP.ui.syncBalance) VIP.ui.syncBalance(); } catch (e) {}
+      VIP.ui._casinoSendQuick('👛 ¿Me confirmás mi saldo?');
+      break;
+    case 'retirar':
+      VIP.ui._casinoSendQuick('💸 Quiero retirar mi premio');
+      break;
+    case 'escribir': {
+      const e2 = document.getElementById('messageInput');
+      if (e2) e2.focus();
+      break;
+    }
+  }
+};
+
 /** Crea (una sola vez) y muestra el recuadro del casino. */
 VIP.ui._showCasinoFrame = function() {
   let overlay = document.getElementById('casinoOverlay');
@@ -1089,6 +1150,27 @@ VIP.ui._showCasinoFrame = function() {
             'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
             'border-radius:18px;padding:4px 11px;font-size:12px;font-weight:700;cursor:pointer;">' +
             '⬇ Volver al juego</button>' +
+        '</div>' +
+        // Menú de acciones rápidas (owner 2026-08-15): el cliente toca en vez de
+        // escribir; TODO cae igual en el chat del cajero (panel adminprivado2026).
+        '<div style="flex:0 0 auto;background:#100e18;border-bottom:1px solid rgba(212,175,55,0.18);' +
+        'padding:7px 8px;display:flex;flex-direction:column;gap:6px;">' +
+          '<div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
+            _casinoChip('💰 Cargar', "VIP.ui.casinoQuickAction('cargar-toggle')", true) +
+            _casinoChip('📋 Pedir CBU', "VIP.ui.casinoQuickAction('cbu')") +
+            _casinoChip('✅ Ya transferí', "VIP.ui.casinoQuickAction('comprobante')") +
+            _casinoChip('👛 Mi saldo', "VIP.ui.casinoQuickAction('saldo')") +
+            _casinoChip('💸 Retirar', "VIP.ui.casinoQuickAction('retirar')") +
+            _casinoChip('💬 Escribir', "VIP.ui.casinoQuickAction('escribir')") +
+          '</div>' +
+          // Sub-fila de montos (se despliega al tocar "Cargar").
+          '<div id="casinoAmountRow" style="display:none;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
+            _casinoChip('$2.000', "VIP.ui.casinoQuickAction('cargar','2000')") +
+            _casinoChip('$5.000', "VIP.ui.casinoQuickAction('cargar','5000')") +
+            _casinoChip('$10.000', "VIP.ui.casinoQuickAction('cargar','10000')") +
+            _casinoChip('$20.000', "VIP.ui.casinoQuickAction('cargar','20000')") +
+            _casinoChip('Otro monto', "VIP.ui.casinoQuickAction('cargar-otro')") +
+          '</div>' +
         '</div>' +
         '<div id="casinoChatDrawerBody" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>' +
       '</div>';

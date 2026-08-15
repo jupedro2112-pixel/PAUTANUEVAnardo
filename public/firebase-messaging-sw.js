@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v102'; // v102: pulido del chat sobre el casino (50% alto, sin cabecera duplicada, barra en 1 línea, chau falso "no termina de cargar")
+const CACHE_VERSION = 'v103'; // v103: landing abre el casino directo + menú de acciones rápidas (cargar/CBU/comprobante/saldo/retirar) en el pop-up del casino
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

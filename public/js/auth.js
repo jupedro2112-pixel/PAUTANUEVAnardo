@@ -480,6 +480,15 @@ VIP.auth = (function () {
                 VIP.refunds.loadRefundStatus();
                 VIP.fire.loadFireStatus();
 
+                // Entrada por la landing (`ir=casino`): abrir el casino directo,
+                // con el chat de cargas en el pop-up "Cargar acá" (owner 2026-08-15).
+                if (VIP.state._openCasinoAfterLogin) {
+                    VIP.state._openCasinoAfterLogin = false;
+                    setTimeout(function () {
+                        try { if (VIP.ui && VIP.ui.enterCasino) VIP.ui.enterCasino(); } catch (e) {}
+                    }, 600);
+                }
+
                 // Server-side enforcement: if the user must change their
                 // password (flag persisted in DB), re-open the mandatory
                 // change modal even after a page reload.
@@ -513,6 +522,14 @@ VIP.auth = (function () {
         let token = null;
         try { token = new URLSearchParams(window.location.search).get('acceso'); } catch (e) {}
         if (!token) return false;
+
+        // `ir=casino` (link de la landing): abrir el casino DIRECTO al loguear.
+        // Se lee ANTES de limpiar la URL; verifyToken() lo consume tras showChatScreen.
+        try {
+            if (new URLSearchParams(window.location.search).get('ir') === 'casino') {
+                VIP.state._openCasinoAfterLogin = true;
+            }
+        } catch (e) {}
 
         // Sacar el token de la URL YA MISMO: es de un solo uso y no tiene que
         // quedar en el historial ni compartirse por accidente.

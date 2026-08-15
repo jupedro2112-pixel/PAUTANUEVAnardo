@@ -3677,9 +3677,13 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     try { fbAdsWebhook.notify('CompleteRegistration', newUser); } catch (_) {}
 
     // 3) Link de acceso de un solo uso → el cliente entra logueado a chat1girox.
+    //    `ir=casino`: la PWA, apenas loguea, abre el casino DIRECTO (flujo pedido
+    //    por el owner 2026-08-15) — el chat de cargas queda en el pop-up "Cargar
+    //    acá" adentro del casino.
     let accessUrl = null;
     try {
       accessUrl = await issueAccessLinkFor(newUser.id);
+      accessUrl += (accessUrl.indexOf('?') === -1 ? '?' : '&') + 'ir=casino';
     } catch (linkErr) {
       logger.warn(`[landing-signup] no se pudo generar el access-link de ${username}: ${linkErr.message}`);
       return res.status(500).json({ error: 'Tu cuenta se creó pero no pudimos generar tu acceso. Escribinos por soporte.' });

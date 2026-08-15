@@ -35,6 +35,35 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 183. Entrada por landing → CASINO directo + menú de acciones rápidas en el pop-up de carga
+- **Pedido del owner (sobre #182/#176):** que la entrada sea más automática —
+  al poner el nombre que se abra el CASINO directo, con el chat de carga en un
+  pop-up adentro, que igual llegue al panel adminprivado2026, con una serie de
+  opciones para cargar directo. Opción elegida: **menú de acciones amplio**.
+- **Casi todo reusa lo existente:** el alta por landing (#182), el pop-up
+  "Cargar acá" dentro del casino y su chat al panel (#176), CBU/comprobante/
+  saldo y hgcash ya estaban. Piezas nuevas, ambas front:
+  1. **Landing → casino directo:** el `accessUrl` que devuelve
+     `/api/landing/signup` lleva `&ir=casino`. `auth.js` lo lee en
+     `tryAccessLink` (antes de limpiar la URL) y, tras `showChatScreen()` en
+     `verifyToken`, abre el casino solo (`VIP.ui.enterCasino()`).
+  2. **Menú de acciones en el pop-up (`ui.js`):** barra de chips arriba del
+     chat del casino — 💰 Cargar (despliega montos $2k/$5k/$10k/$20k/Otro) ·
+     📋 Pedir CBU · ✅ Ya transferí · 👛 Mi saldo · 💸 Retirar · 💬 Escribir.
+     `VIP.ui.casinoQuickAction()` cablea cada uno a lo que YA existe: montos y
+     retiro → mandan mensaje al cajero (`_casinoSendQuick` → messageInput +
+     `VIP.chat.sendMessage`, cae en adminprivado2026); CBU → `loadAndShowCBU`;
+     comprobante → click en `attachBtn`; saldo → `syncBalance` + mensaje.
+     El cajero sigue viendo y confirmando todo (no es un bot).
+- **El candado del retiro sigue igual:** "💸 Retirar" solo manda el mensaje; el
+  SMS se exige recién al procesar el retiro real (`/api/withdrawal/request`).
+- **Validado:** `node --check` OK (ui.js, auth.js, server.js). **SW a v103.**
+  Back necesita redeploy (por el `&ir=casino`; el resto es front). PROBAR:
+  entrar por la landing → se abre el casino logueado → "💬 Cargar acá" →
+  tocar "💰 Cargar" → $5.000 → llega "Quiero cargar $5.000" al panel; "Pedir
+  CBU" muestra el CBU; "Ya transferí" abre la cámara; "Retirar" → pide SMS al
+  procesarlo.
+
 ### 182. ALTA POR LANDING externa (solo-nombre, sin SMS): endpoint `/api/landing/signup` + landing puente
 - **Pedido del owner:** landing en un dominio PUENTE propio donde el visitante
   pone SOLO un nombre → se crea el usuario en 1girox atribuido a la pauta, se
