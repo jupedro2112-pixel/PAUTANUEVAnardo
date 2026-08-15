@@ -41,21 +41,28 @@
   el panel para separar operaciones de consultas, y "en breves" lo suben a
   180/min.
 - **Código (giroxService.js):**
-  1. Env opcional **`GIROX_API_KEY_CONSULTAS`**: si está, `getPlayerStats` y
-     `getPlayersStatsBatch` (netwin → reembolsos, VIP, referidos, datos) que
-     irían por la MASTER firman con esa key (flag `readOnly` en `_request`).
-     Las keys de publicista no se tocan (cada una es la única que ve a sus
-     jugadores). Sin la env → todo por la master como siempre (deploy seguro
-     antes de crear la key).
+  1. Env opcional **`GIROX_API_KEY_CONSULTAS`** — UNA o VARIAS keys separadas
+     por coma (pedido del owner: blindar el crecimiento; pool balanceado, cada
+     lectura sale por la key con más lugar en su ventana → N keys = N×60/min
+     de cupo de lectura). Si está, `getPlayerStats` y `getPlayersStatsBatch`
+     (netwin → reembolsos, VIP, referidos, datos) que irían por la MASTER
+     firman con una del pool (flag `readOnly` en `_request` +
+     `_pickReadsKey`). Las keys de publicista no se tocan (cada una es la
+     única que ve a sus jugadores). Sin la env → todo por la master como
+     siempre (deploy seguro antes de crear las keys).
   2. Limitador local ahora **por key** (`_laneTimestamps` Map): consultas y
      publicistas ya no le comen cupo local a la master (antes una sola
      ventana compartida — con límite por key era regalar capacidad).
 - **SSM:** `GetParametersByPath` levanta la var nueva solo; nada que tocar.
-- **⚠️ ACCIÓN OWNER (2 pasos):** (1) crear la 2ª key en admin.1girox.com —
-  DEBE ser del MISMO agente que la master, si no no ve a los jugadores —,
-  (2) subirla a SSM `/nardo1girox/prod/GIROX_API_KEY_CONSULTAS` + poner
-  `GIROX_MAX_RPM=30` (2 instancias × 30 = 60 por key). Cuando 1girox suba el
-  límite a 180: cambiar a 90. Aplica al próximo restart/deploy.
+- **⚠️ ACCIÓN OWNER (2 pasos):** (1) crear 1-2 keys extra en
+  admin.1girox.com — DEBEN ser del MISMO agente que la master, si no no ven
+  a los jugadores —, (2) subirlas a SSM
+  `/nardo1girox/prod/GIROX_API_KEY_CONSULTAS` (varias = separadas por coma,
+  ej. `pk_aaa,pk_bbb`) + poner `GIROX_MAX_RPM=30` (2 instancias × 30 = 60
+  por key). Cuando 1girox suba el límite a 180: cambiar a 90. Aplica al
+  próximo restart/deploy. Dimensión hoy: el pico real de lecturas fue
+  ~15-20 req/min → UNA key de consultas alcanza y sobra; con 2 en el pool
+  queda cubierto hasta ~6× el volumen actual (y ~18× cuando suban a 180).
 - **Validado:** `node --check` OK. ARCHITECTURE §4.3 actualizado. **Back
   necesita redeploy.** PROBAR post-deploy con la key puesta: abrir la PWA
   (status de reembolso usa netwin) → funciona igual; en un pico, los logs ya

@@ -27,8 +27,9 @@
  *   GIROX_API_URL   Base URL de la Partner API, sin barra final. La entrega el agente
  *                   junto con la key. Ej: https://api.1girox.com/api/v1
  *   GIROX_API_KEY   Header X-Api-Key (`pk_...`). Va en SSM, jamás en el repo.
- *   GIROX_API_KEY_CONSULTAS  (opcional) 2ª key del MISMO agente, solo para
+ *   GIROX_API_KEY_CONSULTAS  (opcional) key(s) del MISMO agente solo para
  *                   lecturas de stats/netwin — cupo de rate limit propio.
+ *                   Una o varias separadas por coma (pool balanceado).
  *   GIROX_PLAY_URL  Sitio de juego al que se manda al cliente (default 1girox.com).
  *
  * ⚠️ Los secrets de SSM se cargan en el bootstrap async, DESPUÉS de que Node resuelve
@@ -53,15 +54,34 @@ function getBaseUrl() {
 function getApiKey() {
   return process.env.GIROX_API_KEY || null;
 }
-/** Key OPCIONAL solo-consultas (`GIROX_API_KEY_CONSULTAS` en SSM, 2026-08-15).
- *  El límite de 1girox es POR KEY (confirmado por su soporte): con una segunda
- *  key, las lecturas pesadas (stats/netwin de reembolsos, VIP, referidos,
- *  datos) viajan con cupo PROPIO y no compiten con cargas/retiros/SSO.
- *  Sin la env configurada, todo sigue por la key master como siempre.
- *  ⚠️ La key debe crearse bajo el MISMO agente que la master: una key de otro
+/** Keys OPCIONALES solo-consultas (`GIROX_API_KEY_CONSULTAS` en SSM, 2026-08-15).
+ *  El límite de 1girox es POR KEY (confirmado por su soporte): con keys extra,
+ *  las lecturas pesadas (stats/netwin de reembolsos, VIP, referidos, datos)
+ *  viajan con cupo PROPIO y no compiten con cargas/retiros/SSO.
+ *  Acepta UNA o VARIAS separadas por coma (pool: N keys = N×60/min de lectura;
+ *  cada request sale por la key menos cargada del minuto). Sin la env, todo
+ *  sigue por la key master como siempre.
+ *  ⚠️ TODAS deben crearse bajo el MISMO agente que la master: una key de otro
  *  agente NO VE a los jugadores (mismo motivo del ruteo por publicista). */
-function getReadsKey() {
-  return process.env.GIROX_API_KEY_CONSULTAS || null;
+function getReadsKeys() {
+  const raw = process.env.GIROX_API_KEY_CONSULTAS || '';
+  return raw.split(',').map((k) => k.trim()).filter(Boolean);
+}
+
+/** Elige la key de consultas con más lugar en su ventana de rate limit. */
+function _pickReadsKey() {
+  const keys = getReadsKeys();
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+  const now = Date.now();
+  let best = keys[0];
+  let bestLoad = Infinity;
+  for (const k of keys) {
+    const arr = _laneTimestamps.get(k) || [];
+    const load = arr.filter((t) => now - t < WINDOW_MS).length;
+    if (load < bestLoad) { bestLoad = load; best = k; }
+  }
+  return best;
 }
 /** URL pública del casino (la que ve el usuario). */
 function getPlayUrl() {
@@ -247,9 +267,9 @@ async function _request({ method, path, body, label, retryable = true, username 
 
   // Se resuelve UNA vez (no por reintento): la key del dueño no cambia en medio.
   let keyOverride = apiKey || await _resolveKeyFor(username);
-  // Lecturas por la key de consultas SOLO cuando iría por la master: la key de
+  // Lecturas por el pool de consultas SOLO cuando iría por la master: la key de
   // un publicista es la única que ve a SUS jugadores, no se puede reemplazar.
-  if (!keyOverride && readOnly && getReadsKey()) keyOverride = getReadsKey();
+  if (!keyOverride && readOnly) keyOverride = _pickReadsKey();
 
   const url = `${getBaseUrl()}${path}`;
   let lastErr = null;
@@ -262,7 +282,7 @@ async function _request({ method, path, body, label, retryable = true, username 
     }
 
     if (!(await _acquireSlot(keyOverride || getApiKey()))) {
-      logger.warn(`[girox] ${label} — rate limit local saturado (${MAX_RPM}/min${keyOverride && keyOverride === getReadsKey() ? ', key consultas' : ''}), abortando`);
+      logger.warn(`[girox] ${label} — rate limit local saturado (${MAX_RPM}/min${keyOverride && getReadsKeys().includes(keyOverride) ? ', key consultas' : ''}), abortando`);
       return { ok: false, error: 'La plataforma está saturada. Reintentá en un minuto.', code: 'rate_limited_local', httpStatus: null };
     }
 

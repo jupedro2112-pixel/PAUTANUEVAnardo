@@ -291,13 +291,14 @@ key**: `GIROX_MAX_RPM` (default **55**) por cada key usada (master, consultas,
 publicistas). Si hay que esperar más de 30s por un lugar en la ventana, falla
 rápido con `rate_limited_local` en vez de colgar la request.
 
-**Key de consultas (`GIROX_API_KEY_CONSULTAS`, opcional, 2026-08-15):** una 2ª
-key del MISMO agente que la master. Si está configurada, las lecturas de stats
-(`getPlayerStats` / `getPlayersStatsBatch` → reembolsos, VIP, referidos, datos)
-que irían por la master firman con ella → cupo aparte, y el tráfico de fondo no
-compite con cargas/retiros/SSO. Sin la env, todo va por la master como siempre.
-Las keys de PUBLICISTA no se reemplazan nunca (cada una es la única que ve a
-sus jugadores).
+**Pool de keys de consultas (`GIROX_API_KEY_CONSULTAS`, opcional, 2026-08-15):**
+una o VARIAS keys del MISMO agente que la master, separadas por coma. Si están,
+las lecturas de stats (`getPlayerStats` / `getPlayersStatsBatch` → reembolsos,
+VIP, referidos, datos) que irían por la master firman con la key del pool menos
+cargada en el minuto (`_pickReadsKey`) → N keys = N×60/min de cupo de lectura,
+y el tráfico de fondo no compite con cargas/retiros/SSO. Sin la env, todo va
+por la master como siempre. Las keys de PUBLICISTA no se reemplazan nunca
+(cada una es la única que ve a sus jugadores).
 
 ⚠️ **El limitador local es POR PROCESO.** En AWS EB con N instancias el techo
 real es N×GIROX_MAX_RPM por key, así que el 429 sigue siendo posible. Por eso
