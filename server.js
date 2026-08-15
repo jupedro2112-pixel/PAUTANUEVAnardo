@@ -3716,7 +3716,9 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     // archivo en producción).
     logger.error(`[landing-signup] error: ${error.message}`);
     try { console.error(`[landing-signup][500] ${error.stack || error.message}`); } catch (_) {}
-    res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
+    // TEMPORAL (debug 2026-08-15): se expone el error real al cliente para
+    // diagnosticar el 500 sin pulir logs. QUITAR cuando el flujo funcione.
+    res.status(500).json({ error: 'Error del servidor: ' + (error.message || 'desconocido').slice(0, 300) });
   }
 });
 
