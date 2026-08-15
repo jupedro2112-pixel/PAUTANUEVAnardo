@@ -3592,8 +3592,10 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     if (!username) {
       return res.status(503).json({ error: 'No pudimos generar tu usuario. Probá de nuevo.' });
     }
-    // Password aleatoria fuerte: el cliente entra por el link, no la tipea.
-    const password = crypto.randomBytes(9).toString('base64url').slice(0, 12);
+    // PIN de 6 dígitos: cumple el mínimo de 1girox (≥6) y es fácil de anotar.
+    // Se le MUESTRA al cliente en la landing (se devuelve en la respuesta) para
+    // que pueda volver a entrar desde cualquier dispositivo, además del link.
+    const password = String(crypto.randomInt(100000, 1000000));
 
     // 1) Crear en 1girox PRIMERO (igual que register-quick): si falla, no dejamos
     //    una cuenta local huérfana. Si la campaña tiene key de publicista, el
@@ -3690,8 +3692,8 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     }
 
     logger.info(`[landing-signup] alta ${username} campaign=${normalizedCode}${giroxOwner ? ' (key publicista)' : ''}`);
-    // La landing redirige el navegador a accessUrl (dominio chat1girox.com).
-    res.status(201).json({ success: true, accessUrl, username });
+    // La landing muestra usuario+clave y ofrece "entrar" con accessUrl (logueado).
+    res.status(201).json({ success: true, accessUrl, username, password });
   } catch (error) {
     logger.error(`[landing-signup] error: ${error.message}`);
     res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });

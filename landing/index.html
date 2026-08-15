@@ -5,88 +5,226 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>1GIROX — Entrá a jugar</title>
 <!--
-  LANDING PUENTE (dominio de marketing propio) — 2026-08-15
-  ============================================================
-  Poné este archivo en el dominio PUENTE (ej. promo1girox.com). El visitante
-  pone su nombre y se crea la cuenta en 1girox atribuida a la pauta; después el
-  navegador salta LOGUEADO a chat1girox.com.
+  LANDING PUENTE 1GIROX (dominio de marketing propio, rotable) — 2026-08-15
+  ============================================================================
+  El visitante pone su nombre → se crea la cuenta en 1girox atribuida a la pauta
+  → se le MUESTRAN usuario y clave → entra logueado al chat/casino.
 
-  CONFIGURAR ANTES DE SUBIR (constantes de abajo):
-    API_BASE      → https://chat1girox.com   (el backend real)
-    CAMPAIGN_CODE → el código de campaña del publicista (o se toma de la URL:
-                    ?p=CODIGO, ?campaign=CODIGO, o el path /CODIGO)
+  CONFIGURAR (constantes abajo del script):
+    API_BASE       → https://chat1girox.com
+    CAMPAIGN_CODE  → código de campaña fijo, o vacío para tomarlo de la URL
+                     (?p=CODIGO, ?campaign=CODIGO, o el path /CODIGO)
+    BONUS_BIG/SUB  → el texto del bono (cambialo por tu oferta real)
 
-  EN EL BACKEND: agregá el dominio de ESTA landing a ALLOWED_ORIGINS (SSM), si no
-  el navegador bloquea la llamada por CORS.
+  BACKEND: agregá el dominio de esta landing a ALLOWED_ORIGINS (SSM) o el
+  navegador bloquea la llamada por CORS.
 
-  ⚠️ HONESTIDAD ANTE META: esta página debe mostrar la MISMA oferta real que ve
-  el usuario (juego 18+). Mostrarle al revisor de Meta algo distinto de esto es
-  cloaking y termina en baneo de dominio, pixel y cuenta.
+  ⚠️ HONESTIDAD ANTE META: mostrá la MISMA oferta real que ve el usuario.
+  Mostrarle al revisor algo distinto es cloaking → baneo de dominio, pixel y
+  cuenta. El bono que anuncies acá tiene que ser el que realmente das.
 -->
 <style>
   :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: radial-gradient(1200px 600px at 50% -10%, #1c2a1e 0%, #0c0f0c 60%, #070807 100%);
-    color: #f2f2f0; display: flex; align-items: center; justify-content: center;
-    padding: 24px;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    background:
+      radial-gradient(1100px 560px at 50% -14%, #17281b 0%, rgba(8,11,8,0) 60%),
+      #080b08;
+    color: #f3f5f1; min-height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    -webkit-font-smoothing: antialiased;
   }
-  .card {
-    width: 100%; max-width: 420px; background: rgba(18,20,18,0.85);
-    border: 1px solid rgba(212,175,55,0.35); border-radius: 20px;
-    padding: 30px 24px calc(24px + env(safe-area-inset-bottom,0px));
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5); text-align: center;
+  a { color: inherit; }
+
+  /* Header */
+  .top {
+    width: 100%; max-width: 460px; display: flex; align-items: center;
+    justify-content: space-between; padding: 16px 20px calc(4px + env(safe-area-inset-top,0px));
   }
-  .brand { font-size: 30px; font-weight: 900; letter-spacing: 1px; color: #d4af37; margin: 0 0 4px; }
-  .brand span { color: #25d366; }
-  .tag { color: #9fb0a0; font-size: 14px; margin: 0 0 22px; }
-  .age { display: inline-block; font-size: 12px; font-weight: 800; color: #0c0f0c;
-    background: #d4af37; border-radius: 999px; padding: 3px 10px; margin-bottom: 18px; }
-  label { display: block; text-align: left; font-size: 13px; font-weight: 700; color: #cfe0d0; margin: 0 0 6px; }
+  .logo { font-size: 22px; font-weight: 900; letter-spacing: 1px; }
+  .logo .g { color: #e3bd48; } .logo .x { color: #25d366; }
+  .plus18 {
+    font-size: 11px; font-weight: 800; color: #cbd8cb;
+    border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 3px 9px;
+  }
+
+  main {
+    width: 100%; max-width: 460px; flex: 1;
+    padding: 8px 20px calc(28px + env(safe-area-inset-bottom,0px));
+    display: flex; flex-direction: column;
+  }
+
+  /* Banner de bono */
+  .promo {
+    margin-top: 12px; border-radius: 18px; overflow: hidden;
+    border: 1px solid rgba(212,175,55,0.3);
+    background:
+      linear-gradient(160deg, rgba(227,189,72,0.14), rgba(15,122,61,0.10)),
+      #0e140e;
+    padding: 22px 20px; text-align: center;
+  }
+  .promo .eyebrow {
+    font-size: 12px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    color: #7bd39b;
+  }
+  .promo .big {
+    font-size: 62px; font-weight: 900; line-height: 1; letter-spacing: -1px;
+    color: #e3bd48; text-shadow: 0 4px 30px rgba(227,189,72,0.28); margin: 6px 0 2px;
+  }
+  .promo .sub { font-size: 15px; font-weight: 800; color: #f3f5f1; letter-spacing: .5px; }
+
+  /* Copy */
+  .pitch { text-align: center; color: #a7b7a8; font-size: 14.5px; line-height: 1.5; margin: 20px 4px 16px; }
+
+  /* Form */
+  .qname { text-align: center; font-size: 14px; font-weight: 800; color: #eaf2ea; margin-bottom: 10px; }
   input {
-    width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.18); background: #0e120e; color: #fff; outline: none;
+    width: 100%; padding: 16px 18px; font-size: 17px; color: #fff; text-align: center;
+    background: #0a0f0a; border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; outline: none;
+    transition: border-color .2s, box-shadow .2s;
   }
-  input:focus { border-color: #25d366; }
-  button {
-    width: 100%; margin-top: 16px; padding: 15px; font-size: 16px; font-weight: 800;
-    color: #062012; background: linear-gradient(135deg, #25d366, #128c4a);
-    border: none; border-radius: 12px; cursor: pointer;
+  input::placeholder { color: #667766; }
+  input:focus { border-color: #25d366; box-shadow: 0 0 0 3px rgba(37,211,102,0.16); }
+  .cta {
+    width: 100%; margin-top: 12px; padding: 17px; font-size: 17px; font-weight: 900; letter-spacing: .4px;
+    color: #05230f; background: linear-gradient(135deg, #2ce06e, #0f9a4b);
+    border: none; border-radius: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    transition: transform .12s, filter .2s;
   }
-  button:disabled { opacity: 0.6; cursor: default; }
-  .msg { min-height: 18px; font-size: 13px; margin-top: 12px; }
-  .msg.err { color: #ff8a8a; }
-  .msg.ok { color: #7ee2a0; }
-  .fine { font-size: 11px; color: #7d8a7e; margin-top: 18px; line-height: 1.5; }
+  .cta:hover { filter: brightness(1.06); }
+  .cta:active { transform: scale(0.99); }
+  .cta:disabled { filter: saturate(.5) brightness(.85); cursor: default; }
+  .hint { text-align: center; font-size: 12px; color: #6b786c; margin-top: 9px; }
+  .msg { text-align: center; font-size: 13px; min-height: 16px; margin-top: 8px; }
+  .msg.err { color: #ff9090; }
+
+  .spin {
+    width: 17px; height: 17px; border-radius: 50%;
+    border: 2px solid rgba(5,35,15,0.35); border-top-color: #05230f;
+    animation: rot .7s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* Trust */
+  .trust {
+    display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 22px; font-size: 12.5px; color: #8fa090;
+  }
+  .trust span { display: inline-flex; align-items: center; gap: 6px; }
+  .trust .d { width: 5px; height: 5px; border-radius: 50%; background: #25d366; }
+  .legal { text-align: center; font-size: 11px; color: #5d6a5e; line-height: 1.6; margin-top: 24px; }
+
+  /* Pantalla de credenciales */
+  .done { display: none; text-align: center; margin-top: 24px; }
+  .done.on { display: block; animation: fade .4s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .done h2 { font-size: 22px; font-weight: 900; margin-bottom: 4px; }
+  .done h2 .em { color: #25d366; }
+  .done .p { color: #a7b7a8; font-size: 14px; margin-bottom: 20px; }
+  .cred {
+    background: #0e140e; border: 1px solid rgba(212,175,55,0.3); border-radius: 14px;
+    padding: 16px; display: grid; gap: 12px; text-align: left; margin-bottom: 8px;
+  }
+  .cred .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .cred .k { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #8fa090; text-transform: uppercase; }
+  .cred .v { font-size: 20px; font-weight: 900; color: #f3f5f1; font-family: "Courier New", monospace; letter-spacing: 1px; }
+  .cred .v.gold { color: #e3bd48; }
+  .save-note { font-size: 12px; color: #e3bd48; margin-bottom: 16px; }
+
+  /* Popup de enganche */
+  .pop {
+    position: fixed; inset: 0; background: rgba(4,6,4,0.72);
+    display: none; align-items: center; justify-content: center; padding: 24px; z-index: 50;
+  }
+  .pop.on { display: flex; animation: fade .25s ease; }
+  .pop .box {
+    width: 100%; max-width: 360px; background: #10160f; border: 1px solid rgba(212,175,55,0.35);
+    border-radius: 20px; padding: 26px 22px; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,0.6);
+  }
+  .pop h3 { font-size: 20px; font-weight: 900; margin-bottom: 6px; }
+  .pop p { color: #a7b7a8; font-size: 14px; line-height: 1.5; margin-bottom: 18px; }
+  .pop .later {
+    display: inline-block; margin-top: 12px; font-size: 13px; color: #8fa090;
+    text-decoration: underline; cursor: pointer; background: none; border: none;
+  }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } .done.on, .pop.on { animation: none; } }
 </style>
 </head>
 <body>
-  <main class="card">
-    <div class="age">SOLO +18</div>
-    <h1 class="brand">1<span>GIROX</span></h1>
-    <p class="tag">Poné tu nombre y entrá a jugar al instante.</p>
-    <form id="f" autocomplete="off">
-      <label for="name">Tu nombre</label>
-      <input id="name" name="name" type="text" placeholder="Ej: Juan" maxlength="60" required>
-      <button id="btn" type="submit">Entrar a jugar →</button>
-      <div id="msg" class="msg" role="status" aria-live="polite"></div>
-    </form>
-    <p class="fine">
-      Juego para mayores de 18 años. Jugá con responsabilidad.
-      Al ingresar aceptás nuestros términos y política de privacidad.
-    </p>
+  <div class="top">
+    <div class="logo"><span class="g">1</span><span class="x">GIROX</span></div>
+    <div class="plus18">+18</div>
+  </div>
+
+  <main>
+    <!-- Pantalla 1: bono + form -->
+    <section id="scForm">
+      <div class="promo">
+        <div class="eyebrow">Bono de bienvenida</div>
+        <div class="big" id="bonusBig">100%</div>
+        <div class="sub" id="bonusSub">EN TU PRIMERA CARGA</div>
+      </div>
+
+      <p class="pitch">Creá tu cuenta en un click y entrá a jugar. Sin formularios, sin esperas.</p>
+
+      <form id="form" autocomplete="off">
+        <div class="qname">¿Cuál es tu nombre?</div>
+        <input id="name" type="text" placeholder="Ej: Juan" maxlength="40" required>
+        <button class="cta" id="cta" type="submit"><span id="ctaLabel">CREAR MI CUENTA</span></button>
+        <div class="hint">Con tu nombre generamos tu usuario al instante.</div>
+        <div class="msg" id="msg" role="status" aria-live="polite"></div>
+      </form>
+
+      <div class="trust">
+        <span><i class="d"></i>Acreditación al instante</span>
+        <span><i class="d"></i>Retiros rápidos</span>
+        <span><i class="d"></i>Soporte 24/7</span>
+      </div>
+
+      <p class="legal">
+        Bono sujeto a términos: aplica sobre la primera carga. Solo nuevos jugadores.<br>
+        +18 · Jugá con responsabilidad.
+      </p>
+    </section>
+
+    <!-- Pantalla 2: credenciales -->
+    <section class="done" id="scDone">
+      <h2>¡Listo! <span class="em">Tu cuenta está creada</span></h2>
+      <p class="p">Anotá tus datos y entrá a jugar.</p>
+      <div class="cred">
+        <div class="row"><span class="k">Usuario</span><span class="v" id="outUser">—</span></div>
+        <div class="row"><span class="k">Clave</span><span class="v gold" id="outPass">—</span></div>
+      </div>
+      <div class="save-note">📌 Guardá tu usuario y clave para volver a entrar cuando quieras.</div>
+      <button class="cta" id="enterBtn" type="button">ENTRAR A MI CUENTA →</button>
+    </section>
   </main>
+
+  <!-- Popup de enganche -->
+  <div class="pop" id="pop">
+    <div class="box">
+      <h3>¡Esperá! 🎁 Tu bono te espera</h3>
+      <p>Creá tu cuenta ahora y activá tu bono de bienvenida. Tarda menos de un minuto.</p>
+      <button class="cta" id="popCta" type="button">CREAR MI CUENTA</button>
+      <button class="later" id="popLater" type="button">seguir mirando</button>
+    </div>
+  </div>
 
 <script>
 (function () {
   // ==== CONFIGURAR ====
-  var API_BASE = 'https://chat1girox.com';            // backend real
-  var CAMPAIGN_CODE = '';                              // fijo, o vacío para tomar de la URL
+  var API_BASE = 'https://chat1girox.com';   // backend real
+  var CAMPAIGN_CODE = '';                     // fijo, o vacío = tomar de la URL
+  var BONUS_BIG = '100%';                     // ⚠️ tu oferta REAL
+  var BONUS_SUB = 'EN TU PRIMERA CARGA';
   // ====================
 
-  // Código de campaña: constante, ?p= / ?campaign=, o el primer segmento del path (/CODIGO).
+  document.getElementById('bonusBig').textContent = BONUS_BIG;
+  document.getElementById('bonusSub').textContent = BONUS_SUB;
+
   function resolveCampaign() {
     if (CAMPAIGN_CODE) return CAMPAIGN_CODE;
     var q = new URLSearchParams(location.search);
@@ -98,64 +236,70 @@
   }
   function utmFromUrl() {
     var q = new URLSearchParams(location.search);
-    return {
-      source: q.get('utm_source'), medium: q.get('utm_medium'),
-      campaign: q.get('utm_campaign'), content: q.get('utm_content'), term: q.get('utm_term')
-    };
+    return { source: q.get('utm_source'), medium: q.get('utm_medium'),
+             campaign: q.get('utm_campaign'), content: q.get('utm_content'), term: q.get('utm_term') };
   }
-  function cookie(name) {
-    var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-    return m ? decodeURIComponent(m[1]) : null;
-  }
+  function cookie(n) { var m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; }
 
-  var form = document.getElementById('f');
-  var btn = document.getElementById('btn');
+  var form = document.getElementById('form');
+  var nameEl = document.getElementById('name');
+  var cta = document.getElementById('cta');
+  var ctaLabel = document.getElementById('ctaLabel');
   var msg = document.getElementById('msg');
+  var scForm = document.getElementById('scForm');
+  var scDone = document.getElementById('scDone');
+  var enterBtn = document.getElementById('enterBtn');
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    var name = document.getElementById('name').value.trim();
+    var name = nameEl.value.trim();
     var campaign = resolveCampaign();
-    msg.className = 'msg';
-    msg.textContent = '';
-
+    msg.className = 'msg'; msg.textContent = '';
     if (name.length < 2) { msg.className = 'msg err'; msg.textContent = 'Escribí tu nombre.'; return; }
     if (!campaign) { msg.className = 'msg err'; msg.textContent = 'Link inválido: falta el código de campaña.'; return; }
 
-    btn.disabled = true;
-    msg.className = 'msg';
-    msg.textContent = 'Creando tu cuenta…';
+    cta.disabled = true;
+    ctaLabel.textContent = 'Creando tu cuenta';
+    var sp = document.createElement('span'); sp.className = 'spin'; cta.appendChild(sp);
 
     fetch(API_BASE + '/api/landing/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        campaignCode: campaign,
-        utm: utmFromUrl(),
-        fbc: cookie('_fbc'),
-        fbp: cookie('_fbp'),
-        landingUrl: location.href
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, campaignCode: campaign, utm: utmFromUrl(),
+        fbc: cookie('_fbc'), fbp: cookie('_fbp'), landingUrl: location.href })
     })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (res.ok && res.d && res.d.accessUrl) {
-        msg.className = 'msg ok';
-        msg.textContent = '¡Listo! Entrando…';
-        window.location.href = res.d.accessUrl;   // salta LOGUEADO a chat1girox.com
+        document.getElementById('outUser').textContent = res.d.username || '—';
+        document.getElementById('outPass').textContent = res.d.password || '—';
+        enterBtn.onclick = function () { window.location.href = res.d.accessUrl; };
+        scForm.style.display = 'none';
+        scDone.classList.add('on');
+        window.scrollTo(0, 0);
       } else {
-        btn.disabled = false;
+        cta.disabled = false; sp.remove(); ctaLabel.textContent = 'CREAR MI CUENTA';
         msg.className = 'msg err';
         msg.textContent = (res.d && res.d.error) || 'No pudimos crear tu cuenta. Probá de nuevo.';
       }
     })
     .catch(function () {
-      btn.disabled = false;
-      msg.className = 'msg err';
-      msg.textContent = 'Sin conexión. Probá de nuevo.';
+      cta.disabled = false; sp.remove(); ctaLabel.textContent = 'CREAR MI CUENTA';
+      msg.className = 'msg err'; msg.textContent = 'Sin conexión. Probá de nuevo.';
     });
   });
+
+  // Popup de enganche: al intento de salida (desktop) o a los 12s (mobile), una sola vez.
+  var pop = document.getElementById('pop');
+  var popShown = false;
+  function showPop() {
+    if (popShown || scDone.classList.contains('on')) return;
+    popShown = true; pop.classList.add('on');
+  }
+  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget && e.clientY <= 0) showPop(); });
+  setTimeout(showPop, 12000);
+  document.getElementById('popCta').onclick = function () { pop.classList.remove('on'); nameEl.focus(); };
+  document.getElementById('popLater').onclick = function () { pop.classList.remove('on'); };
+  pop.addEventListener('click', function (e) { if (e.target === pop) pop.classList.remove('on'); });
 })();
 </script>
 </body>

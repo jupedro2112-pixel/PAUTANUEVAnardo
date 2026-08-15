@@ -35,6 +35,25 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 184. Landing de conversión (bono + credenciales + popup) — clave de 6 dígitos mostrada al cliente
+- **Contexto:** el owner vio una landing de un competidor (Bet33, en un dominio
+  puente `walink.ac`) con el mismo funnel y pidió llevar la nuestra a ese nivel.
+- **Backend (`/api/landing/signup`):** la password pasó de random-12 a **PIN
+  de 6 dígitos** (`crypto.randomInt`, cumple el mínimo ≥6 de 1girox) y se
+  **devuelve en la respuesta** (`password`) para mostrarla — así el cliente
+  puede volver a entrar desde cualquier dispositivo, no solo por el link.
+- **Landing (`landing/index.html`) rediseñada, marca 1GIROX:** banner de bono
+  (BONUS_BIG/SUB configurables — ⚠️ deben ser la oferta REAL), pitch, form de
+  nombre, sellos de confianza (acreditación al instante / retiros rápidos /
+  soporte 24/7), legal +18. Al crear: pantalla de **credenciales** (usuario +
+  clave grandes + "guardalos") con botón "ENTRAR A MI CUENTA" → accessUrl
+  (logueado, sigue con `ir=casino` → abre el casino). **Popup de enganche**
+  ("tu bono te espera") al intento de salida o a los 12s, una vez.
+- **Validado:** `node --check` OK (server.js) + parseo HTML. **Back necesita
+  redeploy.** Copia para preview en `~/Tor Browser/landing-1girox.html`.
+  PROBAR: abrir con `?p=CODIGO` → nombre → ver usuario+clave → ENTRAR → cae en
+  el casino logueado.
+
 ### 183. Entrada por landing → CASINO directo + menú de acciones rápidas en el pop-up de carga
 - **Pedido del owner (sobre #182/#176):** que la entrada sea más automática —
   al poner el nombre que se abra el CASINO directo, con el chat de carga en un
