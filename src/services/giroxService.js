@@ -27,6 +27,8 @@
  *   GIROX_API_URL   Base URL de la Partner API, sin barra final. La entrega el agente
  *                   junto con la key. Ej: https://api.1girox.com/api/v1
  *   GIROX_API_KEY   Header X-Api-Key (`pk_...`). Va en SSM, jamás en el repo.
+ *   GIROX_API_KEY_CONSULTAS  (opcional) 2ª key del MISMO agente, solo para
+ *                   lecturas de stats/netwin — cupo de rate limit propio.
  *   GIROX_PLAY_URL  Sitio de juego al que se manda al cliente (default 1girox.com).
  *
  * ⚠️ Los secrets de SSM se cargan en el bootstrap async, DESPUÉS de que Node resuelve
@@ -51,6 +53,16 @@ function getBaseUrl() {
 function getApiKey() {
   return process.env.GIROX_API_KEY || null;
 }
+/** Key OPCIONAL solo-consultas (`GIROX_API_KEY_CONSULTAS` en SSM, 2026-08-15).
+ *  El límite de 1girox es POR KEY (confirmado por su soporte): con una segunda
+ *  key, las lecturas pesadas (stats/netwin de reembolsos, VIP, referidos,
+ *  datos) viajan con cupo PROPIO y no compiten con cargas/retiros/SSO.
+ *  Sin la env configurada, todo sigue por la key master como siempre.
+ *  ⚠️ La key debe crearse bajo el MISMO agente que la master: una key de otro
+ *  agente NO VE a los jugadores (mismo motivo del ruteo por publicista). */
+function getReadsKey() {
+  return process.env.GIROX_API_KEY_CONSULTAS || null;
+}
 /** URL pública del casino (la que ve el usuario). */
 function getPlayUrl() {
   return (process.env.GIROX_PLAY_URL || 'https://1girox.com').replace(/\/+$/, '');
@@ -67,31 +79,38 @@ const TIMEOUT_MS = Number(process.env.GIROX_TIMEOUT_MS || 20000);
 const RETRY_DELAYS_MS = [2000, 5000, 15000];
 
 // ============================================================
-// RATE LIMIT — 60 requests/minuto (límite de la API; 429 si se pasa)
+// RATE LIMIT — 60 requests/minuto POR KEY (límite de la API; 429 si se pasa)
 // ============================================================
+// El límite de la plataforma es POR API KEY (confirmado por soporte 2026-08-15),
+// así que el limitador local también ventanea POR KEY: la key de consultas y las
+// de publicistas tienen cupo propio y no le comen lugar a la master.
 // ⚠️ MULTI-INSTANCIA (AWS EB): este limitador es POR PROCESO. Con N instancias el
-// techo real es N×60/min, así que el 429 sigue siendo posible → por eso además se
-// reintenta respetando Retry-After. Si con varias instancias aparecen 429 seguidos,
-// bajar GIROX_MAX_RPM (ej. 30 con 2 instancias).
-const MAX_RPM = Number(process.env.GIROX_MAX_RPM || 55); // 55 y no 60: margen de seguridad
+// techo real es N×GIROX_MAX_RPM por key, así que el 429 sigue siendo posible →
+// por eso además se reintenta respetando Retry-After. Con 2 instancias, poner
+// GIROX_MAX_RPM = (límite por key)/2 (ej. 30 con límite 60; 90 si lo suben a 180).
+const MAX_RPM = Number(process.env.GIROX_MAX_RPM || 55); // margen de seguridad bajo el límite
 const WINDOW_MS = 60000;
 const MAX_QUEUE_WAIT_MS = 30000; // si hay que esperar más que esto, falla rápido
 
-let _requestTimestamps = [];
+const _laneTimestamps = new Map(); // apiKey → timestamps de la ventana
 
 function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-/** Espera a que haya lugar en la ventana de rate limit. Devuelve false si esperar sería excesivo. */
-async function _acquireSlot() {
+/** Espera a que haya lugar en la ventana de rate limit DE ESA KEY.
+ *  Devuelve false si esperar sería excesivo. */
+async function _acquireSlot(laneKey) {
+  const lane = laneKey || 'master';
   const deadline = Date.now() + MAX_QUEUE_WAIT_MS;
   for (;;) {
     const now = Date.now();
-    _requestTimestamps = _requestTimestamps.filter((t) => now - t < WINDOW_MS);
-    if (_requestTimestamps.length < MAX_RPM) {
-      _requestTimestamps.push(now);
+    const arr = (_laneTimestamps.get(lane) || []).filter((t) => now - t < WINDOW_MS);
+    if (arr.length < MAX_RPM) {
+      arr.push(now);
+      _laneTimestamps.set(lane, arr);
       return true;
     }
-    const oldest = _requestTimestamps[0];
+    _laneTimestamps.set(lane, arr);
+    const oldest = arr[0];
     const waitMs = Math.max(50, WINDOW_MS - (now - oldest) + 25);
     if (now + waitMs > deadline) return false;
     await _sleep(waitMs);
@@ -217,15 +236,20 @@ function _parseRetryAfter(headers) {
  * @param {boolean} [opts.retryable]    si false, no reintenta (operaciones sin idempotencia)
  * @param {string} [opts.username]      jugador objetivo → el resolver decide con qué key firmar
  * @param {string} [opts.apiKey]        key explícita (gana sobre el resolver; para el batch)
+ * @param {boolean} [opts.readOnly]     lectura pura → si hay key de consultas y la request
+ *                                      iría por la MASTER, firma con la de consultas (cupo aparte)
  */
-async function _request({ method, path, body, label, retryable = true, username = null, apiKey = null }) {
+async function _request({ method, path, body, label, retryable = true, username = null, apiKey = null, readOnly = false }) {
   if (!isEnabled()) {
     logger.error('[girox] GIROX_API_URL / GIROX_API_KEY no configurados');
     return { ok: false, error: 'La plataforma no está configurada. Avisale al soporte.', code: 'not_configured', httpStatus: null };
   }
 
   // Se resuelve UNA vez (no por reintento): la key del dueño no cambia en medio.
-  const keyOverride = apiKey || await _resolveKeyFor(username);
+  let keyOverride = apiKey || await _resolveKeyFor(username);
+  // Lecturas por la key de consultas SOLO cuando iría por la master: la key de
+  // un publicista es la única que ve a SUS jugadores, no se puede reemplazar.
+  if (!keyOverride && readOnly && getReadsKey()) keyOverride = getReadsKey();
 
   const url = `${getBaseUrl()}${path}`;
   let lastErr = null;
@@ -237,8 +261,8 @@ async function _request({ method, path, body, label, retryable = true, username 
       await _sleep(wait);
     }
 
-    if (!(await _acquireSlot())) {
-      logger.warn(`[girox] ${label} — rate limit local saturado (${MAX_RPM}/min), abortando`);
+    if (!(await _acquireSlot(keyOverride || getApiKey()))) {
+      logger.warn(`[girox] ${label} — rate limit local saturado (${MAX_RPM}/min${keyOverride && keyOverride === getReadsKey() ? ', key consultas' : ''}), abortando`);
       return { ok: false, error: 'La plataforma está saturada. Reintentá en un minuto.', code: 'rate_limited_local', httpStatus: null };
     }
 
@@ -865,7 +889,8 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
     method: 'get',
     path: `/players/${encodeURIComponent(String(username))}/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     label: `${label}(${username}, ${from} → ${to})`,
-    username
+    username,
+    readOnly: true
   });
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
@@ -933,7 +958,8 @@ async function getPlayersStatsBatch(usernames, fromDate, toDate, label = 'stats-
       path: '/players/stats/batch',
       body: { usernames: groupList, from, to },
       label: `${label}(${groupList.length} jugadores${gk ? ', key publicista' : ''}, ${from} → ${to})`,
-      apiKey: gk || null
+      apiKey: gk || null,
+      readOnly: true
     });
 
     // Si UN grupo falla, falla todo el batch (mismo contrato de antes: el caller

@@ -282,20 +282,31 @@ Quedan sólo para poder revertir; se borran más adelante. **No los uses para na
 - ❌ **`jugayganaUserId` como llave de las operaciones de plata.** Todo va por
   `username`. El ID numérico ahora sólo existe para los REPORTES (ver §4.6).
 
-### 4.3 Rate limit — 60 req/min ⚠️ POR INSTANCIA
+### 4.3 Rate limit — 60 req/min POR KEY ⚠️ y POR INSTANCIA
 
-La Partner API permite **60 requests por minuto** y devuelve 429 al pasarse.
-`giroxService` tiene un limitador local de ventana deslizante: `GIROX_MAX_RPM`
-(default **55**, margen de seguridad). Si hay que esperar más de 30s por un lugar en
-la ventana, falla rápido con `rate_limited_local` en vez de colgar la request.
+La Partner API permite **60 requests por minuto POR API KEY** (confirmado por
+soporte de 1girox, 2026-08-15; prometieron subirlo a 180) y devuelve 429 al
+pasarse. `giroxService` tiene un limitador local de ventana deslizante **por
+key**: `GIROX_MAX_RPM` (default **55**) por cada key usada (master, consultas,
+publicistas). Si hay que esperar más de 30s por un lugar en la ventana, falla
+rápido con `rate_limited_local` en vez de colgar la request.
 
-⚠️ **Ese limitador es POR PROCESO.** En AWS EB con N instancias el techo real es
-**N×55/min**, así que el 429 sigue siendo posible. Por eso además se reintenta
-respetando el header `Retry-After`. Si con varias instancias aparecen 429 seguidos,
-**bajar `GIROX_MAX_RPM`** (ej. 30 con 2 instancias), no subirlo.
+**Key de consultas (`GIROX_API_KEY_CONSULTAS`, opcional, 2026-08-15):** una 2ª
+key del MISMO agente que la master. Si está configurada, las lecturas de stats
+(`getPlayerStats` / `getPlayersStatsBatch` → reembolsos, VIP, referidos, datos)
+que irían por la master firman con ella → cupo aparte, y el tráfico de fondo no
+compite con cargas/retiros/SSO. Sin la env, todo va por la master como siempre.
+Las keys de PUBLICISTA no se reemplazan nunca (cada una es la única que ve a
+sus jugadores).
 
-La misma cuota la comparte el script de migración: mientras corre, producción sigue
-pidiendo saldos, cargas y retiros contra los mismos 60/min.
+⚠️ **El limitador local es POR PROCESO.** En AWS EB con N instancias el techo
+real es N×GIROX_MAX_RPM por key, así que el 429 sigue siendo posible. Por eso
+además se reintenta respetando el header `Retry-After`. Con 2 instancias,
+`GIROX_MAX_RPM` = (límite por key)/2: **30** con el límite actual de 60, **90**
+si lo suben a 180.
+
+La misma cuota la comparte el script de migración: mientras corre, producción
+sigue pidiendo saldos, cargas y retiros contra el mismo cupo de la master.
 
 ### 4.4 Idempotencia por `reference` — LA REGLA DE ORO
 
