@@ -303,9 +303,12 @@ que ve a sus jugadores).
 Como la plataforma puede tener límites DISTINTOS por key (2026-08-15: subió a
 180 solo algunas), cada entrada acepta sufijo **`:rpm`** con su techo local
 POR INSTANCIA — ej. `pk_aaa:90,pk_bbb:30` (regla: límite de esa key ÷ N
-instancias). Sin sufijo, usa `GIROX_MAX_RPM` (que sigue siendo el techo de la
-master y de las keys de publicista). La radiografía del boot lo muestra:
-`[girox] config: … keys consultas cargadas: 2 (techos 90, 30/min) …`.
+instancias). Sin sufijo, usa `GIROX_MAX_RPM` (el techo de la master). Las keys
+de PUBLICISTA tienen techo propio `GIROX_PUBLISHER_MAX_RPM` (default 30 =
+60÷2 instancias) — no heredan el de la master, que desde 2026-08-15 corre en
+180/min (GIROX_MAX_RPM=90). La radiografía del boot muestra todo:
+`[girox] config: … keys consultas cargadas: 2 (techos 30, 30/min) ·
+GIROX_MAX_RPM=90 · publicistas=30 (default)/min`.
 
 ⚠️ **El limitador local es POR PROCESO.** En AWS EB con N instancias el techo
 real es N×GIROX_MAX_RPM por key, así que el 429 sigue siendo posible. Por eso

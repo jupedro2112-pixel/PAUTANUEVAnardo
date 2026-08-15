@@ -105,11 +105,18 @@ function getReadsKeys() {
   return _readsKeyConfigs().map((c) => c.key);
 }
 
-/** Techo de la ventana local para UNA key (las de consultas pueden traer el
- *  suyo con `:rpm`; master/publicistas usan GIROX_MAX_RPM). */
+// Techo de las keys de PUBLICISTA (en la plataforma siguen en 60/min): 60 ÷ 2
+// instancias. Env propia por si girox se las sube — NO heredan GIROX_MAX_RPM,
+// que acompaña a la master (180/min desde el 2026-08-15).
+const PUBLISHER_MAX_RPM = Number(process.env.GIROX_PUBLISHER_MAX_RPM || 30);
+
+/** Techo de la ventana local para UNA key: consultas → su sufijo `:rpm`;
+ *  master → GIROX_MAX_RPM; cualquier otra (publicistas) → PUBLISHER_MAX_RPM. */
 function _laneLimit(laneKey) {
   const cfg = _readsKeyConfigs().find((c) => c.key === laneKey);
-  return cfg ? cfg.rpm : MAX_RPM;
+  if (cfg) return cfg.rpm;
+  if (!laneKey || laneKey === 'master' || laneKey === getApiKey()) return MAX_RPM;
+  return PUBLISHER_MAX_RPM;
 }
 
 /** Elige la key de consultas con MÁS LUGAR LIBRE (techo − usado) en su

@@ -19135,7 +19135,8 @@ if (process.env.VERCEL) {
     console.log(
       `[girox] config: key master ${process.env.GIROX_API_KEY ? 'OK' : '⛔ FALTA'} · ` +
       `keys consultas cargadas: ${girox.getReadsKeysSummary()} · ` +
-      `GIROX_MAX_RPM=${process.env.GIROX_MAX_RPM || '55 (default)'}`
+      `GIROX_MAX_RPM=${process.env.GIROX_MAX_RPM || '55 (default)'} · ` +
+      `publicistas=${process.env.GIROX_PUBLISHER_MAX_RPM || '30 (default)'}/min`
     );
 
     await initializeData();

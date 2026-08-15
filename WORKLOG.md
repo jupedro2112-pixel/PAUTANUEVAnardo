@@ -35,6 +35,20 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 181. Techo propio para keys de PUBLICISTA (no heredan más GIROX_MAX_RPM)
+- **Contexto:** con la master en 180 (GIROX_MAX_RPM=90) las keys de
+  publicista heredaban ese 90 — pero en la plataforma siguen en 60.
+- **Fix:** constante `PUBLISHER_MAX_RPM` (env `GIROX_PUBLISHER_MAX_RPM`,
+  default **30** = 60÷2 instancias) para toda key que no sea master ni de
+  consultas. La radiografía de boot ahora también la muestra
+  ("· publicistas=30 (default)/min").
+- **Config final del owner (2026-08-15, ya cargada en SSM):** master 180 →
+  `GIROX_MAX_RPM=90`; consultas `pk_...:30,pk_...:30` (siguen en 60);
+  publicistas default 30. Total 300 req/min contra la plataforma (~8× el
+  pico real que causó el lag). **Back necesita redeploy** (o ya incluido en
+  el deploy que cargue esto).
+- **Validado:** `node --check` OK (giroxService.js, server.js).
+
 ### 180. Techo de rate limit POR KEY con sufijo `:rpm` (1girox subió a 180 solo ALGUNAS keys)
 - **Dato del owner:** la plataforma subió el límite a 180/min pero solo en
   algunas API keys — un `GIROX_MAX_RPM` parejo ya no sirve (90 haría 429 en
