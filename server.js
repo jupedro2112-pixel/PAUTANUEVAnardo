@@ -3575,7 +3575,7 @@ async function _deriveUniqueUsername(name) {
   for (let i = 0; i < 12; i++) {
     const suffix = String(crypto.randomInt(100, 999999)); // 3-6 dígitos
     const candidate = (base + suffix).slice(0, 18);
-    if (!giroxService.validateUsername(candidate).valid) continue;
+    if (!girox.validateUsername(candidate).valid) continue;
     const taken = await findUserByUsernameCI(candidate, { lean: true });
     if (!taken) return candidate;
   }
@@ -3716,9 +3716,7 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     // archivo en producción).
     logger.error(`[landing-signup] error: ${error.message}`);
     try { console.error(`[landing-signup][500] ${error.stack || error.message}`); } catch (_) {}
-    // TEMPORAL (debug 2026-08-15): se expone el error real al cliente para
-    // diagnosticar el 500 sin pulir logs. QUITAR cuando el flujo funcione.
-    res.status(500).json({ error: 'Error del servidor: ' + (error.message || 'desconocido').slice(0, 300) });
+    res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
   }
 });
 

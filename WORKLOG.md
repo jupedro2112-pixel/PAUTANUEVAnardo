@@ -35,6 +35,22 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 187. FIX 500 (real) del alta por landing: `giroxService` no definido — el import es `girox`
+- **Diagnóstico (debug temporal que exponía el error):** "Error del servidor:
+  giroxService is not defined". `_deriveUniqueUsername` llamaba
+  `giroxService.validateUsername(...)`, pero en server.js el cliente se importa
+  como **`girox`** (copié el nombre de giroxPublisherKeys.js, que sí lo llama
+  `giroxService`). `node --check` no lo agarra: es ReferenceError de runtime,
+  no de sintaxis.
+- **Fix:** `giroxService.validateUsername` → `girox.validateUsername`. Quitado
+  el debug que exponía el error al cliente (el 500 vuelve a mensaje genérico;
+  el detalle sigue yendo a stdout para EB).
+- **Nota:** el 502 del panel que vio el owner fue el restart del deploy (EB
+  rolling), transitorio — el ReferenceError estaba dentro del try del handler,
+  no tira el proceso.
+- **Validado:** `node --check` OK. **Back necesita redeploy.** PROBAR: landing
+  → nombre → crea la cuenta y muestra usuario+clave.
+
 ### 186. FIX 500 del alta por landing: `acquisitionSource:'landing'` no estaba en el enum del schema
 - **Síntoma (video del owner, landing viva en Vercel):** "CREAR MI CUENTA" →
   "Error del servidor. Probá de nuevo." La llamada LLEGABA al backend (el CORS
