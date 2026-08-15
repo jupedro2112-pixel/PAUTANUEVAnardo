@@ -1,0 +1,340 @@
+<title>Flujo 1GIROX</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  /* Demo de flujo — mundo visual único (casino nocturno): tema oscuro
+     comprometido, todos los colores explícitos, sin media query. */
+  :root {
+    --bg-0: #070a07;
+    --bg-1: #0f140f;
+    --bg-2: #161d16;
+    --line: rgba(212,175,55,0.28);
+    --gold: #e3bd48;
+    --gold-dim: #9c853a;
+    --green: #25d366;
+    --green-deep: #0f7a3d;
+    --ink: #f3f5f1;
+    --muted: #93a394;
+    --muted-2: #6b786c;
+    --chat-bg: #0c130d;
+    --bubble-in: #1c2a1e;
+    --bubble-out: #114d2b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    background:
+      radial-gradient(1100px 520px at 50% -12%, #16281a 0%, rgba(11,15,11,0) 62%),
+      var(--bg-0);
+    color: var(--ink);
+    min-height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 28px 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .stage { width: 100%; max-width: 400px; }
+
+  /* Marca de agua DEMO */
+  .demo-tag {
+    display: flex; align-items: center; gap: 8px;
+    justify-content: center; margin-bottom: 14px;
+    font-size: 11px; font-weight: 800; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--gold-dim);
+  }
+  .demo-tag::before, .demo-tag::after {
+    content: ""; height: 1px; width: 34px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim));
+  }
+  .demo-tag::after { background: linear-gradient(90deg, var(--gold-dim), transparent); }
+
+  /* Riel de pasos del embudo */
+  .funnel {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-bottom: 18px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+    color: var(--muted-2); text-transform: uppercase;
+  }
+  .funnel .step { transition: color .35s ease; white-space: nowrap; }
+  .funnel .step.on { color: var(--gold); }
+  .funnel .sep { color: var(--muted-2); opacity: .5; }
+
+  .panel {
+    position: relative;
+    background: linear-gradient(180deg, rgba(22,29,22,0.92), rgba(12,16,12,0.94));
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+    overflow: hidden;
+  }
+
+  /* ---------- Pantalla 1: landing ---------- */
+  .screen-landing { padding: 34px 26px 30px; text-align: center; }
+  .age {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 1px;
+    color: #0b0f0b; background: var(--gold); border-radius: 999px;
+    padding: 4px 12px; margin-bottom: 20px;
+  }
+  .brand {
+    font-size: 40px; font-weight: 900; letter-spacing: 1px; line-height: 1;
+    margin-bottom: 8px; text-shadow: 0 2px 22px rgba(227,189,72,0.22);
+  }
+  .brand .g { color: var(--gold); }
+  .brand .x { color: var(--green); }
+  .lede { color: var(--muted); font-size: 14.5px; line-height: 1.5; margin-bottom: 24px; }
+  .field { text-align: left; margin-bottom: 6px; }
+  label { display: block; font-size: 12.5px; font-weight: 700; color: #cfe0d0; margin-bottom: 7px; letter-spacing: .2px; }
+  input {
+    width: 100%; padding: 15px 16px; font-size: 16px; color: var(--ink);
+    background: #0a0f0a; border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 13px; outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  input::placeholder { color: var(--muted-2); }
+  input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(37,211,102,0.15); }
+  .cta {
+    width: 100%; margin-top: 18px; padding: 16px; font-size: 16px; font-weight: 800;
+    color: #05230f; letter-spacing: .3px;
+    background: linear-gradient(135deg, #2ce06e, #0f7a3d);
+    border: none; border-radius: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform .12s ease, filter .2s ease;
+  }
+  .cta:hover { filter: brightness(1.06); }
+  .cta:active { transform: scale(0.985); }
+  .cta:disabled { cursor: default; filter: saturate(0.5) brightness(0.85); }
+  .fine { font-size: 11px; color: var(--muted-2); margin-top: 18px; line-height: 1.55; }
+
+  /* Spinner dentro del CTA */
+  .spin {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.35); border-top-color: #eafff2;
+    animation: rot .7s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  /* ---------- Transición ---------- */
+  .screen { transition: opacity .4s ease, transform .4s ease; }
+  .screen.hide { opacity: 0; transform: translateY(-8px); position: absolute; inset: 0; pointer-events: none; }
+
+  /* ---------- Pantalla 2: chat ---------- */
+  .screen-chat { display: flex; flex-direction: column; height: 560px; background: var(--chat-bg); }
+  .chat-top {
+    display: flex; align-items: center; gap: 11px; padding: 12px 15px;
+    background: var(--bg-2); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
+    background: radial-gradient(circle at 35% 30%, #2a3a2b, #0d140d);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 900; color: var(--gold);
+  }
+  .chat-id { flex: 1; min-width: 0; text-align: left; }
+  .chat-id .n { font-size: 14px; font-weight: 800; color: var(--ink); }
+  .chat-id .s { font-size: 11.5px; color: var(--green); display: flex; align-items: center; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 7px var(--green); }
+  .balance {
+    text-align: right; flex: 0 0 auto;
+    font-size: 11px; color: var(--muted); font-weight: 600;
+  }
+  .balance b { display: block; font-size: 15px; color: var(--gold); font-variant-numeric: tabular-nums; }
+
+  .chat-body {
+    flex: 1; overflow-y: auto; padding: 16px 13px;
+    display: flex; flex-direction: column; gap: 9px;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(37,211,102,0.05), transparent 40%),
+      var(--chat-bg);
+  }
+  .msg {
+    max-width: 82%; padding: 9px 13px; font-size: 13.5px; line-height: 1.4;
+    border-radius: 14px; opacity: 0; transform: translateY(6px);
+    animation: pop .32s ease forwards;
+  }
+  @keyframes pop { to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .msg { animation: none; opacity: 1; transform: none; } }
+  .msg.in { align-self: flex-start; background: var(--bubble-in); border-top-left-radius: 5px; color: #eaf2ea; }
+  .msg.out { align-self: flex-end; background: var(--bubble-out); border-top-right-radius: 5px; color: #eafff2; }
+  .msg .t { display: block; font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 4px; text-align: right; }
+  .sys {
+    align-self: center; font-size: 11px; color: var(--muted-2);
+    background: rgba(255,255,255,0.04); padding: 4px 12px; border-radius: 999px;
+  }
+
+  .chat-input {
+    display: flex; align-items: center; gap: 9px; padding: 11px 12px;
+    background: var(--bg-2); border-top: 1px solid var(--line); flex: 0 0 auto;
+  }
+  .chat-input .box {
+    flex: 1; padding: 11px 14px; font-size: 13px; color: var(--muted-2);
+    background: #0a0f0a; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; text-align: left;
+  }
+  .send {
+    width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto; border: none; cursor: default;
+    background: linear-gradient(135deg, #2ce06e, #0f7a3d); color: #05230f;
+    display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 900;
+  }
+
+  .replay {
+    margin: 14px auto 0; display: block;
+    background: none; border: 1px solid var(--line); color: var(--gold);
+    font-size: 12px; font-weight: 700; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    transition: background .2s;
+  }
+  .replay:hover { background: rgba(227,189,72,0.08); }
+  .caption { text-align: center; color: var(--muted-2); font-size: 11.5px; margin-top: 12px; line-height: 1.5; }
+</style>
+
+<div class="stage">
+  <div class="demo-tag">Demo de flujo · vista previa</div>
+
+  <div class="funnel" id="funnel">
+    <span class="step on" data-step="0">Entra</span>
+    <span class="sep">→</span>
+    <span class="step" data-step="1">Nombre</span>
+    <span class="sep">→</span>
+    <span class="step" data-step="2">Cuenta lista</span>
+    <span class="sep">→</span>
+    <span class="step" data-step="3">Carga en el chat</span>
+  </div>
+
+  <div class="panel">
+    <!-- Pantalla 1 -->
+    <section class="screen screen-landing" id="scLanding">
+      <span class="age">SOLO +18</span>
+      <h1 class="brand"><span class="g">1</span><span class="x">GIROX</span></h1>
+      <p class="lede">Poné tu nombre y entrá a jugar al instante. Sin formularios, sin esperas.</p>
+      <form id="form">
+        <div class="field">
+          <label for="name">Tu nombre</label>
+          <input id="name" type="text" placeholder="Ej: Juan" maxlength="40" autocomplete="off">
+        </div>
+        <button class="cta" id="cta" type="submit">
+          <span id="ctaLabel">Entrar a jugar</span>
+          <span id="ctaArrow">→</span>
+        </button>
+      </form>
+      <p class="fine">Juego para mayores de 18 años. Jugá con responsabilidad.</p>
+    </section>
+
+    <!-- Pantalla 2 -->
+    <section class="screen screen-chat hide" id="scChat">
+      <div class="chat-top">
+        <div class="avatar">1G</div>
+        <div class="chat-id">
+          <div class="n">Cargas 1Girox</div>
+          <div class="s"><span class="dot"></span>en línea</div>
+        </div>
+        <div class="balance">Saldo<b>$0</b></div>
+      </div>
+      <div class="chat-body" id="chatBody"></div>
+      <div class="chat-input">
+        <div class="box">Escribí tu mensaje…</div>
+        <button class="send" aria-label="Enviar">➤</button>
+      </div>
+    </section>
+  </div>
+
+  <button class="replay" id="replay" hidden>↻ Ver el flujo otra vez</button>
+  <p class="caption" id="caption">El visitante entra logueado directo al chat con el cajero — cero fricción.</p>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('form');
+  var nameEl = document.getElementById('name');
+  var cta = document.getElementById('cta');
+  var ctaLabel = document.getElementById('ctaLabel');
+  var ctaArrow = document.getElementById('ctaArrow');
+  var scLanding = document.getElementById('scLanding');
+  var scChat = document.getElementById('scChat');
+  var chatBody = document.getElementById('chatBody');
+  var replay = document.getElementById('replay');
+  var steps = document.querySelectorAll('#funnel .step');
+  var timers = [];
+
+  function setStep(n) {
+    steps.forEach(function (s) {
+      s.classList.toggle('on', Number(s.dataset.step) <= n);
+    });
+  }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function after(ms, fn) { timers.push(setTimeout(fn, ms)); }
+
+  function firstName(v) {
+    var t = (v || '').trim().split(/\s+/)[0] || 'Juan';
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  function username(v) {
+    var base = (v || 'juan').trim().toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '') || 'juan';
+    return base.slice(0, 12) + Math.floor(100 + Math.random() * 900);
+  }
+
+  function addMsg(kind, html, delay) {
+    after(delay, function () {
+      var el = document.createElement('div');
+      el.className = kind === 'sys' ? 'sys' : 'msg ' + kind;
+      el.innerHTML = html;
+      chatBody.appendChild(el);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    });
+  }
+
+  function runChat(name) {
+    var n = firstName(name);
+    var u = username(name);
+    chatBody.innerHTML = '';
+    addMsg('sys', 'Ingresaste como <b style="color:#e3bd48">' + u + '</b>', 200);
+    addMsg('in', '¡Hola ' + n + '! 👋 Bienvenido a 1GIROX. Soy tu cajero, estoy para ayudarte a cargar.', 700);
+    addMsg('in', '¿Cuánto querés cargar? Te paso el CBU y en cuanto transferís te acredito las fichas al toque. 💸', 1600);
+    after(2500, function () { setStep(3); });
+    addMsg('out', 'Hola! Quiero cargar $5000 <span class="t">14:52 ✓✓</span>', 2700);
+    addMsg('in', '¡Genial! Ahí te paso el CBU 👇 Apenas transferís, cargo tus fichas. 🎰', 3600);
+    after(4000, function () {
+      replay.hidden = false;
+      document.getElementById('caption').textContent =
+        'Del clic al chat con el cajero en segundos — el usuario ya quedó atribuido a la campaña.';
+    });
+  }
+
+  function start(name) {
+    cta.disabled = true;
+    ctaArrow.style.display = 'none';
+    ctaLabel.textContent = 'Creando tu cuenta';
+    var sp = document.createElement('span');
+    sp.className = 'spin';
+    cta.appendChild(sp);
+    setStep(1);
+
+    after(1100, function () { setStep(2); });
+    after(1500, function () {
+      scLanding.classList.add('hide');
+      scChat.classList.remove('hide');
+      runChat(name);
+    });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (cta.disabled) return;
+    start(nameEl.value);
+  });
+
+  replay.addEventListener('click', function () {
+    clearTimers();
+    replay.hidden = true;
+    scChat.classList.add('hide');
+    scLanding.classList.remove('hide');
+    cta.disabled = false;
+    ctaLabel.textContent = 'Entrar a jugar';
+    ctaArrow.style.display = '';
+    var sp = cta.querySelector('.spin'); if (sp) sp.remove();
+    nameEl.value = '';
+    setStep(0);
+    document.getElementById('caption').textContent =
+      'El visitante entra logueado directo al chat con el cajero — cero fricción.';
+    nameEl.focus();
+  });
+})();
+</script>
