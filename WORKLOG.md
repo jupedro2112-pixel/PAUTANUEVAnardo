@@ -35,6 +35,30 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 178. Pulido del chat sobre el casino (5 reclamos del owner con capturas, sobre #176)
+1. **Falso "¿El casino no termina de cargar?":** el aviso salía a los 15s
+   TAPANDO el casino ya funcionando (el watchdog no se cancelaba nunca).
+   Ahora el `load` del iframe lo cancela; para el caso raro de app colgada
+   por cookies bloqueadas queda el "↗ Abrir aparte" fijo de la barra.
+2. **Barra superior en UNA línea:** en celu los 3 botones se apilaban.
+   Ahora: "🎰" (sin la palabra CASINO) + "💬 Cargar acá" + "↗ Abrir aparte"
+   + "← Volver" (antes "← Volver a Chat de cargas"), font 12px, sin wrap,
+   con scroll horizontal de fallback si el ancho no da.
+3. **"No se puede bajar del todo" en el panel:** el piso `min-height:170px`
+   de `.chat-container` empujaba la barra de escribir fuera del panel. Al
+   montar se pisa con `min-height:0` (se restaura al desmontar) y el scroll
+   al fondo va tras `requestAnimationFrame` (layout ya reacomodado).
+4. **Panel 20% más bajo:** 62% → **50%** de alto (tapaba mucho juego).
+5. **Más mensajes a la vista:** dentro del panel se OCULTA la cabecera
+   "Cargas 1Girox" (avatar/en línea/🌙/🔔/🔥) — el panel ya tiene título
+   propio — y ese título pasa de "Chat de cargas" a **"💬 Chat rápido"**.
+   Al volver a la página, la cabecera reaparece intacta.
+- **Validado:** `node --check` OK (ui.js, SW). **SW a v102.** Solo front.
+  PROBAR: casino cargado → NO aparece más el aviso de "no termina de
+  cargar"; barra en 1 línea en celu; abrir Chat rápido → se ve título,
+  mensajes hasta el último y barra de escribir completa, mitad del juego
+  visible; cerrar y volver a la página → chat normal con su cabecera.
+
 ### 177. SEGUNDA API KEY de girox para consultas (el límite es POR KEY) + limitador local por key
 - **Contexto:** ante el pedido del #175, soporte de 1girox respondió: el
   límite de 60/min es POR KEY (no por cuenta), se puede crear otra key desde

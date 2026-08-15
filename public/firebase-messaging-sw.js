@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v101'; // v101: botón "💬 Cargar acá" en el casino — el chat de cargas real se abre en un panel sobre el juego
+const CACHE_VERSION = 'v102'; // v102: pulido del chat sobre el casino (50% alto, sin cabecera duplicada, barra en 1 línea, chau falso "no termina de cargar")
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
