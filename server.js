@@ -19129,6 +19129,15 @@ if (process.env.VERCEL) {
       console.warn('⚠️  ADVERTENCIA: JWT_SECRET es corto (' + JWT_SECRET.length + ' caracteres). Se recomienda 32+ para mayor seguridad.');
     }
 
+    // Radiografía de la config girox al arrancar (diagnóstico lag nocturno):
+    // así los logs de EB dicen al toque si las keys de consultas CARGARON y
+    // con qué techo local corre el limitador — sin adivinar desde los síntomas.
+    console.log(
+      `[girox] config: key master ${process.env.GIROX_API_KEY ? 'OK' : '⛔ FALTA'} · ` +
+      `keys consultas cargadas: ${girox.getReadsKeysCount()} · ` +
+      `GIROX_MAX_RPM=${process.env.GIROX_MAX_RPM || '55 (default)'}`
+    );
+
     await initializeData();
     await setupRedisAdapter();
     // Worker periódico que reprocesa la cola de webhooks a fb-ads.

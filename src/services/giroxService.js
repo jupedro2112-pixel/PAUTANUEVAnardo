@@ -41,7 +41,23 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
-const logger = require('../utils/logger');
+const _fileLogger = require('../utils/logger');
+// ⚠️ En producción winston escribe SOLO a archivos locales (logs/*.log) que NO
+// entran en el bundle de logs de EB → la saturación del limitador, los
+// reintentos y los 429 de este cliente eran INVISIBLES para el diagnóstico
+// (lag nocturno del 13-15/08: los logs solo mostraban el error del caller).
+// Espejo de warn/error a consola: web.stdout.log sí los captura.
+const logger = {
+  info: function (m) { _fileLogger.info(m); },
+  warn: function (m) {
+    _fileLogger.warn(m);
+    try { console.warn(new Date().toISOString().slice(0, 19).replace('T', ' ') + ' [WARN] ' + m); } catch (_) {}
+  },
+  error: function (m) {
+    _fileLogger.error(m);
+    try { console.error(new Date().toISOString().slice(0, 19).replace('T', ' ') + ' [ERROR] ' + m); } catch (_) {}
+  }
+};
 
 // ============================================================
 // CONFIG (lazy)
@@ -1081,6 +1097,8 @@ module.exports = {
   getPlayUrl,
   getBaseUrl,
   validateUsername,
+  // diagnóstico: cuántas keys de consultas cargó (log de arranque en server.js)
+  getReadsKeysCount: function () { return getReadsKeys().length; },
   // ruteo por dueño del jugador (server.js inyecta el resolver username→apiKey)
   setKeyResolver,
   // jugadores

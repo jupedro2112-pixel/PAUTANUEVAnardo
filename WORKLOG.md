@@ -35,6 +35,34 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 179. Lag nocturno OTRA VEZ (madrugada 15/8, post-deploy con keys) + los logs girox eran INVISIBLES → espejo a stdout + radiografía al boot
+- **Reporte:** owner deployó (~03:05-03:24 UTC) con las keys de consultas
+  configuradas, y a las 04:15-04:36 UTC (01:15-01:36 ART) volvió el lag:
+  fallas "plataforma saturada" en SSO, auto-claim de bonus, sync de
+  contraseña Y TAMBIÉN el batch VIP (que debería ir por las keys nuevas).
+- **Hallazgo clave del diagnóstico:** `giroxService` loguea con el winston
+  de `src/utils/logger.js`, que en producción escribe SOLO a archivos
+  locales (`logs/*.log`) — NO a stdout → los warns del limitador (qué carril
+  se saturó, si dice "key consultas"), los reintentos y los 429 reales NUNCA
+  aparecieron en web.stdout.log. Imposible confirmar desde los logs de EB si
+  las keys de consultas cargaron o qué carril se llenó.
+- **Hipótesis principal (a confirmar con el próximo boot):** las keys de
+  consultas NO cargaron (nombre/formato del parámetro SSM) y además
+  `GIROX_MAX_RPM=30` achicó el carril único a la mitad → peor que antes.
+- **Fix de visibilidad (este commit):**
+  1. giroxService: warn/error se ESPEJAN a consola (web.stdout.log los
+     captura) además del archivo winston.
+  2. Log de arranque en el bootstrap: `[girox] config: key master OK · keys
+     consultas cargadas: N · GIROX_MAX_RPM=X` → el próximo deploy dice al
+     toque si la config real es la esperada.
+- **⚠️ ACCIÓN OWNER:** verificar en CloudShell el parámetro
+  `/nardo1girox/prod/GIROX_API_KEY_CONSULTAS` (nombre EXACTO, keys separadas
+  por coma, SecureString) y `GIROX_MAX_RPM=30`; redeploy; mirar en el log de
+  arranque "keys consultas cargadas: 2". Si el lag vuelve, los logs ahora
+  van a decir qué carril se saturó ("key consultas" o master).
+- **Validado:** `node --check` OK (giroxService.js, server.js). **Back
+  necesita redeploy.**
+
 ### 178. Pulido del chat sobre el casino (5 reclamos del owner con capturas, sobre #176)
 1. **Falso "¿El casino no termina de cargar?":** el aviso salía a los 15s
    TAPANDO el casino ya funcionando (el watchdog no se cancelaba nunca).
