@@ -79,23 +79,53 @@ function getApiKey() {
  *  sigue por la key master como siempre.
  *  ⚠️ TODAS deben crearse bajo el MISMO agente que la master: una key de otro
  *  agente NO VE a los jugadores (mismo motivo del ruteo por publicista). */
-function getReadsKeys() {
+/** Parsea la lista de consultas. Cada entrada acepta un techo PROPIO con el
+ *  sufijo `:rpm` (POR INSTANCIA, mismo criterio que GIROX_MAX_RPM): la
+ *  plataforma subió el límite a 180 solo en ALGUNAS keys (2026-08-15), así
+ *  que ya no alcanza un techo parejo. Ej. con 2 instancias, una key de 180 y
+ *  una de 60: `pk_aaa:90,pk_bbb:30`. Sin sufijo → GIROX_MAX_RPM.
+ *  @returns {Array<{key:string, rpm:number}>} */
+function _readsKeyConfigs() {
   const raw = process.env.GIROX_API_KEY_CONSULTAS || '';
-  return raw.split(',').map((k) => k.trim()).filter(Boolean);
+  return raw.split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((e) => {
+      const i = e.lastIndexOf(':');
+      if (i > 0) {
+        const rpm = Number(e.slice(i + 1));
+        if (Number.isFinite(rpm) && rpm > 0) return { key: e.slice(0, i).trim(), rpm };
+      }
+      return { key: e, rpm: MAX_RPM };
+    })
+    .filter((c) => c.key);
 }
 
-/** Elige la key de consultas con más lugar en su ventana de rate limit. */
+function getReadsKeys() {
+  return _readsKeyConfigs().map((c) => c.key);
+}
+
+/** Techo de la ventana local para UNA key (las de consultas pueden traer el
+ *  suyo con `:rpm`; master/publicistas usan GIROX_MAX_RPM). */
+function _laneLimit(laneKey) {
+  const cfg = _readsKeyConfigs().find((c) => c.key === laneKey);
+  return cfg ? cfg.rpm : MAX_RPM;
+}
+
+/** Elige la key de consultas con MÁS LUGAR LIBRE (techo − usado) en su
+ *  ventana: una key de 180 absorbe proporcionalmente más que una de 60. */
 function _pickReadsKey() {
-  const keys = getReadsKeys();
-  if (keys.length === 0) return null;
-  if (keys.length === 1) return keys[0];
+  const configs = _readsKeyConfigs();
+  if (configs.length === 0) return null;
+  if (configs.length === 1) return configs[0].key;
   const now = Date.now();
-  let best = keys[0];
-  let bestLoad = Infinity;
-  for (const k of keys) {
-    const arr = _laneTimestamps.get(k) || [];
+  let best = configs[0].key;
+  let bestFree = -Infinity;
+  for (const c of configs) {
+    const arr = _laneTimestamps.get(c.key) || [];
     const load = arr.filter((t) => now - t < WINDOW_MS).length;
-    if (load < bestLoad) { bestLoad = load; best = k; }
+    const free = c.rpm - load;
+    if (free > bestFree) { bestFree = free; best = c.key; }
   }
   return best;
 }
@@ -136,11 +166,12 @@ function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
  *  Devuelve false si esperar sería excesivo. */
 async function _acquireSlot(laneKey) {
   const lane = laneKey || 'master';
+  const limit = _laneLimit(lane); // las keys de consultas pueden tener techo propio (:rpm)
   const deadline = Date.now() + MAX_QUEUE_WAIT_MS;
   for (;;) {
     const now = Date.now();
     const arr = (_laneTimestamps.get(lane) || []).filter((t) => now - t < WINDOW_MS);
-    if (arr.length < MAX_RPM) {
+    if (arr.length < limit) {
       arr.push(now);
       _laneTimestamps.set(lane, arr);
       return true;
@@ -298,7 +329,7 @@ async function _request({ method, path, body, label, retryable = true, username 
     }
 
     if (!(await _acquireSlot(keyOverride || getApiKey()))) {
-      logger.warn(`[girox] ${label} — rate limit local saturado (${MAX_RPM}/min${keyOverride && getReadsKeys().includes(keyOverride) ? ', key consultas' : ''}), abortando`);
+      logger.warn(`[girox] ${label} — rate limit local saturado (${_laneLimit(keyOverride || getApiKey())}/min${keyOverride && getReadsKeys().includes(keyOverride) ? ', key consultas' : ''}), abortando`);
       return { ok: false, error: 'La plataforma está saturada. Reintentá en un minuto.', code: 'rate_limited_local', httpStatus: null };
     }
 
@@ -1099,6 +1130,12 @@ module.exports = {
   validateUsername,
   // diagnóstico: cuántas keys de consultas cargó (log de arranque en server.js)
   getReadsKeysCount: function () { return getReadsKeys().length; },
+  // ídem con el techo local de cada una, ej. "2 (techos 90, 30/min)"
+  getReadsKeysSummary: function () {
+    const c = _readsKeyConfigs();
+    if (c.length === 0) return '0';
+    return `${c.length} (techos ${c.map((x) => x.rpm).join(', ')}/min)`;
+  },
   // ruteo por dueño del jugador (server.js inyecta el resolver username→apiKey)
   setKeyResolver,
   // jugadores

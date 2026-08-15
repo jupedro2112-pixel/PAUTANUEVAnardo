@@ -19134,7 +19134,7 @@ if (process.env.VERCEL) {
     // con qué techo local corre el limitador — sin adivinar desde los síntomas.
     console.log(
       `[girox] config: key master ${process.env.GIROX_API_KEY ? 'OK' : '⛔ FALTA'} · ` +
-      `keys consultas cargadas: ${girox.getReadsKeysCount()} · ` +
+      `keys consultas cargadas: ${girox.getReadsKeysSummary()} · ` +
       `GIROX_MAX_RPM=${process.env.GIROX_MAX_RPM || '55 (default)'}`
     );
 

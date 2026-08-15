@@ -35,6 +35,27 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 180. Techo de rate limit POR KEY con sufijo `:rpm` (1girox subió a 180 solo ALGUNAS keys)
+- **Dato del owner:** la plataforma subió el límite a 180/min pero solo en
+  algunas API keys — un `GIROX_MAX_RPM` parejo ya no sirve (90 haría 429 en
+  las keys que siguen en 60; 30 desperdicia las de 180).
+- **Código (giroxService):** cada entrada de `GIROX_API_KEY_CONSULTAS`
+  acepta sufijo `:rpm` con su techo POR INSTANCIA (mismo criterio que
+  GIROX_MAX_RPM = límite de esa key ÷ N instancias). Ej. 2 instancias, una
+  key de 180 y una de 60: `pk_aaa:90,pk_bbb:30`. Sin sufijo → GIROX_MAX_RPM
+  (que sigue siendo el techo de master y publicistas). El balanceador ahora
+  elige por LUGAR LIBRE (techo − usado): la key de 180 absorbe
+  proporcionalmente más. El log de saturación y la radiografía de boot
+  muestran el techo real por key ("keys consultas cargadas: 2 (techos 90,
+  30/min)").
+- **⚠️ ACCIÓN OWNER:** averiguar CUÁLES keys quedaron en 180 (panel girox o
+  soporte) y ajustar SSM con la regla techo = límite÷2: consultas con
+  sufijo por key; si la MASTER quedó en 180 → GIROX_MAX_RPM=90 (los
+  publicistas comparten ese default, pero su tráfico es mínimo, sin riesgo
+  real). Redeploy y verificar la línea `[girox] config:` del boot.
+- **Validado:** `node --check` OK + parseo probado standalone (sufijo
+  inválido cae al default). **Back necesita redeploy.**
+
 ### 179. Lag nocturno OTRA VEZ (madrugada 15/8, post-deploy con keys) + los logs girox eran INVISIBLES → espejo a stdout + radiografía al boot
 - **Reporte:** owner deployó (~03:05-03:24 UTC) con las keys de consultas
   configuradas, y a las 04:15-04:36 UTC (01:15-01:36 ART) volvió el lag:
