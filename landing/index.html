@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>1GIROX — Entrá a jugar</title>
+<!--
+  LANDING PUENTE (dominio de marketing propio) — 2026-08-15
+  ============================================================
+  Poné este archivo en el dominio PUENTE (ej. promo1girox.com). El visitante
+  pone su nombre y se crea la cuenta en 1girox atribuida a la pauta; después el
+  navegador salta LOGUEADO a chat1girox.com.
+
+  CONFIGURAR ANTES DE SUBIR (constantes de abajo):
+    API_BASE      → https://chat1girox.com   (el backend real)
+    CAMPAIGN_CODE → el código de campaña del publicista (o se toma de la URL:
+                    ?p=CODIGO, ?campaign=CODIGO, o el path /CODIGO)
+
+  EN EL BACKEND: agregá el dominio de ESTA landing a ALLOWED_ORIGINS (SSM), si no
+  el navegador bloquea la llamada por CORS.
+
+  ⚠️ HONESTIDAD ANTE META: esta página debe mostrar la MISMA oferta real que ve
+  el usuario (juego 18+). Mostrarle al revisor de Meta algo distinto de esto es
+  cloaking y termina en baneo de dominio, pixel y cuenta.
+-->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #1c2a1e 0%, #0c0f0c 60%, #070807 100%);
+    color: #f2f2f0; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: rgba(18,20,18,0.85);
+    border: 1px solid rgba(212,175,55,0.35); border-radius: 20px;
+    padding: 30px 24px calc(24px + env(safe-area-inset-bottom,0px));
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5); text-align: center;
+  }
+  .brand { font-size: 30px; font-weight: 900; letter-spacing: 1px; color: #d4af37; margin: 0 0 4px; }
+  .brand span { color: #25d366; }
+  .tag { color: #9fb0a0; font-size: 14px; margin: 0 0 22px; }
+  .age { display: inline-block; font-size: 12px; font-weight: 800; color: #0c0f0c;
+    background: #d4af37; border-radius: 999px; padding: 3px 10px; margin-bottom: 18px; }
+  label { display: block; text-align: left; font-size: 13px; font-weight: 700; color: #cfe0d0; margin: 0 0 6px; }
+  input {
+    width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.18); background: #0e120e; color: #fff; outline: none;
+  }
+  input:focus { border-color: #25d366; }
+  button {
+    width: 100%; margin-top: 16px; padding: 15px; font-size: 16px; font-weight: 800;
+    color: #062012; background: linear-gradient(135deg, #25d366, #128c4a);
+    border: none; border-radius: 12px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .msg { min-height: 18px; font-size: 13px; margin-top: 12px; }
+  .msg.err { color: #ff8a8a; }
+  .msg.ok { color: #7ee2a0; }
+  .fine { font-size: 11px; color: #7d8a7e; margin-top: 18px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="age">SOLO +18</div>
+    <h1 class="brand">1<span>GIROX</span></h1>
+    <p class="tag">Poné tu nombre y entrá a jugar al instante.</p>
+    <form id="f" autocomplete="off">
+      <label for="name">Tu nombre</label>
+      <input id="name" name="name" type="text" placeholder="Ej: Juan" maxlength="60" required>
+      <button id="btn" type="submit">Entrar a jugar →</button>
+      <div id="msg" class="msg" role="status" aria-live="polite"></div>
+    </form>
+    <p class="fine">
+      Juego para mayores de 18 años. Jugá con responsabilidad.
+      Al ingresar aceptás nuestros términos y política de privacidad.
+    </p>
+  </main>
+
+<script>
+(function () {
+  // ==== CONFIGURAR ====
+  var API_BASE = 'https://chat1girox.com';            // backend real
+  var CAMPAIGN_CODE = '';                              // fijo, o vacío para tomar de la URL
+  // ====================
+
+  // Código de campaña: constante, ?p= / ?campaign=, o el primer segmento del path (/CODIGO).
+  function resolveCampaign() {
+    if (CAMPAIGN_CODE) return CAMPAIGN_CODE;
+    var q = new URLSearchParams(location.search);
+    var c = q.get('p') || q.get('campaign');
+    if (c) return c;
+    var seg = location.pathname.replace(/^\/+/, '').split('/')[0];
+    if (seg && /^[A-Za-z0-9_-]{3,40}$/.test(seg)) return seg;
+    return '';
+  }
+  function utmFromUrl() {
+    var q = new URLSearchParams(location.search);
+    return {
+      source: q.get('utm_source'), medium: q.get('utm_medium'),
+      campaign: q.get('utm_campaign'), content: q.get('utm_content'), term: q.get('utm_term')
+    };
+  }
+  function cookie(name) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  var form = document.getElementById('f');
+  var btn = document.getElementById('btn');
+  var msg = document.getElementById('msg');
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = document.getElementById('name').value.trim();
+    var campaign = resolveCampaign();
+    msg.className = 'msg';
+    msg.textContent = '';
+
+    if (name.length < 2) { msg.className = 'msg err'; msg.textContent = 'Escribí tu nombre.'; return; }
+    if (!campaign) { msg.className = 'msg err'; msg.textContent = 'Link inválido: falta el código de campaña.'; return; }
+
+    btn.disabled = true;
+    msg.className = 'msg';
+    msg.textContent = 'Creando tu cuenta…';
+
+    fetch(API_BASE + '/api/landing/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        campaignCode: campaign,
+        utm: utmFromUrl(),
+        fbc: cookie('_fbc'),
+        fbp: cookie('_fbp'),
+        landingUrl: location.href
+      })
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (res.ok && res.d && res.d.accessUrl) {
+        msg.className = 'msg ok';
+        msg.textContent = '¡Listo! Entrando…';
+        window.location.href = res.d.accessUrl;   // salta LOGUEADO a chat1girox.com
+      } else {
+        btn.disabled = false;
+        msg.className = 'msg err';
+        msg.textContent = (res.d && res.d.error) || 'No pudimos crear tu cuenta. Probá de nuevo.';
+      }
+    })
+    .catch(function () {
+      btn.disabled = false;
+      msg.className = 'msg err';
+      msg.textContent = 'Sin conexión. Probá de nuevo.';
+    });
+  });
+})();
+</script>
+</body>
+</html>

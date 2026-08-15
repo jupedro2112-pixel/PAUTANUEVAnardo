@@ -35,6 +35,47 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 182. ALTA POR LANDING externa (solo-nombre, sin SMS): endpoint `/api/landing/signup` + landing puente
+- **Pedido del owner:** landing en un dominio PUENTE propio donde el visitante
+  pone SOLO un nombre → se crea el usuario en 1girox atribuido a la pauta, se
+  vincula a chat1girox y entra directo al chat con el agente para cargar y
+  jugar. Anti-abuso decidido: NO se pide SMS al crear; el SMS se exige recién
+  AL RETIRAR (y no se le avisa al cliente al principio).
+- **Clave — casi todo ya existía:** el candado del retiro
+  (`/api/withdrawal/request` ya rechaza sin `phoneVerified` →
+  `PHONE_VERIFICATION_REQUIRED`), la verificación de teléfono para un usuario
+  logueado (`/api/auth/verify-phone/send-otp` + `/confirm`), el link de acceso
+  de un solo uso (`issueAccessLinkFor`) y la atribución de campaña YA estaban.
+  Faltaba solo el alta solo-nombre pública (register-quick pide user+pass y
+  está deshabilitado con 410).
+- **Endpoint nuevo `POST /api/landing/signup`** (público, `landingIpLimiter`):
+  nombre + campaignCode (+utm/fbc/fbp/landingUrl). Deriva un username 1girox
+  válido y ÚNICO del nombre (base saneada sin acentos + sufijo aleatorio,
+  reintenta ante colisión) y password aleatoria (el cliente nunca la tipea:
+  entra por el link). Crea en 1girox PRIMERO — con la **key del publicista**
+  si la campaña la tiene (si no, master), setea `giroxOwnerCampaign` — y si
+  falla NO deja cuenta local huérfana. Luego crea la cuenta local
+  `phoneVerified:false` + CAPI/fb-ads CompleteRegistration, y devuelve
+  `accessUrl` (link de un solo uso a chat1girox). La landing redirige ahí →
+  cliente logueado.
+- **Anti-abuso:** límite por IP (`LANDING_SIGNUP_MAX_PER_IP_HOUR`, default 8)
+  para que un bot no queme el cupo de la API de 1girox; kill-switch
+  `LANDING_SIGNUP_DISABLED=true`; hook opcional de captcha dejado documentado.
+- **Landing puente:** `landing/index.html` (archivo suelto, va en el dominio
+  puente, NO en public/). Nombre + botón + aviso 18+; toma el código de
+  `?p=`/`?campaign=`/path; postea al endpoint y salta al accessUrl. Constantes
+  `API_BASE` y `CAMPAIGN_CODE` a completar arriba del script.
+- **⚠️ ACCIÓN OWNER:** (1) subir `landing/index.html` al dominio puente con
+  `API_BASE=https://chat1girox.com`; (2) agregar ese dominio a
+  `ALLOWED_ORIGINS` en SSM (si no, CORS bloquea); (3) redeploy del back.
+  ⚠️ La landing debe mostrar la MISMA oferta real que ve el usuario — mostrarle
+  a Meta algo distinto es cloaking (baneo de dominio+pixel+cuenta).
+- **Validado:** `node --check` OK (server.js) + parseo del HTML. **Back
+  necesita redeploy.** PROBAR: abrir la landing con `?p=UNCODIGO` → poné un
+  nombre → cae logueado en chat1girox y puede cargar; pedir un retiro → pide
+  SMS; en 1girox el jugador aparece bajo el sub-agente correcto si la campaña
+  es de publicista.
+
 ### 181. Techo propio para keys de PUBLICISTA (no heredan más GIROX_MAX_RPM)
 - **Contexto:** con la master en 180 (GIROX_MAX_RPM=90) las keys de
   publicista heredaban ese 90 — pero en la plataforma siguen en 60.

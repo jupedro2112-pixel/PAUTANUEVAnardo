@@ -300,6 +300,20 @@ const registerIpLimiter = createIpSmsLimiter(
   'register'
 );
 
+// Alta por LANDING externa (solo-nombre, sin SMS): límite por IP para que un bot
+// no spamee la creación y queme el cupo de la API de 1girox (cada alta = 1 request
+// a la plataforma). Un poco más holgado que el registro normal (una landing legítima
+// puede tener varias altas desde la misma red — locutorio, wifi compartida) pero
+// acotado. Configurable por env. Ver POST /api/landing/signup.
+const landingIpStore = new Map();
+const landingIpLimiter = createIpSmsLimiter(
+  landingIpStore,
+  60 * 60 * 1000,
+  Number(process.env.LANDING_SIGNUP_MAX_PER_IP_HOUR || 8),
+  'Demasiadas cuentas creadas desde tu conexión. Probá de nuevo en un rato.',
+  'landing'
+);
+
 // ============================================
 // SEGURIDAD - HEADERS DE SEGURIDAD
 // ============================================
@@ -3512,6 +3526,171 @@ app.post('/api/auth/register-quick', authLimiter, registerIpLimiter, async (req,
   } catch (error) {
     logger.error(`register-quick error: ${error.message}`);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================================
+// ALTA POR LANDING EXTERNA (solo-nombre, sin SMS) — 2026-08-15
+// ------------------------------------------------------------
+// Flujo pedido por el owner: una landing en un dominio PUENTE propio (agregado a
+// ALLOWED_ORIGINS) pide SOLO un nombre; con eso se crea el usuario en 1girox,
+// se vincula a chat1girox atribuido a la pauta, y se devuelve un LINK DE ACCESO
+// de un solo uso para que el cliente caiga logueado en el chat y ya pueda cargar
+// y jugar — sin fricción y sin mencionar SMS.
+//   • El SMS NO se pide acá: el candado vive en el RETIRO (/api/withdrawal/request
+//     ya exige phoneVerified). Entra sin verificar, retira solo tras verificar.
+//   • Nombre → username 1girox válido y ÚNICO (base saneada + sufijo aleatorio,
+//     reintenta ante colisión local o en la plataforma). Password autogenerada
+//     (el cliente nunca la escribe: entra por el link y luego puede resetearla
+//     por SMS si hiciera falta).
+//   • Kill-switch: LANDING_SIGNUP_DISABLED=true lo apaga sin tocar código.
+//   • Anti-abuso: límite por IP (landingIpLimiter). Hook opcional de captcha:
+//     si algún día se configura, validar req.body.captchaToken antes de crear.
+function _sanitizeUsernameBase(name) {
+  const noAccents = String(name || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let base = noAccents.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (base.length > 12) base = base.slice(0, 12);   // deja lugar para el sufijo (máx 18)
+  if (base.length < 3) base = 'gx' + base;           // nombres muy cortos / vacíos
+  return base;
+}
+async function _deriveUniqueUsername(name) {
+  const base = _sanitizeUsernameBase(name);
+  for (let i = 0; i < 12; i++) {
+    const suffix = String(crypto.randomInt(100, 999999)); // 3-6 dígitos
+    const candidate = (base + suffix).slice(0, 18);
+    if (!giroxService.validateUsername(candidate).valid) continue;
+    const taken = await findUserByUsernameCI(candidate, { lean: true });
+    if (!taken) return candidate;
+  }
+  return null; // improbable: 12 intentos con sufijo aleatorio
+}
+
+app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
+  try {
+    if (String(process.env.LANDING_SIGNUP_DISABLED || '').toLowerCase() === 'true') {
+      return res.status(410).json({ error: 'El registro rápido no está disponible en este momento.' });
+    }
+
+    const { name, campaignCode, utm, fbc, fbp, landingUrl } = req.body || {};
+
+    const nameT = (typeof name === 'string' ? name : '').trim();
+    if (nameT.length < 2 || nameT.length > 60) {
+      return res.status(400).json({ error: 'Ingresá tu nombre.' });
+    }
+    if (!campaignCode || typeof campaignCode !== 'string') {
+      return res.status(400).json({ error: 'Falta el código de campaña.' });
+    }
+
+    const normalizedCode = String(campaignCode).toUpperCase().trim();
+    const campaign = await Campaign.findOne({ code: normalizedCode, isActive: true }).lean();
+    if (!campaign) {
+      return res.status(400).json({ error: 'Código de pauta inválido o inactivo.' });
+    }
+
+    const username = await _deriveUniqueUsername(nameT);
+    if (!username) {
+      return res.status(503).json({ error: 'No pudimos generar tu usuario. Probá de nuevo.' });
+    }
+    // Password aleatoria fuerte: el cliente entra por el link, no la tipea.
+    const password = crypto.randomBytes(9).toString('base64url').slice(0, 12);
+
+    // 1) Crear en 1girox PRIMERO (igual que register-quick): si falla, no dejamos
+    //    una cuenta local huérfana. Si la campaña tiene key de publicista, el
+    //    jugador se crea bajo ESE sub-agente (si no, la comisión iría mal atribuida).
+    let giroxOwner = null;
+    try {
+      const hasPubKey = await Campaign.hasGiroxApiKey(campaign.code);
+      if (hasPubKey) {
+        const r = await giroxPublisherKeys.createUserAsPublisher(campaign.code, { username, password });
+        if (!r.success) {
+          logger.warn(`[landing-signup] alta por publicista falló ${campaign.code}/${username}: ${r.error}`);
+          return res.status(400).json({ error: 'No pudimos crear tu cuenta en la plataforma. Probá de nuevo en un momento.' });
+        }
+        giroxOwner = campaign.code; // sus operaciones se firman con la key de la campaña
+      } else {
+        const r = await girox.syncUserToPlatform({ username, password });
+        if (!r.success && !r.alreadyExists) {
+          logger.warn(`[landing-signup] sync 1girox (master) falló para ${username}: ${r.error}`);
+          return res.status(400).json({ error: 'No pudimos crear tu cuenta en la plataforma. Probá de nuevo en un momento.' });
+        }
+      }
+    } catch (gErr) {
+      logger.error(`[landing-signup] excepción creando en 1girox ${username}: ${gErr.message}`);
+      return res.status(503).json({ error: 'La plataforma está demorada. Probá de nuevo en un momento.' });
+    }
+
+    // 2) Crear la cuenta local: sin teléfono (phoneVerified:false → el retiro pedirá SMS).
+    const userId = uuidv4();
+    let newReferralCode = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = generateReferralCode();
+      const collision = await User.findOne({ referralCode: candidate }).lean();
+      if (!collision) { newReferralCode = candidate; break; }
+    }
+    const _fbCtx = metaCapi.extractRequestContext(req);
+    const metaFbc = sanitizeFbCookie(fbc) || sanitizeFbCookie(_fbCtx.fbc);
+    const metaFbp = sanitizeFbCookie(fbp) || sanitizeFbCookie(_fbCtx.fbp);
+
+    const newUser = await User.create({
+      id: userId,
+      username,
+      password,
+      email: null,
+      phone: null,
+      phoneVerified: false,
+      phoneVerificationPending: true,
+      role: 'user',
+      accountNumber: generateAccountNumber(),
+      balance: 0,
+      createdAt: new Date(),
+      isActive: true,
+      giroxUserId: null,
+      giroxSyncStatus: 'synced',
+      giroxPasswordSynced: true,
+      giroxOwnerCampaign: giroxOwner,
+      referralCode: newReferralCode,
+      acquisitionCampaign: normalizedCode,
+      acquisitionSource: 'landing',
+      acquisitionUtm: {
+        source: utm && utm.source ? String(utm.source).slice(0, 100) : null,
+        medium: utm && utm.medium ? String(utm.medium).slice(0, 100) : null,
+        campaign: utm && utm.campaign ? String(utm.campaign).slice(0, 100) : null,
+        content: utm && utm.content ? String(utm.content).slice(0, 100) : null,
+        term: utm && utm.term ? String(utm.term).slice(0, 100) : null
+      },
+      acquiredAt: new Date(),
+      metaFbc,
+      metaFbp,
+      landingUrl: (typeof landingUrl === 'string' && landingUrl.length <= 2000) ? landingUrl : null,
+      registrationIp: req.ip || req.socket?.remoteAddress || null,
+      registrationUserAgent: (req.get('User-Agent') || '').slice(0, 500) || null
+    });
+
+    // Meta CAPI + webhook fb-ads: conversión de registro (misma que register-quick).
+    metaCapi.track(
+      'CompleteRegistration',
+      { externalId: newUser.id, fbc: metaFbc, fbp: metaFbp },
+      { content_name: 'signup_landing', status: true, campaign_code: normalizedCode, publisher: campaign.publisher },
+      { req }
+    );
+    try { fbAdsWebhook.notify('CompleteRegistration', newUser); } catch (_) {}
+
+    // 3) Link de acceso de un solo uso → el cliente entra logueado a chat1girox.
+    let accessUrl = null;
+    try {
+      accessUrl = await issueAccessLinkFor(newUser.id);
+    } catch (linkErr) {
+      logger.warn(`[landing-signup] no se pudo generar el access-link de ${username}: ${linkErr.message}`);
+      return res.status(500).json({ error: 'Tu cuenta se creó pero no pudimos generar tu acceso. Escribinos por soporte.' });
+    }
+
+    logger.info(`[landing-signup] alta ${username} campaign=${normalizedCode}${giroxOwner ? ' (key publicista)' : ''}`);
+    // La landing redirige el navegador a accessUrl (dominio chat1girox.com).
+    res.status(201).json({ success: true, accessUrl, username });
+  } catch (error) {
+    logger.error(`[landing-signup] error: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
   }
 });
 
