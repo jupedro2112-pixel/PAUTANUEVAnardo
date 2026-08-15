@@ -1041,7 +1041,17 @@ VIP.ui._showCasinoFrame = function() {
       'background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);' +
       'flex:0 0 auto;">' +
         '<span style="color:#d4af37;font-weight:800;font-size:15px;">🎰 CASINO</span>' +
-        '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">' +
+          // Cargar SIN salir del juego: abre el chat de cargas REAL en un panel
+          // sobre el casino (misma conversación y mismo socket — al agente le
+          // llega por la bandeja de cargas de siempre).
+          '<button type="button" id="casinoChatBtn" onclick="VIP.ui.toggleCasinoChat()" ' +
+            'style="position:relative;background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;' +
+            'border-radius:20px;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;">' +
+            '💬 Cargar acá' +
+            '<span id="casinoChatBadge" style="display:none;position:absolute;top:-6px;right:-6px;' +
+            'background:#e53935;color:#fff;border-radius:10px;min-width:18px;height:18px;line-height:18px;' +
+            'font-size:11px;font-weight:800;padding:0 4px;text-align:center;">0</span></button>' +
           // Escape SIEMPRE visible: si el casino no carga embebido (cookies de
           // terceros bloqueadas), el jugador no queda atrapado mirando un spinner.
           '<button type="button" onclick="VIP.ui.openCasinoInTab()" ' +
@@ -1059,7 +1069,23 @@ VIP.ui._showCasinoFrame = function() {
         'text-align:center;padding:20px;">🎰 Entrando al casino…</div>' +
       // `allow` habilita pantalla completa y sonido dentro de los juegos.
       '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
-        'allow="autoplay; fullscreen; payment"></iframe>';
+        'allow="autoplay; fullscreen; payment"></iframe>' +
+      // Panel del chat SOBRE el casino (el juego sigue corriendo atrás). El chat
+      // real se muda acá adentro al abrir y vuelve a su lugar al cerrar.
+      // bottom:0 llega al borde físico; el padding interno respeta el safe-area.
+      '<div id="casinoChatDrawer" style="display:none;position:absolute;left:0;right:0;bottom:0;height:62%;' +
+      'flex-direction:column;background:#0d0d1a;border-top:2px solid rgba(212,175,55,0.5);' +
+      'box-shadow:0 -8px 24px rgba(0,0,0,0.6);padding-bottom:env(safe-area-inset-bottom,0px);">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px;' +
+        'background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);flex:0 0 auto;">' +
+          '<span style="color:#d4af37;font-weight:800;font-size:13px;">💬 Chat de cargas</span>' +
+          '<button type="button" onclick="VIP.ui.toggleCasinoChat()" ' +
+            'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
+            'border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;">' +
+            '⬇ Volver al juego</button>' +
+        '</div>' +
+        '<div id="casinoChatDrawerBody" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>' +
+      '</div>';
     document.body.appendChild(overlay);
 
     // Cuando el casino termina de cargar, se esconde el "cargando" y se muestra el juego.
@@ -1085,11 +1111,84 @@ VIP.ui._showCasinoFrame = function() {
   // Bloquea el scroll del fondo mientras el casino está abierto.
   document.body.style.overflow = 'hidden';
   VIP.ui._casinoOpen = true;
+
+  // Badge de mensajes sin leer mientras juega: observa el listado real del chat
+  // (chat.js sigue appendeando ahí aunque el casino lo tape) y cuenta lo que
+  // llega con el panel de chat CERRADO. Vive para siempre; los guards de arriba
+  // lo apagan fuera del casino.
+  if (!VIP.ui._casinoChatObserver && window.MutationObserver) {
+    const msgs = document.getElementById('chatMessages');
+    if (msgs) {
+      VIP.ui._casinoChatObserver = new MutationObserver(function(muts) {
+        if (!VIP.ui._casinoOpen) return;
+        const drawer = document.getElementById('casinoChatDrawer');
+        if (drawer && drawer.style.display !== 'none') return; // chat a la vista: nada que avisar
+        let added = 0;
+        for (let i = 0; i < muts.length; i++) added += muts[i].addedNodes.length;
+        if (!added) return;
+        VIP.ui._casinoChatUnread = (VIP.ui._casinoChatUnread || 0) + added;
+        const badge = document.getElementById('casinoChatBadge');
+        if (badge) {
+          badge.textContent = VIP.ui._casinoChatUnread > 9 ? '9+' : String(VIP.ui._casinoChatUnread);
+          badge.style.display = 'inline-block';
+        }
+      });
+      VIP.ui._casinoChatObserver.observe(msgs, { childList: true });
+    }
+  }
+  VIP.ui._casinoChatUnread = 0;
+};
+
+/** Abre/cierra el chat de cargas SOBRE el casino (el juego no se corta). */
+VIP.ui.toggleCasinoChat = function() {
+  const drawer = document.getElementById('casinoChatDrawer');
+  if (!drawer) return;
+  if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui._casinoChatMount();
+  else VIP.ui._casinoChatUnmount();
+};
+
+/** Muda el chat REAL (cabecera+mensajes+barra de escribir) adentro del panel.
+ *  Mover los nodos conserva ids, listeners y el socket: es EL MISMO chat, no
+ *  una copia — por eso el agente lo ve en su bandeja de siempre. */
+VIP.ui._casinoChatMount = function() {
+  const drawer = document.getElementById('casinoChatDrawer');
+  const body = document.getElementById('casinoChatDrawerBody');
+  const cc = document.querySelector('.chat-container');
+  const cic = document.querySelector('.chat-input-container');
+  if (!drawer || !body || !cc || !cic) return;
+  // Marcadores invisibles para devolver cada bloque EXACTAMENTE donde estaba.
+  const ph1 = document.createElement('div'); ph1.style.display = 'none';
+  const ph2 = document.createElement('div'); ph2.style.display = 'none';
+  cc.parentNode.insertBefore(ph1, cc);
+  cic.parentNode.insertBefore(ph2, cic);
+  body.appendChild(cc);
+  body.appendChild(cic);
+  VIP.ui._casinoChatPh = { ph1: ph1, ph2: ph2, cc: cc, cic: cic };
+  drawer.style.display = 'flex';
+  // Visto: badge a cero y mensajes al final.
+  VIP.ui._casinoChatUnread = 0;
+  const badge = document.getElementById('casinoChatBadge');
+  if (badge) badge.style.display = 'none';
+  const msgs = document.getElementById('chatMessages');
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+};
+
+/** Devuelve el chat a su lugar original de la página y esconde el panel. */
+VIP.ui._casinoChatUnmount = function() {
+  const s = VIP.ui._casinoChatPh;
+  if (s && s.ph1 && s.ph1.parentNode) { s.ph1.parentNode.insertBefore(s.cc, s.ph1); s.ph1.remove(); }
+  if (s && s.ph2 && s.ph2.parentNode) { s.ph2.parentNode.insertBefore(s.cic, s.ph2); s.ph2.remove(); }
+  VIP.ui._casinoChatPh = null;
+  const drawer = document.getElementById('casinoChatDrawer');
+  if (drawer) drawer.style.display = 'none';
 };
 
 /** Cierra el recuadro y vuelve a VIPCARGAS. */
 VIP.ui.closeCasinoFrame = function() {
   clearTimeout(VIP.ui._casinoWatchdog);
+  // Si el chat estaba mudado al panel del casino, SIEMPRE devolverlo a la
+  // página antes de cerrar (si no, la pantalla principal queda sin chat).
+  VIP.ui._casinoChatUnmount();
   const overlay = document.getElementById('casinoOverlay');
   if (!overlay) return;
   // Se vacía el src para que el casino deje de correr en segundo plano (si no, sigue

@@ -4,7 +4,60 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-14**
+> **Última actualización: 2026-08-15**
+
+## Sesión 2026-08-15
+
+### 175. DIAGNÓSTICO del lag nocturno reportado por los agentes (13/8 ~22:00-23:30 ART) — cuello: RATE LIMIT de la API girox, NO Mongo
+- **Reporte:** los agentes vieron los chats/operaciones muy lentos "en un
+  momento de la noche"; después se normalizó solo.
+- **Evidencia (logs EB de ambas instancias + métricas Atlas del owner):**
+  - Pico récord de demanda 22:00-23:00 ART del 13/8: ~556 conexiones de
+    clientes/hora y ~386 consultas de reembolso/hora (cada apertura de PWA
+    = 2 netwin). Total girox muy por encima de los 60 req/min del contrato.
+  - Cola local del cliente girox SATURADA en las DOS instancias: llamadas
+    esperando hasta 30s (MAX_QUEUE_WAIT_MS) y fallas "La plataforma está
+    saturada" (`rate_limited_local`) 23:00-23:26 ART: SSO, sync de
+    contraseña y 2 batches del tick VIP.
+  - Mongo DESCARTADO con métricas Atlas de esa franja: Operation Execution
+    Times 1-4 ms, CPU <10%, IOPS ~40/s, tickets al máximo, conexiones
+    planas. El M10 estuvo sobrado. Sin OOM/nginx/Redis en logs.
+  - "Se solucionó solo" = bajó la demanda después de la medianoche (+ el
+    restart del deploy de las 02:20 ART renovó procesos).
+- **Causa estructural:** 2 instancias × GIROX_MAX_RPM=55 local = hasta 110
+  req/min contra un límite GLOBAL de 60 → 429 + colas garantizados en cada
+  pico nocturno (el comentario del propio giroxService lo anticipa).
+- **⚠️ ACCIÓN OWNER pendiente:** subir `GIROX_MAX_RPM=30` en SSM
+  `/nardo1girox/prod/` (2×30=60 exacto; aplica al próximo restart). Si EB
+  escalara a N instancias, el valor correcto es ~60/N — por ahora capacidad
+  fija en 2. Se le redactó además un mail al desarrollador de 1girox
+  pidiendo subir el límite (ideal 180/min) y/o keys con cupo separado.
+- **Mejora futura si persiste:** cachear unos minutos el status de
+  reembolso (mayor consumidor de cupo girox en el pico).
+
+### 176. Botón "💬 Cargar acá" en el casino: el chat de cargas REAL en un panel sobre el juego
+- **Pedido del owner:** que el jugador pueda cargar SIN salir del casino,
+  con el mismo chat de la pantalla anterior, y que al agente le llegue por
+  la misma bandeja de siempre.
+- **Cómo:** el casino es un overlay nuestro sobre la PWA, así que el chat
+  sigue vivo abajo (mismo socket). El botón nuevo "💬 Cargar acá" (barra del
+  casino) abre un panel de 62% de alto sobre el juego (`#casinoChatDrawer`)
+  y MUDA los nodos reales `.chat-container` + `.chat-input-container`
+  adentro (appendChild conserva ids/listeners/socket → es EL MISMO chat, no
+  una copia; cero cambios de backend ni de panel admin). "⬇ Volver al
+  juego" (o salir del casino) los devuelve a su lugar exacto con
+  marcadores. El juego sigue corriendo detrás (iframe intacto).
+- **Badge de no leídos:** MutationObserver sobre `#chatMessages` cuenta lo
+  que llega con el panel cerrado y pinta un badge rojo (1..9+) en el botón;
+  se resetea al abrir. Sin tocar chat.js.
+- **Safe-area iPhone:** el panel llega al borde físico y compensa con
+  padding interno (mismo criterio que #172).
+- **Validado:** `node --check` OK (ui.js, SW). **SW a v101.** Solo front
+  (deploy de estáticos). PROBAR: entrar al casino → "💬 Cargar acá" abre el
+  chat con el juego sonando atrás → mandar "quiero cargar 5000" → responde
+  el agente (misma bandeja) y el cliente lo ve; "⬇ Volver al juego" y de
+  vuelta al chat de la página al salir del casino; mensaje entrante con el
+  panel cerrado → badge rojo en el botón.
 
 ## Sesión 2026-08-14
 

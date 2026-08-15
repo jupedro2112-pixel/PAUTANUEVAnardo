@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v100'; // v100: marca 1GIROX en textos visibles que aún decían VIPCARGAS (info del servicio, bienvenidas, botón del casino)
+const CACHE_VERSION = 'v101'; // v101: botón "💬 Cargar acá" en el casino — el chat de cargas real se abre en un panel sobre el juego
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
