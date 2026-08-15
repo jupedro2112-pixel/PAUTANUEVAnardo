@@ -35,6 +35,19 @@
 - **Mejora futura si persiste:** cachear unos minutos el status de
   reembolso (mayor consumidor de cupo girox en el pico).
 
+### 185. `/api/landing/signup` con CORS abierto → landings rotables sin tocar ALLOWED_ORIGINS
+- **Problema:** el CORS global bloquea todo origen fuera de ALLOWED_ORIGINS,
+  así que cada dominio/host puente nuevo (Vercel, Cloudflare, dominio final)
+  exigía editar SSM + redeploy. Inviable para rotar.
+- **Fix:** un middleware previo al `cors()` global detecta `/api/landing/signup`
+  y responde con `Access-Control-Allow-Origin` reflejando el origin (no `*`,
+  sin Allow-Credentials — no usa cookies) y maneja el preflight OPTIONS. El
+  resto de las rutas sigue con el CORS estricto de siempre. Seguro: el endpoint
+  es público, sin credenciales, ya protegido por código de campaña + límite por
+  IP. Ahora la landing funciona desde CUALQUIER host/dominio sin redeploy.
+- **Validado:** `node --check` OK. **Back necesita redeploy** (una vez; después
+  ya no hace falta por cada dominio nuevo).
+
 ### 184. Landing de conversión (bono + credenciales + popup) — clave de 6 dígitos mostrada al cliente
 - **Contexto:** el owner vio una landing de un competidor (Bet33, en un dominio
   puente `walink.ac`) con el mismo funnel y pidió llevar la nuestra a ese nivel.

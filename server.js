@@ -707,13 +707,29 @@ app.use(securityHeaders);
 if (!process.env.ALLOWED_ORIGINS && process.env.NODE_ENV === 'production') {
   logger.warn('⚠️ SEGURIDAD: ALLOWED_ORIGINS no configurado en producción. CORS rechazará orígenes cruzados.');
 }
-app.use(cors({
+const _corsMw = cors({
   origin: corsOriginFn,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['X-Total-Count', 'X-RateLimit-Remaining']
-}));
+});
+app.use((req, res, next) => {
+  // El alta por landing es un endpoint PÚBLICO sin credenciales (protegido por
+  // código de campaña + límite por IP): se abre a CUALQUIER origen para que las
+  // landings puente en dominios/hosts rotables (Vercel, Cloudflare, etc.)
+  // funcionen sin agregar cada uno a ALLOWED_ORIGINS ni redeployar. Reflejamos
+  // el origin (no `*`) y NO mandamos Allow-Credentials: la landing no usa cookies.
+  if (req.path === '/api/landing/signup') {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    return next();
+  }
+  return _corsMw(req, res, next);
+});
 app.use('/api/', generalLimiter);
 // Guardamos el body CRUDO (Buffer) en req.rawBody para poder validar firmas
 // HMAC de webhooks (ej. hgcash) sobre los bytes exactos. No cambia el parseo
