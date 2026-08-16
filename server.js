@@ -14987,16 +14987,27 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
     }
     const hash = crypto.createHash('sha256').update(token).digest('hex');
 
+    // Consumo atómico del link (single-use: se borra el hash en el mismo paso).
+    // El cambio de clave NO se fuerza acá: depende del origen de la cuenta (abajo).
     const user = await User.findOneAndUpdate(
       { accessLinkHash: hash, role: 'user', isActive: { $ne: false }, isBlocked: { $ne: true } },
-      { $set: { accessLinkHash: null, mustChangePassword: true, lastLogin: new Date() } },
+      { $set: { accessLinkHash: null, lastLogin: new Date() } },
       { new: true }
-    ).select('id username role tokenVersion').lean();
+    ).select('id username role tokenVersion acquisitionSource mustChangePassword').lean();
 
     if (!user) {
       // Genérico a propósito: no revelar si el link existió, venció o la cuenta
       // está bloqueada.
       return res.status(401).json({ error: 'Este link de acceso ya fue usado o no es válido. Pedile uno nuevo al soporte.' });
+    }
+
+    // Forzar cambio de clave SOLO para cuentas creadas por un AGENTE (clave
+    // temporal tipo "asd123" que el cliente todavía no eligió). Las cuentas de
+    // la LANDING (`acquisitionSource:'landing'`) ya recibieron su usuario+clave
+    // en pantalla, así que NO se les pide cambiarla (pedido owner 2026-08-16).
+    const forcePwd = user.acquisitionSource !== 'landing';
+    if (forcePwd && user.mustChangePassword !== true) {
+      await User.updateOne({ id: user.id }, { $set: { mustChangePassword: true } });
     }
 
     const jwtToken = jwt.sign(
@@ -15005,10 +15016,10 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    logger.info(`[access-link] canjeado por ${user.username}`);
+    logger.info(`[access-link] canjeado por ${user.username}${forcePwd ? '' : ' (landing, sin cambio de clave)'}`);
     res.json({
       token: jwtToken,
-      user: { id: user.id, username: user.username, role: user.role, mustChangePassword: true }
+      user: { id: user.id, username: user.username, role: user.role, mustChangePassword: forcePwd }
     });
   } catch (error) {
     console.error('Error canjeando link de acceso:', error);

@@ -8,6 +8,33 @@
 
 ## Sesión 2026-08-16
 
+### 189. Landing: sin cambio de clave forzado + casino a pantalla completa con burbuja de soporte
+- **Pedido del owner (video):** (1) que al entrar por el link de la landing NO
+  pida cambiar la clave obligatoriamente; (2) que la entrada se vea **tal cual
+  1girox.com** (casino a pantalla completa, no el chat) con una **burbuja de
+  soporte abajo a la derecha** que abra un chat con acciones (depositar,
+  retirar, hablar con soporte, pedir CBU).
+- **(1) Cambio de clave (server.js, `/api/auth/access-link`):** el canje ya no
+  fuerza `mustChangePassword:true` para todos. Ahora lee `acquisitionSource`:
+  las cuentas de la LANDING (`'landing'`) NO lo fuerzan (ya recibieron su
+  usuario+clave en pantalla); las creadas por AGENTE (clave temporal) sí, como
+  antes. El single-use del link sigue siendo atómico.
+- **(2) Casino (ui.js, `_showCasinoFrame`):** se sacó la barra superior propia
+  → el iframe del casino ocupa toda la pantalla (se ve como 1girox.com). Todo
+  el chrome pasó a una **burbuja 🎧 flotante abajo a la derecha** que abre el
+  bottom-sheet de soporte. Ese panel tiene: header con escapes (↗ Aparte / 🚪
+  Salir / ⬇ Volver) + **4 acciones**: 💰 Depositar (despliega montos
+  $2k/$5k/$10k/$20k/✅ Ya transferí) · 💸 Retirar · 📋 Pedir CBU · 🎧 Hablar
+  con soporte. Mismo cableado que #183 (todo cae en el chat del cajero). El
+  badge de no leídos se movió a la burbuja. Safe-area arriba y abajo para
+  iPhone. **SW a v105.**
+- **Validado:** `node --check` OK (server.js, ui.js). **Back necesita
+  redeploy** (por el cambio del access-link); SW v105. PROBAR: entrar por la
+  landing → NO pide cambiar clave → se ve el casino full-screen → burbuja 🎧
+  abajo a la derecha → abre el chat con las 4 acciones → "Depositar" → $5.000
+  → llega al cajero.
+
+
 ### 188. CAUSA RAÍZ del lag (por fin): poll de saldo cada 30s satura la key del publicista → cache + coalescing + poll 90s
 - **Diagnóstico con los logs nuevos (16/8, ya con el espejo a stdout de #179):**
   las saturaciones del limitador local NO eran del master (90/min) ni de las
