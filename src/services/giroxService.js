@@ -110,12 +110,31 @@ function getReadsKeys() {
 // que acompaña a la master (180/min desde el 2026-08-15).
 const PUBLISHER_MAX_RPM = Number(process.env.GIROX_PUBLISHER_MAX_RPM || 30);
 
+// Overrides POR key de publicista (`GIROX_PUBLISHER_KEY_RPM` = `pk_x:90,pk_y:90`).
+// Para cuando 1girox sube el límite de UN publicista puntual (ej. onekey, con
+// miles de jugadores) a 180: se le pone su techo propio sin cambiar el del resto.
+// Sin la env, todos los publicistas usan PUBLISHER_MAX_RPM.
+function _publisherKeyConfigs() {
+  const raw = process.env.GIROX_PUBLISHER_KEY_RPM || '';
+  return raw.split(',').map((e) => e.trim()).filter(Boolean).map((e) => {
+    const i = e.lastIndexOf(':');
+    if (i > 0) {
+      const rpm = Number(e.slice(i + 1));
+      if (Number.isFinite(rpm) && rpm > 0) return { key: e.slice(0, i).trim(), rpm };
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 /** Techo de la ventana local para UNA key: consultas → su sufijo `:rpm`;
- *  master → GIROX_MAX_RPM; cualquier otra (publicistas) → PUBLISHER_MAX_RPM. */
+ *  master → GIROX_MAX_RPM; publicista con override → su rpm; resto de
+ *  publicistas → PUBLISHER_MAX_RPM. */
 function _laneLimit(laneKey) {
   const cfg = _readsKeyConfigs().find((c) => c.key === laneKey);
   if (cfg) return cfg.rpm;
   if (!laneKey || laneKey === 'master' || laneKey === getApiKey()) return MAX_RPM;
+  const pub = _publisherKeyConfigs().find((c) => c.key === laneKey);
+  if (pub) return pub.rpm;
   return PUBLISHER_MAX_RPM;
 }
 
@@ -470,27 +489,76 @@ async function createPlatformUser({ username, password }) {
   return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
 }
 
-/**
- * Consulta un jugador (datos + saldo + desglose de rollover). GET /players/{username}
- * @returns { username, balance, available, wagering, email, active, id } | null si no existe
- */
-async function getUserInfoByName(username) {
+// ============================================================
+// CACHE CORTO + COALESCING de la lectura de jugador (2026-08-16)
+// ============================================================
+// PORQUÉ: getUserInfoByName (y getUserBalance, que la usa) es el punto MÁS
+// consultado del cliente — la PWA pollea el saldo de cada usuario online, y
+// además lo leen los guards de bono, el status de reembolsos, etc. Para
+// jugadores de PUBLICISTA todo eso va por la ÚNICA key de ese publicista
+// (30/min) → con pocos usuarios online se satura y TODO lo de ellos (ver saldo,
+// acreditar bono, cargar) se relentiza. Causa raíz del lag reportado (logs
+// 2026-08-16: 98/124 saturaciones eran `getPlayer`, carril de publicista).
+//
+// SOLUCIÓN: cache de pocos segundos por username + coalescing de llamadas en
+// vuelo → girox se consulta ~1 vez por usuario por ventana, por más que N cosas
+// pidan el saldo a la vez. SIN staleness peligroso:
+//   • Se INVALIDA en cada operación de plata del usuario (deposit/withdraw/
+//     bonus/claim) → toda lectura POST-cambio es fresca.
+//   • TTL corto (default 8s) → un cambio externo (jugó en el casino) se refleja
+//     en ≤8s (y el poll real es más lento que eso, así que igual llega fresco).
+//   • Solo se cachean lecturas EXITOSAS — nunca null/errores transitorios.
+//   • La plataforma sigue siendo la verdad para el DÉBITO real (el retiro/carga
+//     los valida girox server-side); el cache es solo para LECTURA/display.
+const PLAYER_CACHE_TTL_MS = Number(process.env.GIROX_PLAYER_CACHE_MS || 8000);
+const _playerCache = new Map();        // usernameLower → { data, ts }
+const _playerInflight = new Map();     // usernameLower → Promise<data|null>
+const _playerInvalidatedAt = new Map(); // usernameLower → ts de la última invalidación
+
+/** Borra el saldo cacheado de un usuario (se llama tras cada operación de plata)
+ *  y registra CUÁNDO se invalidó, para que una lectura que venía en vuelo no
+ *  vuelva a cachear el valor viejo después (ver _maybeCachePlayer). */
+function _invalidatePlayer(username) {
+  const k = String(username || '').toLowerCase();
+  _playerCache.delete(k);
+  _playerInvalidatedAt.set(k, Date.now());
+}
+
+/** Cachea SOLO si ninguna operación de plata invalidó a este usuario DESPUÉS de
+ *  que la lectura arrancó. Evita la race: una lectura en vuelo cuando se
+ *  acreditó/retiró NO debe escribir el saldo pre-operación en el cache. */
+function _maybeCachePlayer(key, data, startTs) {
+  if (!data) return; // solo se cachea el éxito
+  if ((_playerInvalidatedAt.get(key) || 0) >= startTs) return; // invalidado mientras leíamos
+  _playerCache.set(key, { data, ts: Date.now() });
+}
+
+// Prune periódico: el cache y los timestamps de invalidación crecen ~1 entrada
+// por usuario consultado. Cada 60s se limpian los vencidos. `.unref()` para no
+// mantener vivo el proceso solo por este timer.
+const _playerCachePrune = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _playerCache) if (now - v.ts >= PLAYER_CACHE_TTL_MS) _playerCache.delete(k);
+  // Los timestamps de invalidación se guardan más tiempo que la peor lectura en
+  // vuelo posible (timeout + reintentos ~80s) para no reactivar la race.
+  for (const [k, ts] of _playerInvalidatedAt) if (now - ts >= 300000) _playerInvalidatedAt.delete(k);
+}, 60000);
+if (_playerCachePrune.unref) _playerCachePrune.unref();
+
+/** Lectura CRUDA del jugador contra girox (sin cache). */
+async function _fetchUserInfo(username) {
   const r = await _request({
     method: 'get',
     path: `/players/${encodeURIComponent(String(username))}`,
     label: `getPlayer(${username})`,
     username
   });
-  if (!r.ok) {
-    if (r.code === 'player_not_found' || r.httpStatus === 404) return null;
-    return null; // mismo contrato que el cliente viejo: null ante cualquier fallo
-  }
+  if (!r.ok) return null; // player_not_found o cualquier fallo → null (contrato de siempre)
   const player = (r.data && r.data.player) || null;
   if (!player) return null;
   const bal = _playerBalances(player);
   return {
     // Desde la Partner API v1.8 el ID numérico del jugador VIENE en la respuesta.
-    // Antes había que sacarlo del panel de administración (scraping); ya no.
     id: player.id != null ? Number(player.id) : null,
     username: player.username || String(username),
     email: player.email || null,
@@ -504,6 +572,51 @@ async function getUserInfoByName(username) {
     wagering: bal.wagering,
     createdAt: player.created_at || null
   };
+}
+
+/**
+ * Consulta un jugador (datos + saldo + desglose de rollover). GET /players/{username}
+ * Con cache corto + coalescing (ver bloque de arriba).
+ * @param {object} [opts]
+ * @param {boolean} [opts.fresh] SALTEA el cache de lectura y el coalescing — para
+ *   DECISIONES DE PLATA que necesitan el saldo exacto del momento (delta de un
+ *   retiro, guard bono-sobre-bono). Igual refresca el cache para las lecturas de
+ *   display siguientes. Las lecturas de display (poll, status) NO lo pasan.
+ * @returns { username, balance, available, wagering, email, active, id } | null si no existe
+ */
+async function getUserInfoByName(username, opts = {}) {
+  const key = String(username || '').toLowerCase();
+  if (!key) return null;
+
+  if (opts && opts.fresh) {
+    // Lectura garantizada fresca (no lee cache ni se une a una en vuelo), pero
+    // actualiza el cache para las de display que vengan después.
+    const startTs = Date.now();
+    const data = await _fetchUserInfo(username);
+    _maybeCachePlayer(key, data, startTs);
+    return data;
+  }
+
+  const cached = _playerCache.get(key);
+  if (cached && (Date.now() - cached.ts) < PLAYER_CACHE_TTL_MS) return cached.data;
+
+  // Coalescing: si ya hay una lectura EN VUELO para este usuario, se comparte
+  // (no se dispara otra request a girox).
+  const inflight = _playerInflight.get(key);
+  if (inflight) return inflight;
+
+  const startTs = Date.now();
+  const p = (async () => {
+    const data = await _fetchUserInfo(username);
+    _maybeCachePlayer(key, data, startTs);
+    return data;
+  })();
+  _playerInflight.set(key, p);
+  try {
+    return await p;
+  } finally {
+    _playerInflight.delete(key);
+  }
 }
 
 /** @returns {boolean} true si el jugador existe en 1girox. */
@@ -736,6 +849,7 @@ async function depositToUser(username, amount, description = '', reference = nul
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
 
+  _invalidatePlayer(username); // el saldo cambió → la próxima lectura debe ser fresca
   const out = _moneyResult(r.data);
   // Caso excepcional documentado: la carga se acreditó pero el bono no.
   const bonusStatus = r.data && r.data.wagering && r.data.wagering.bonus && r.data.wagering.bonus.status;
@@ -777,6 +891,7 @@ async function withdrawFromUser(username, amount, description = '', reference = 
       wagering: (r.body && r.body.wagering) || null
     };
   }
+  _invalidatePlayer(username); // el saldo cambió → la próxima lectura debe ser fresca
   return _moneyResult(r.data);
 }
 
@@ -826,6 +941,7 @@ async function creditUserBalance(username, amount, reference = null, opts = {}) 
       username
     });
     if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
+    _invalidatePlayer(username); // el saldo/bono cambió → próxima lectura fresca
     return _moneyResult(r.data);
   }
 
@@ -840,8 +956,9 @@ async function creditUserBalance(username, amount, reference = null, opts = {}) 
 /**
  * @returns { success, balance, available, username, wagering } | { success:false, error, code }
  */
-async function getUserBalance(username) {
-  const info = await getUserInfoByName(username);
+async function getUserBalance(username, opts = {}) {
+  // opts.fresh se propaga a getUserInfoByName (decisiones de plata saltean cache).
+  const info = await getUserInfoByName(username, opts);
   if (!info) {
     return { success: false, error: 'No se pudo leer el saldo en la plataforma.', code: 'player_not_found' };
   }
@@ -866,10 +983,10 @@ async function getUserBalance(username) {
  * los 8 call sites que lo usan; el backoff real ya vive en _request, así que acá los
  * intentos extra sólo cubren el caso "player_not_found transitorio".
  */
-async function getUserBalanceWithRetry(username, { maxAttempts = 3, baseDelayMs = 500 } = {}) {
+async function getUserBalanceWithRetry(username, { maxAttempts = 3, baseDelayMs = 500, fresh = false } = {}) {
   let last = null;
   for (let i = 1; i <= maxAttempts; i++) {
-    last = await getUserBalance(username);
+    last = await getUserBalance(username, { fresh });
     if (last.success) return last;
     if (i < maxAttempts) await _sleep(baseDelayMs * Math.pow(2, i - 1));
   }
@@ -1120,6 +1237,7 @@ async function claimPendingBonus(username, requirementId = null) {
 
   if (!r.ok) return { success: false, error: r.error, code: r.code, httpStatus: r.httpStatus };
 
+  _invalidatePlayer(username); // reclamar el bono cambia el saldo → próxima lectura fresca
   const d = r.data || {};
   return {
     success: true,
@@ -1143,6 +1261,8 @@ module.exports = {
     if (c.length === 0) return '0';
     return `${c.length} (techos ${c.map((x) => x.rpm).join(', ')}/min)`;
   },
+  // overrides de rpm por key de publicista (para el log de arranque)
+  getPublisherKeyOverridesCount: function () { return _publisherKeyConfigs().length; },
   // ruteo por dueño del jugador (server.js inyecta el resolver username→apiKey)
   setKeyResolver,
   // jugadores

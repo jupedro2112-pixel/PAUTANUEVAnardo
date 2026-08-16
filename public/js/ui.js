@@ -307,7 +307,13 @@ VIP.ui = (function () {
         if (VIP.state.balanceCheckInterval) {
             clearInterval(VIP.state.balanceCheckInterval);
         }
-        VIP.state.balanceCheckInterval = setInterval(syncBalance, 30000);
+        // 90s (antes 30s): el poll de saldo por-usuario era la causa raíz del lag
+        // — para jugadores de un publicista TODAS las lecturas van por una única
+        // key (30/min) y con pocos usuarios online se saturaba (logs 2026-08-16).
+        // El saldo igual se actualiza al instante por socket (`balance_updated`)
+        // en cargas/retiros/bonos, y al cerrar el casino (syncBalance). El poll
+        // solo cubre cambios por juego mientras el cliente mira la PWA sin jugar.
+        VIP.state.balanceCheckInterval = setInterval(syncBalance, 90000);
     }
 
     function stopBalancePolling() {

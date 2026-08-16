@@ -8481,7 +8481,8 @@ app.post('/api/admin/bonus', authMiddleware, depositorMiddleware, async (req, re
     // ese vuelto es preferible a rebotarle la operación al agente. El resto
     // de los flujos (welcome code, lotes) mantienen el bloqueo estricto.
     const BONUS_GUARD_MIN_ARS = 50;
-    const _playerInfo = await girox.getUserInfoByName(resolvedUsername);
+    // fresh: decisión de plata (bono sobre bono pisa el anterior) → saldo exacto, no cache.
+    const _playerInfo = await girox.getUserInfoByName(resolvedUsername, { fresh: true });
     const _bLocked = _playerInfo ? (Number(_playerInfo.bonusLocked) || 0) : 0;
     const _bClaim = _playerInfo ? (Number(_playerInfo.claimableTotal) || 0) : 0;
     if (_bLocked + _bClaim > BONUS_GUARD_MIN_ARS) {
@@ -10585,7 +10586,8 @@ app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, r
       }
       // GUARD bono-sobre-bono (v1.7): otorgar un bono a quien ya tiene uno
       // activo lo PISA y le debita el resto → mejor rechazar sin quemar el canje.
-      const pInfo = await girox.getUserInfoByName(uDoc.username);
+      // fresh: decisión de plata → saldo/bono exacto, no cache.
+      const pInfo = await girox.getUserInfoByName(uDoc.username, { fresh: true });
       if (pInfo && (Number(pInfo.bonusLocked) > 0 || Number(pInfo.claimableTotal) > 0)) {
         return res.status(400).json({
           error: 'Tenés un bono activo (o sin reclamar) en el casino. Terminalo y después canjeá tu código.'
@@ -15146,7 +15148,11 @@ async function _deductChipsAtConfirm(payout, agentUser) {
   // jugador puede tener saldo que todavía NO puede retirar (objetivo de apuestas
   // pendiente). Si validáramos contra el total, la plataforma rechazaría el retiro con
   // `rollover_locked` y el pago quedaría colgado. Sin rollover, `available` == `balance`.
-  const balRes = await girox.getUserBalance(payout.username);
+  // ⚠️ `fresh:true` OBLIGATORIO: este "antes" se compara luego contra el "después"
+  // (fresco) para verificar el descuento. Un `avail` cacheado (hasta 8s viejo) haría
+  // que la verificación anti-fantasma mezcle antes-viejo con después-nuevo y falle
+  // aunque el descuento SÍ se ejecutó → el cliente quedaría sin fichas Y sin plata.
+  const balRes = await girox.getUserBalance(payout.username, { fresh: true });
   const avail = (balRes && balRes.success)
     ? (Number(balRes.available != null ? balRes.available : balRes.balance) || 0)
     : null;
@@ -15182,7 +15188,8 @@ async function _deductChipsAtConfirm(payout, agentUser) {
   // → el cliente se queda sin fichas Y sin plata.
   let after = null, deducted = false;
   try {
-    const a = await girox.getUserBalanceWithRetry(payout.username);
+    // fresh: el "después" DEBE ser el saldo real post-descuento (no cache).
+    const a = await girox.getUserBalanceWithRetry(payout.username, { fresh: true });
     if (a && a.success) {
       after = Number(a.available != null ? a.available : a.balance) || 0;
       deducted = (avail - after) >= (amt - 1);
@@ -17792,7 +17799,8 @@ async function _creditNotifBatchGift(uDoc, batch) {
   }
   // GUARD bono-sobre-bono (v1.7): otorgar un bono a quien ya tiene uno activo
   // lo PISA y le debita el resto — mejor no acreditar.
-  const pInfo = await girox.getUserInfoByName(uDoc.username);
+  // fresh: decisión de plata → saldo/bono exacto, no cache.
+  const pInfo = await girox.getUserInfoByName(uDoc.username, { fresh: true });
   if (!pInfo) return { ok: false, retryable: true, reason: 'no se pudo leer la cuenta del casino' };
   if (Number(pInfo.bonusLocked) > 0 || Number(pInfo.claimableTotal) > 0) {
     return { ok: false, blocked: true, reason: 'bono activo en el casino' };
@@ -19341,7 +19349,9 @@ if (process.env.VERCEL) {
       `[girox] config: key master ${process.env.GIROX_API_KEY ? 'OK' : '⛔ FALTA'} · ` +
       `keys consultas cargadas: ${girox.getReadsKeysSummary()} · ` +
       `GIROX_MAX_RPM=${process.env.GIROX_MAX_RPM || '55 (default)'} · ` +
-      `publicistas=${process.env.GIROX_PUBLISHER_MAX_RPM || '30 (default)'}/min`
+      `publicistas=${process.env.GIROX_PUBLISHER_MAX_RPM || '30 (default)'}/min` +
+      `${girox.getPublisherKeyOverridesCount() ? ` (+${girox.getPublisherKeyOverridesCount()} overrides)` : ''} · ` +
+      `cache jugador=${process.env.GIROX_PLAYER_CACHE_MS || '8000 (default)'}ms`
     );
 
     await initializeData();

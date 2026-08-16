@@ -4,7 +4,67 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-15**
+> **Última actualización: 2026-08-16**
+
+## Sesión 2026-08-16
+
+### 188. CAUSA RAÍZ del lag (por fin): poll de saldo cada 30s satura la key del publicista → cache + coalescing + poll 90s
+- **Diagnóstico con los logs nuevos (16/8, ya con el espejo a stdout de #179):**
+  las saturaciones del limitador local NO eran del master (90/min) ni de las
+  consultas — eran a **30/min y sin la marca "key consultas"** → o sea el
+  carril de las **keys de PUBLICISTA** (30/min). 98 de 124 saturaciones eran
+  `getPlayer` (= `getUserInfoByName`, la lectura de saldo).
+- **Por qué:** la PWA polleaba el saldo **cada 30s por cada usuario online**
+  (`setInterval(syncBalance, 30000)` → `/api/balance/live`). Los jugadores de
+  un publicista comparten UNA sola key (30/min), así que con ~15 usuarios de
+  ese publicista online el carril ya se saturaba; publicistas grandes (onekey
+  2905, DIGITAL 1156, martin 561) lo reventaban. Al saturarse, TODO lo de esos
+  usuarios (ver saldo, acreditar bono, cargar, SSO) quedaba en cola hasta 30s.
+- **Fix estructural (3 partes):**
+  1. **Cache corto + coalescing** en `getUserInfoByName` (giroxService) — el
+     punto por donde pasan TODAS las lecturas de saldo (getUserBalance la usa).
+     Cache por username (TTL `GIROX_PLAYER_CACHE_MS`, default 8s) + dedupe de
+     llamadas en vuelo → girox se consulta ~1 vez por usuario por ventana por
+     más que N cosas pidan el saldo. Solo cachea ÉXITOS (nunca null/errores).
+     Se **invalida** en cada operación de plata del usuario (deposit / withdraw
+     / creditUserBalance-bonus / claimPendingBonus) → toda lectura post-cambio
+     es fresca. El débito real lo sigue validando girox server-side (el cache
+     es solo lectura/display).
+  2. **Poll de saldo 30s → 90s** (public/js/ui.js). El saldo igual se refresca
+     al instante por socket (`balance_updated`) en cargas/retiros/bonos y al
+     cerrar el casino; el poll solo cubre cambios por juego mientras el cliente
+     mira la PWA sin jugar. **SW a v104.**
+  3. **Override de rpm por key de publicista** (`GIROX_PUBLISHER_KEY_RPM` =
+     `pk_x:90,...`) — para cuando 1girox suba la key de un publicista grande a
+     180 sin cambiar el techo del resto. El boot ahora loguea el cache y los
+     overrides.
+- **⚠️ ACCIÓN OWNER (fondo real para mega-publicistas):** pedirle a 1girox que
+  suba las keys de los publicistas grandes (onekey, DIGITAL, martin) a 180
+  como el master; después setear `GIROX_PUBLISHER_KEY_RPM=<susKeys>:90`. Sin
+  eso, un publicista con 45+ usuarios online concurrentes puede seguir rozando
+  el techo aun con el cache (el cache no baja la frecuencia del poll por
+  debajo de 1/90s por usuario).
+- **Revisión adversarial (sub-agente) — encontró y se CORRIGIÓ 1 bug crítico
+  de plata + 2:**
+  1. 🔴 La verificación anti-fantasma del retiro (`_deductChipsAtConfirm`)
+     comparaba el saldo "antes" (que pasó a salir del cache, viejo) contra el
+     "después" (fresco) → podía marcar un retiro real como fallido (cliente
+     sin fichas Y sin plata) o cancelar uno válido por "saldo insuficiente".
+     **Fix:** opción `getUserInfoByName(u, {fresh:true})` que saltea el cache;
+     el "antes" y el "después" del retiro ahora son `fresh`.
+  2. 🟠 Race: una lectura en vuelo cuando se acreditó/retiró podía escribir el
+     saldo pre-operación DESPUÉS de la invalidación. **Fix:** timestamp de
+     invalidación por usuario + `_maybeCachePlayer` no cachea si la lectura
+     arrancó antes de la última invalidación. Verificado con test aislado.
+  3. 🟡 Los 3 guards bono-sobre-bono (`/api/admin/bonus`, welcome code cash,
+     notif-batch gift) leían bonusLocked/claimableTotal cacheados → ahora
+     `fresh`. Las lecturas de DISPLAY (status de reembolso, poll) siguen
+     cacheadas (es lo que se quería acelerar). + prune periódico de los Maps.
+- **Validado:** `node --check` OK (server.js, giroxService.js, ui.js) + test
+  aislado de la lógica del cache (TTL/race/fresh/coalescing, todo OK). **Back
+  necesita redeploy**; SW v104. PROBAR: en el próximo pico, los logs no
+  deberían mostrar `getPlayer ... saturado` en el carril de publicista con la
+  frecuencia de antes; y un retiro normal debe descontar y confirmar bien.
 
 ## Sesión 2026-08-15
 

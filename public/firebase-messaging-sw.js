@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v103'; // v103: landing abre el casino directo + menú de acciones rápidas (cargar/CBU/comprobante/saldo/retirar) en el pop-up del casino
+const CACHE_VERSION = 'v104'; // v104: poll de saldo cada 90s (antes 30s) — parte del fix del lag por saturación de keys de publicista
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
