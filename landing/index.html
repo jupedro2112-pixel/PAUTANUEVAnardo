@@ -216,11 +216,22 @@
 <script>
 (function () {
   // ==== CONFIGURAR ====
-  var API_BASE = 'https://chat1girox.com';   // backend real
-  var CAMPAIGN_CODE = '';                     // fijo, o vacío = tomar de la URL
-  var BONUS_BIG = '100%';                     // ⚠️ tu oferta REAL
+  var API_BASE_DEFAULT = 'https://chat1girox.com';  // backend real (producción)
+  var CAMPAIGN_CODE = '';                            // fijo, o vacío = tomar de la URL
+  var BONUS_BIG = '100%';                             // ⚠️ tu oferta REAL
   var BONUS_SUB = 'EN TU PRIMERA CARGA';
   // ====================
+
+  // Override del backend por URL (para PROBAR contra otro entorno sin editar el
+  // archivo): agregá ?api=https://tuapp.onrender.com a la URL. Sin ese parámetro
+  // usa el backend de producción. Solo se acepta https://.
+  var API_BASE = API_BASE_DEFAULT;
+  try {
+    var _apiOverride = new URLSearchParams(location.search).get('api');
+    if (_apiOverride && /^https:\/\//.test(_apiOverride)) {
+      API_BASE = _apiOverride.replace(/\/+$/, '');
+    }
+  } catch (e) {}
 
   document.getElementById('bonusBig').textContent = BONUS_BIG;
   document.getElementById('bonusSub').textContent = BONUS_SUB;
