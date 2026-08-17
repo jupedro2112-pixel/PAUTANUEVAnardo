@@ -1123,46 +1123,61 @@ VIP.ui._showCasinoFrame = function() {
         '<span id="casinoChatBadge" style="display:none;position:absolute;top:-2px;right:-2px;' +
         'background:#e53935;color:#fff;border-radius:11px;min-width:20px;height:20px;line-height:20px;' +
         'font-size:12px;font-weight:800;padding:0 5px;text-align:center;">0</span></button>' +
-      // Panel del chat (bottom sheet) que abre la burbuja. El chat real se muda
-      // acá adentro al abrir y vuelve a su lugar al cerrar. z-index sobre la burbuja.
-      '<div id="casinoChatDrawer" style="display:none;position:absolute;left:0;right:0;bottom:0;height:62%;' +
-      'flex-direction:column;background:#0d0d1a;border-top:2px solid rgba(212,175,55,0.5);' +
-      'box-shadow:0 -8px 24px rgba(0,0,0,0.6);padding-bottom:env(safe-area-inset-bottom,0px);z-index:7;">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px;' +
-        'background:#12101a;border-bottom:1px solid rgba(212,175,55,0.25);flex:0 0 auto;">' +
-          '<span style="color:#d4af37;font-weight:800;font-size:13px;">🎧 Soporte 1GIROX</span>' +
-          '<div style="display:flex;gap:6px;align-items:center;">' +
-            // Escapes: abrir el casino aparte (si no cargó embebido) y salir a la app.
-            '<button type="button" onclick="VIP.ui.openCasinoInTab()" ' +
-              'style="background:rgba(212,175,55,0.15);color:#d4af37;border:1px solid rgba(212,175,55,0.4);' +
-              'border-radius:16px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">↗ Aparte</button>' +
-            '<button type="button" onclick="VIP.ui.closeCasinoFrame()" ' +
-              'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
-              'border-radius:16px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🚪 Salir</button>' +
-            '<button type="button" onclick="VIP.ui.toggleCasinoChat()" ' +
-              'style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);' +
-              'border-radius:16px;padding:4px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">⬇ Volver</button>' +
+      // WIDGET de soporte flotante en la ESQUINA (owner 2026-08-17, referencia
+      // Bet33): se abre "medio abierto" sobre el casino, NO parte la pantalla.
+      // Ancho fijo pegado abajo a la derecha (arriba de la burbuja). El chat real
+      // se muda al body al abrir y vuelve a su lugar al cerrar.
+      '<div id="casinoChatDrawer" style="display:none;position:absolute;z-index:7;' +
+      'right:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px));' +
+      'width:min(380px,calc(100vw - 24px));height:min(600px,72vh);' +
+      'flex-direction:column;background:#0d0d1a;border:1px solid rgba(212,175,55,0.4);' +
+      'border-radius:16px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,0.6);">' +
+        // Header verde con "EN LÍNEA" + cerrar.
+        '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;flex:0 0 auto;' +
+        'background:linear-gradient(135deg,#128c4a,#0f7a3d);">' +
+          '<div style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
+          'display:flex;align-items:center;justify-content:center;font-size:16px;">🎧</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="color:#fff;font-weight:800;font-size:14px;">Soporte 1GIROX</div>' +
+            '<div style="color:#c9f5d8;font-size:11px;display:flex;align-items:center;gap:5px;">' +
+              '<span style="width:7px;height:7px;border-radius:50%;background:#7dffa8;box-shadow:0 0 6px #7dffa8;"></span>EN LÍNEA</div>' +
           '</div>' +
+          '<button type="button" onclick="VIP.ui.toggleCasinoChat()" title="Cerrar" ' +
+            'style="background:rgba(255,255,255,0.18);color:#fff;border:none;border-radius:50%;' +
+            'width:28px;height:28px;font-size:14px;cursor:pointer;flex:0 0 auto;">✕</button>' +
         '</div>' +
-        // Menú de acciones (4 botones, owner 2026-08-16): Depositar (despliega
-        // montos) · Retirar · Pedir CBU · Hablar con soporte. TODO cae igual en
-        // el chat del cajero (panel adminprivado2026).
-        '<div style="flex:0 0 auto;background:#100e18;border-bottom:1px solid rgba(212,175,55,0.18);' +
-        'padding:7px 8px;display:flex;flex-direction:column;gap:6px;">' +
-          '<div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
-            _casinoChip('💰 Depositar', "VIP.ui.casinoQuickAction('cargar-toggle')", true) +
-            _casinoChip('💸 Retirar', "VIP.ui.casinoQuickAction('retirar')") +
-            _casinoChip('📋 Pedir CBU', "VIP.ui.casinoQuickAction('cbu')") +
-            _casinoChip('🎧 Hablar con soporte', "VIP.ui.casinoQuickAction('escribir')") +
+        // Acciones principales: Depositar (despliega montos) + Retirar (grandes).
+        '<div style="flex:0 0 auto;padding:8px;display:flex;flex-direction:column;gap:6px;' +
+        'background:#100e18;border-bottom:1px solid rgba(212,175,55,0.15);">' +
+          '<div style="display:flex;gap:6px;">' +
+            '<button type="button" onclick="VIP.ui.casinoQuickAction(\'cargar-toggle\')" ' +
+              'style="flex:1;background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;' +
+              'border-radius:10px;padding:11px 8px;font-size:13px;font-weight:800;cursor:pointer;">💰 Quiero Depositar</button>' +
+            '<button type="button" onclick="VIP.ui.casinoQuickAction(\'retirar\')" ' +
+              'style="flex:1;background:rgba(212,175,55,0.15);color:#e3bd48;border:1px solid rgba(212,175,55,0.45);' +
+              'border-radius:10px;padding:11px 8px;font-size:13px;font-weight:800;cursor:pointer;">💸 Solicitar Retiro</button>' +
           '</div>' +
-          // Sub-fila de montos (se despliega al tocar "Depositar").
-          '<div id="casinoAmountRow" style="display:none;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
+          // Sub-fila de montos (se despliega al tocar "Quiero Depositar").
+          '<div id="casinoAmountRow" style="display:none;gap:6px;flex-wrap:wrap;">' +
             _casinoChip('$2.000', "VIP.ui.casinoQuickAction('cargar','2000')") +
             _casinoChip('$5.000', "VIP.ui.casinoQuickAction('cargar','5000')") +
             _casinoChip('$10.000', "VIP.ui.casinoQuickAction('cargar','10000')") +
             _casinoChip('$20.000', "VIP.ui.casinoQuickAction('cargar','20000')") +
-            _casinoChip('✅ Ya transferí', "VIP.ui.casinoQuickAction('comprobante')") +
           '</div>' +
+          // Fila chica: pasos del depósito + hablar.
+          '<div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
+            _casinoChip('📋 Pedir CBU', "VIP.ui.casinoQuickAction('cbu')") +
+            _casinoChip('✅ Ya transferí', "VIP.ui.casinoQuickAction('comprobante')") +
+            _casinoChip('💬 Hablar', "VIP.ui.casinoQuickAction('escribir')") +
+          '</div>' +
+        '</div>' +
+        // Escapes discretos (una barrita fina de links).
+        '<div style="flex:0 0 auto;display:flex;gap:14px;justify-content:center;padding:4px;' +
+        'background:#0b0a12;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+          '<button type="button" onclick="VIP.ui.openCasinoInTab()" style="background:none;border:none;' +
+          'color:#8a7a3a;font-size:10.5px;cursor:pointer;text-decoration:underline;">↗ Casino aparte</button>' +
+          '<button type="button" onclick="VIP.ui.closeCasinoFrame()" style="background:none;border:none;' +
+          'color:#8a8a8a;font-size:10.5px;cursor:pointer;text-decoration:underline;">🚪 Salir del casino</button>' +
         '</div>' +
         '<div id="casinoChatDrawerBody" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>' +
       '</div>';

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v105'; // v105: casino a pantalla completa (tal cual 1girox.com) + burbuja de soporte flotante con acciones (Depositar/Retirar/CBU/Hablar); landing no fuerza cambio de clave
+const CACHE_VERSION = 'v106'; // v106: el soporte del casino ahora es un WIDGET flotante en la esquina (no parte la pantalla), estilo chat de soporte, con Quiero Depositar / Solicitar Retiro
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
