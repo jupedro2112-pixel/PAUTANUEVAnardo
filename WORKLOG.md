@@ -8,6 +8,26 @@
 
 ## Sesión 2026-08-16
 
+### 190. `SSM_SKIP_KEYS`: un entorno CLON puede tener su propia DB/URL sin tocar el SSM compartido
+- **Contexto:** el owner levantó un entorno CLON ("pruebapau",
+  pautagirox.sa-east-1.elasticbeanstalk.com) para PROBAR sin riesgo, pero usa
+  el MISMO `SSM_PATH=/nardo1girox/prod/` que producción. `loadSecrets`
+  SOBREESCRIBÍA process.env con SSM (`process.env[key]=value`), así que cambiar
+  MONGODB_URI/PUBLIC_BASE_URL como propiedad de entorno del clon NO servía (SSM
+  las pisaba), y cambiarlas en el SSM compartido rompería producción.
+- **Fix (aditivo, cero riesgo para prod):** `loadSecrets` respeta
+  **`SSM_SKIP_KEYS`** (lista coma-separada): esas claves NO se sobreescriben
+  desde SSM → el clon las setea como propiedad de entorno y quedan. Producción
+  no define SSM_SKIP_KEYS → idéntico a antes.
+- **⚠️ SETUP DEL CLON (para probar aislado, sin tocar clientes reales):** en el
+  entorno CLON, propiedades de entorno: `SSM_SKIP_KEYS=MONGODB_URI,PUBLIC_BASE_URL`
+  + `MONGODB_URI=<uri con una DB de TEST, ej. .../giroxnardo_test>` +
+  `PUBLIC_BASE_URL=https://pautagirox.sa-east-1.elasticbeanstalk.com`. ⚠️ Las
+  keys de girox siguen compartidas (SSM) → cargas/retiros de prueba pegan a la
+  1girox REAL (mover plata real). Aislar la DB evita ensuciar usuarios/mensajes
+  reales; para la plata, usar sandbox de girox o montos mínimos.
+- **Validado:** `node --check` OK. Aplica al arrancar el clon.
+
 ### 189. Landing: sin cambio de clave forzado + casino a pantalla completa con burbuja de soporte
 - **Pedido del owner (video):** (1) que al entrar por el link de la landing NO
   pida cambiar la clave obligatoriamente; (2) que la entrada se vea **tal cual
