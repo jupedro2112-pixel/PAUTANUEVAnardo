@@ -2065,7 +2065,9 @@ document.addEventListener('change', function (ev) {
                                 <div>
                                     <label style="color:#aaa;font-size:12px;">API key de 1girox</label>
                                     <input type="text" id="campaignFormJgPassword" autocomplete="off" maxlength="600" placeholder="pk_xxxxxxxx_..." style="width:100%;padding:8px;background:#0d0d1a;color:#fff;border:1px solid rgba(212,175,55,0.3);border-radius:6px;">
-                                    <small id="campaignFormJgPasswordHint" style="color:#888;">Empieza con "pk_". En modo edición, dejala vacía si no querés cambiarla.<br><strong style="color:#7bd39b;">Publicista con MUCHA carga:</strong> pegá VARIAS keys del mismo publicista separadas por coma (ej. <code>pk_a,pk_b,pk_c</code>) y el sistema reparte la carga entre ellas (más cupo, sin saturar).</small>
+                                    <small id="campaignFormJgPasswordHint" style="color:#888;">Empieza con "pk_". En modo edición, dejala vacía si no querés cambiarla.<br>
+                                    <strong style="color:#7bd39b;">POOL (varias keys del MISMO publicista):</strong> podés cargar más de una key separándolas por coma (ej. <code>pk_a,pk_b,pk_c</code>). El sistema reparte la carga entre todas → más cupo, sin saturar. Cada key extra = +60 requests/min.<br>
+                                    <strong style="color:#7bd39b;">Se SUMAN al pool</strong> (no reemplazan): lo que pegues se agrega a las keys que ya están guardadas, así no perdés las viejas. Para ver/quitar keys del pool usá el botón <strong>"🔍 Estado del pool"</strong>.</small>
                                 </div>
                                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                     <button type="button" id="campaignFormTestCredsBtn" onclick="testCampaignJgCreds()" style="padding:6px 12px;background:#2a2a3a;color:#d4af37;border:1px solid rgba(212,175,55,0.3);border-radius:6px;cursor:pointer;font-size:12px;display:none;">🧪 Probar la key</button>

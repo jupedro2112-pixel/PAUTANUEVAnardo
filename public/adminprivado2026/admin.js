@@ -9149,7 +9149,8 @@ async function testCampaignJgCreds() {
     }
 }
 
-// Estado del POOL de keys de la campaña: cuántas hay y cuáles ven a los jugadores.
+// Estado del POOL de keys de la campaña: cuántas hay, cuáles ven a los jugadores,
+// y un botón para quitar cada una.
 async function checkCampaignPoolStatus() {
     const code = document.getElementById('campaignFormOriginalCode').value;
     if (!code) return;
@@ -9162,16 +9163,45 @@ async function checkCampaignPoolStatus() {
         });
         const data = await r.json();
         if (!r.ok) { resultEl.textContent = '✗ ' + (data.error || 'Falló'); resultEl.style.color = '#ff6666'; return; }
-        const oks = (data.results || []).filter(x => x.sees === true).length;
-        const bad = (data.results || []).filter(x => x.sees === false).length;
-        let txt = `${data.total} key${data.total === 1 ? '' : 's'} en el pool`;
-        if (data.sampleUser) txt += ` · ${oks} ✓ ven a los jugadores` + (bad ? ` · ${bad} ✗ NO los ven` : '');
-        else txt += ' (sin jugadores aún para probar)';
-        resultEl.textContent = (bad ? '⚠ ' : '✓ ') + txt;
-        resultEl.style.color = bad ? '#ffb84d' : '#4caf50';
+        const list = data.results || [];
+        const oks = list.filter(x => x.sees === true).length;
+        const bad = list.filter(x => x.sees === false).length;
+        let head = `${data.total} key${data.total === 1 ? '' : 's'} en el pool`;
+        if (data.sampleUser) head += ` · ${oks} ✓` + (bad ? ` · ${bad} ✗ NO ven a los jugadores` : ' todas ven a los jugadores');
+        else head += ' (sin jugadores aún para probar)';
+        // Render con una fila por key + botón quitar.
+        let html = `<div style="color:${bad ? '#ffb84d' : '#4caf50'};font-weight:600;margin-bottom:4px;">${bad ? '⚠ ' : '✓ '}${head}</div>`;
+        html += '<div style="display:grid;gap:3px;">';
+        for (const k of list) {
+            const mark = k.sees === true ? '✓' : (k.sees === false ? '✗' : '·');
+            const col = k.sees === false ? '#ff6666' : '#9fb0a0';
+            html += `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:${col};">`
+                + `<span>${mark} #${k.n} <span style="opacity:.7">(${k.role})</span> <code>${k.key}</code></span>`
+                + `<button type="button" onclick="removeCampaignPoolKey('${code}',${k.n})" style="background:#3a1a1a;color:#ff8888;border:1px solid rgba(255,80,80,0.3);border-radius:5px;font-size:10px;padding:1px 6px;cursor:pointer;">🗑 quitar</button>`
+                + '</div>';
+        }
+        html += '</div>';
+        resultEl.innerHTML = html;
     } catch (e) {
         resultEl.textContent = '✗ Error de conexión';
         resultEl.style.color = '#ff6666';
+    }
+}
+
+// Quita UNA key del pool de la campaña (por índice) y refresca la vista.
+async function removeCampaignPoolKey(code, index) {
+    if (!confirm(`¿Quitar la key #${index} del pool de ${code}? Si es la última, la campaña vuelve a usar la cuenta master.`)) return;
+    try {
+        const r = await fetch(`${API_URL}/api/admin/campaigns/${encodeURIComponent(code)}/pool-remove`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        });
+        const data = await r.json();
+        if (!r.ok) { alert(data.error || 'No se pudo quitar'); return; }
+        checkCampaignPoolStatus(); // refrescar
+    } catch (e) {
+        alert('Error de conexión al quitar la key');
     }
 }
 

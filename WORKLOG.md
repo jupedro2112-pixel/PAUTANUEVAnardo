@@ -39,6 +39,13 @@
   a los jugadores". admin-sw **v41**. ⚠️ ORDEN: primero deployar el código del
   pool, DESPUÉS cargar las keys separadas por coma (si se cargan en el back
   viejo, guardaría todo como una key inválida y rompe el publicista).
+- **Keys SE SUMAN + borrado por key (2026-08-18, admin-sw v42):** al editar, las
+  keys pegadas se AGREGAN al pool existente (dedup), NO reemplazan → no se pierde
+  la key que ya estaba guardada (la única copia: el owner borra su copia local
+  por seguridad). Para reemplazar/limpiar: en "🔍 Estado del pool" cada key tiene
+  un 🗑 "quitar" (`POST /api/admin/campaigns/:code/pool-remove` {index}). Texto
+  del panel actualizado explicando el pool y el "se suman" para referencia
+  futura. Las keys siguen ocultas para TODOS (select:false).
 
 ### 191. Reportes agentes 17-18/8: saturación bajó ~4× pero sigue en ONEKEY → cache del status de reembolso + visibilidad SMS
 - **Reportes (Telegram = UTC = hora de los logs):** 18/8 03:09-03:43 "lento la

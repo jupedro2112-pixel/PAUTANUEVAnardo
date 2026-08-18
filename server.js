@@ -11728,10 +11728,23 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
           return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
         }
         try {
+          // MODO SUMAR (2026-08-18): las keys pegadas se AGREGAN al pool existente
+          // en vez de reemplazarlo → no se pierde la key que ya estaba guardada
+          // (que puede ser la única copia; el owner borra su copia local por
+          // seguridad). Se deduplica. Para reemplazar/quitar hay borrado por key.
           const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
-          update.giroxApiKey = parsed.primary;
-          update.giroxApiKeysExtra = parsed.extras;
-          update.hasGiroxKey = !!parsed.primary;
+          const prev = await Campaign.findOne({ code: normalizedCode })
+            .select('+giroxApiKey +giroxApiKeysExtra').lean();
+          const existing = prev
+            ? [prev.giroxApiKey, ...(Array.isArray(prev.giroxApiKeysExtra) ? prev.giroxApiKeysExtra : [])].filter(Boolean)
+            : [];
+          const combined = existing.slice();
+          for (const k of [parsed.primary, ...parsed.extras].filter(Boolean)) {
+            if (!combined.includes(k)) combined.push(k);
+          }
+          update.giroxApiKey = combined[0] || null;
+          update.giroxApiKeysExtra = combined.slice(1);
+          update.hasGiroxKey = !!combined[0];
         } catch (e) {
           return res.status(400).json({ error: e.message });
         }
@@ -11835,6 +11848,36 @@ app.get('/api/admin/campaigns/:code/pool-status', authMiddleware, adminMiddlewar
     res.json({ total: keys.length, sampleUser: sample ? sample.username : null, results });
   } catch (err) {
     logger.error(`[admin/campaigns pool-status] ${err.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// POST /api/admin/campaigns/:code/pool-remove — quita UNA key del pool por índice
+// (1-based, como lo muestra pool-status). Re-deriva primary + extras. Si se quita
+// la última, la campaña queda sin key propia (vuelve a la master).
+app.post('/api/admin/campaigns/:code/pool-remove', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo el administrador general.' });
+    const code = String(req.params.code).toUpperCase().trim();
+    const index = Number(req.body && req.body.index);
+    const c = await Campaign.findOne({ code }).select('+giroxApiKey +giroxApiKeysExtra').lean();
+    if (!c) return res.status(404).json({ error: 'Campaña no encontrada' });
+    const keys = [c.giroxApiKey, ...(Array.isArray(c.giroxApiKeysExtra) ? c.giroxApiKeysExtra : [])].filter(Boolean);
+    if (!(Number.isInteger(index) && index >= 1 && index <= keys.length)) {
+      return res.status(400).json({ error: 'Índice de key inválido' });
+    }
+    keys.splice(index - 1, 1);
+    await Campaign.updateOne({ code }, { $set: {
+      giroxApiKey: keys[0] || null,
+      giroxApiKeysExtra: keys.slice(1),
+      hasGiroxKey: !!keys[0]
+    } });
+    try { _giroxKeyCache.clear(); } catch (_) {}
+    giroxPublisherKeys.invalidateSession(code);
+    logger.info(`[admin/campaigns pool-remove] ${req.user.username} quitó la key #${index} de ${code} (quedan ${keys.length})`);
+    res.json({ ok: true, total: keys.length });
+  } catch (err) {
+    logger.error(`[admin/campaigns pool-remove] ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
