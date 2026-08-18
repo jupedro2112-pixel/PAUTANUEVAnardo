@@ -479,8 +479,15 @@ girox.setKeyResolver(async (username) => {
     .select('giroxOwnerCampaign role').lean();
   if (u && u.role === 'user' && u.giroxOwnerCampaign) {
     const c = await Campaign.findOne({ code: u.giroxOwnerCampaign, isActive: { $ne: false } })
-      .select('+giroxApiKey').lean();
-    if (c && c.giroxApiKey) key = c.giroxApiKey;
+      .select('+giroxApiKey +giroxApiKeysExtra').lean();
+    if (c && c.giroxApiKey) {
+      // Pool de keys del publicista: primary + extras (todas ven a los mismos
+      // jugadores). Si hay extras, se devuelve el ARRAY para que giroxService
+      // reparta la carga; si es una sola, el string de siempre.
+      const extras = Array.isArray(c.giroxApiKeysExtra)
+        ? c.giroxApiKeysExtra.filter(k => k && typeof k === 'string') : [];
+      key = extras.length ? [c.giroxApiKey, ...extras] : c.giroxApiKey;
+    }
   }
   _giroxKeyCache.set(username, { key, ts: now });
   if (_giroxKeyCache.size > 5000) _giroxKeyCache.clear(); // backstop anti-fuga
@@ -11548,9 +11555,40 @@ function normalizeInfluencers(raw) {
   return out;
 }
 
+// Parsea el campo de key del publicista: acepta VARIAS separadas por coma
+// (primary,extra1,...). Todas tienen que ser del MISMO publicista (ven a los
+// mismos jugadores) → el sistema reparte la carga entre ellas (pool, 2026-08-18).
+// Valida formato pk_ y, si la campaña ya tiene jugadores, que cada key EXTRA los
+// vea (mismo scope). Devuelve { primary, extras } o lanza Error para el panel.
+async function _parsePublisherKeys(rawKey, campaignCode) {
+  const parts = String(rawKey).split(',').map(s => s.trim()).filter(Boolean);
+  for (const k of parts) {
+    if (!k.startsWith('pk_')) {
+      throw new Error(`La API key "${k.slice(0, 8)}…" debe empezar con "pk_".`);
+    }
+  }
+  const primary = parts[0] || null;
+  const extras = parts.slice(1);
+  if (extras.length && campaignCode) {
+    // Un jugador REAL de la campaña para probar que las keys extra lo ven.
+    const sample = await User.findOne({ giroxOwnerCampaign: campaignCode, role: 'user' })
+      .select('username').lean();
+    if (sample && sample.username) {
+      for (const k of extras) {
+        const r = await girox.readPlayerWithKey(k, sample.username);
+        if (!r.found) {
+          throw new Error(`La key extra "${k.slice(0, 8)}…" NO ve a los jugadores de la campaña (probado con ${sample.username}). Tiene que ser del MISMO publicista.`);
+        }
+      }
+    }
+  }
+  return { primary, extras };
+}
+
 // Crear nueva campaña. Soporta opcionalmente la API key de 1girox del publicista:
 // los jugadores creados con esa key quedan bajo SU cuenta (y las cargas salen de su
-// saldo), en vez de la cuenta master.
+// saldo), en vez de la cuenta master. Se pueden cargar VARIAS keys separadas por
+// coma (pool) para repartir la carga entre ellas.
 // El campo del body sigue llamándose `jugayganaPassword` por compatibilidad con el
 // panel, que todavía manda ese nombre; internamente se guarda en `giroxApiKey`.
 app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, res) => {
@@ -11575,7 +11613,7 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
     const rawKey = (typeof giroxApiKey === 'string' && giroxApiKey.trim())
       || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
       || null;
-    let pubApiKey = null;
+    let pubApiKey = null, pubExtras = [];
     if (rawKey) {
       // 🔒 SOLO ADMIN GENERAL (fix 2026-08-06): esta key define bajo qué agente
       // de 1girox caen los jugadores y con qué key se firman TODAS sus
@@ -11584,10 +11622,12 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
       if (req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
       }
-      if (!rawKey.startsWith('pk_')) {
-        return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
+      try {
+        const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
+        pubApiKey = parsed.primary; pubExtras = parsed.extras;
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
       }
-      pubApiKey = rawKey;
     }
     // El username del publicista ya no se usa para operar, pero se conserva como
     // etiqueta informativa (el admin lo usa para saber de quién es la key).
@@ -11616,6 +11656,7 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
       isActive: true,
       jugayganaUsername: jgUsername,
       giroxApiKey: pubApiKey,
+      giroxApiKeysExtra: pubExtras,
       hasGiroxKey: !!pubApiKey,
       influencers
     });
@@ -11624,6 +11665,7 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
     // normales, pero toObject() del doc en memoria sí la trae — se limpia explícito.
     const out = created.toObject();
     delete out.giroxApiKey;
+    delete out.giroxApiKeysExtra;
     delete out.jugayganaPassword;
     out.hasJugayganaCreds = !!pubApiKey;
     res.status(201).json({ campaign: out });
@@ -11667,6 +11709,7 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
     if (clearJugayganaCreds === true) {
       update.jugayganaUsername = null;
       update.giroxApiKey = null;
+      update.giroxApiKeysExtra = [];
       update.hasGiroxKey = false;
     } else {
       if (typeof jugayganaUsername === 'string') {
@@ -11674,7 +11717,8 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
       }
       // Se acepta `giroxApiKey` o el viejo `jugayganaPassword` (el panel todavía
       // manda ese nombre). Sólo se pisa si viene un valor: guardar el formulario sin
-      // tocar el campo NO borra la key existente.
+      // tocar el campo NO borra la key existente. Acepta VARIAS separadas por coma
+      // (pool del publicista).
       const rawKey = (typeof giroxApiKey === 'string' && giroxApiKey.trim())
         || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
         || null;
@@ -11683,11 +11727,14 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
         if (req.user.role !== 'admin') {
           return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
         }
-        if (!rawKey.startsWith('pk_')) {
-          return res.status(400).json({ error: 'La API key del publicista debe empezar con "pk_"' });
+        try {
+          const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
+          update.giroxApiKey = parsed.primary;
+          update.giroxApiKeysExtra = parsed.extras;
+          update.hasGiroxKey = !!parsed.primary;
+        } catch (e) {
+          return res.status(400).json({ error: e.message });
         }
-        update.giroxApiKey = rawKey;
-        update.hasGiroxKey = true;
       }
     }
 
@@ -11718,11 +11765,15 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
 
     // Con 1girox no hay sesión que invalidar (la key se lee de la DB en cada alta),
     // pero se conserva el aviso porque el servicio lo deja registrado en el log.
-    if ('giroxApiKey' in update) {
+    if ('giroxApiKey' in update || 'giroxApiKeysExtra' in update) {
       giroxPublisherKeys.invalidateSession(normalizedCode);
+      // El resolver cachea username→key(s) 60s: se limpia para que el pool nuevo
+      // tome efecto al instante (no en el próximo TTL).
+      try { _giroxKeyCache.clear(); } catch (_) {}
     }
 
     delete updated.giroxApiKey;
+    delete updated.giroxApiKeysExtra;
     delete updated.jugayganaPassword;
     updated.hasJugayganaCreds = !!updated.hasGiroxKey;
     res.json({ campaign: updated, renamedUsers });

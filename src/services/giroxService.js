@@ -155,6 +155,24 @@ function _pickReadsKey() {
   }
   return best;
 }
+
+/** Elige, de un POOL de keys del MISMO publicista, la que tiene más lugar libre
+ *  en su ventana (todas ven a los mismos jugadores → repartir multiplica el
+ *  cupo). Usa el techo por-key de _laneLimit (publicistas = PUBLISHER_MAX_RPM). */
+function _pickPublisherKey(pool) {
+  const keys = (Array.isArray(pool) ? pool : []).filter(Boolean);
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+  const now = Date.now();
+  let best = keys[0], bestFree = -Infinity;
+  for (const k of keys) {
+    const arr = _laneTimestamps.get(k) || [];
+    const load = arr.filter((t) => now - t < WINDOW_MS).length;
+    const free = _laneLimit(k) - load;
+    if (free > bestFree) { bestFree = free; best = k; }
+  }
+  return best;
+}
 /** URL pública del casino (la que ve el usuario). */
 function getPlayUrl() {
   return (process.env.GIROX_PLAY_URL || 'https://1girox.com').replace(/\/+$/, '');
@@ -340,6 +358,11 @@ async function _request({ method, path, body, label, retryable = true, username 
 
   // Se resuelve UNA vez (no por reintento): la key del dueño no cambia en medio.
   let keyOverride = apiKey || await _resolveKeyFor(username);
+  // Pool de keys del publicista: si el resolver devolvió un ARRAY (varias keys
+  // del mismo publicista, todas ven a los mismos jugadores), se elige la que
+  // tiene más lugar libre → reparte la carga. Se elige UNA vez (antes de los
+  // reintentos) para no romper la idempotencia por reference.
+  if (Array.isArray(keyOverride)) keyOverride = _pickPublisherKey(keyOverride);
   // Lecturas por el pool de consultas SOLO cuando iría por la master: la key de
   // un publicista es la única que ve a SUS jugadores, no se puede reemplazar.
   if (!keyOverride && readOnly) keyOverride = _pickReadsKey();
@@ -628,6 +651,23 @@ async function getUserInfoByName(username, opts = {}) {
 async function checkUserExists(username) {
   const info = await getUserInfoByName(username);
   return !!info;
+}
+
+/** Lee un jugador con una KEY ESPECÍFICA (sin cache, sin resolver). Sirve para
+ *  VALIDAR que una key extra del pool de un publicista ve a sus jugadores antes
+ *  de guardarla en el panel. @returns { found:bool, username?, balance? }. */
+async function readPlayerWithKey(apiKey, username) {
+  if (!apiKey || !username) return { found: false };
+  const r = await _request({
+    method: 'get',
+    path: `/players/${encodeURIComponent(String(username))}`,
+    label: `test-key(${username})`,
+    apiKey,
+    retryable: false
+  });
+  if (!r.ok) return { found: false, error: r.error, code: r.code };
+  const p = (r.data && r.data.player) || null;
+  return p ? { found: true, username: p.username, balance: p.balance } : { found: false };
 }
 
 /**
@@ -1287,6 +1327,7 @@ module.exports = {
   createPlatformUser,
   getUserInfoByName,
   checkUserExists,
+  readPlayerWithKey,
   ping,
   syncUserToPlatform,
   validateCredentials,

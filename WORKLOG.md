@@ -8,6 +8,32 @@
 
 ## Sesión 2026-08-16
 
+### 192. POOL de keys por publicista: varias keys del MISMO publicista para repartir la carga (soluciona ONEKEY sin subir límites)
+- **Contexto:** ONEKEY (publicista gigante, miles de usuarios) satura su única
+  key de 1girox (30/min local). El owner NO puede pedir que se la suban a 180
+  (la key la genera el publicista), PERO controla el panel de cada publicista y
+  **puede generar MÁS keys para ONEKEY**. Verificado con curl: una 2ª key de
+  ONEKEY VE a los jugadores creados con la 1ª (comparten scope bajo el agente).
+- **Solución:** un publicista puede tener VARIAS keys (`giroxApiKeysExtra` en
+  Campaign, select:false) y el sistema **reparte lecturas Y cargas** entre
+  `giroxApiKey` + las extras → N keys = N×60/min de cupo, sin depender de 1girox.
+  - **Resolver (server.js):** si la campaña tiene extras, devuelve el ARRAY de
+    keys; giroxService elige la de MÁS lugar libre (`_pickPublisherKey`, misma
+    idea que el pool de consultas). Se elige UNA vez por operación (antes de los
+    reintentos) → no rompe idempotencia por reference. Cache del resolver se
+    limpia al guardar la campaña (pool nuevo al instante).
+  - **Panel:** en el campo "API key de 1girox" se pegan VARIAS separadas por
+    coma (`pk_a,pk_b,pk_c`). maxlength subido a 600. Al guardar, el backend
+    VALIDA cada key extra contra un jugador real de la campaña
+    (`girox.readPlayerWithKey`): si una no ve a los jugadores (key de otro
+    publicista) la rechaza con mensaje claro. admin-sw **v40**.
+- **⚠️ ACCIÓN OWNER:** en el panel → editar ONEKEY → en "API key de 1girox"
+  pegar las keys separadas por coma (la actual + las nuevas que generes) →
+  Guardar. Con 3 keys tenés 180/min para ONEKEY; con 4, 240; etc. (generás más
+  cuando quieras).
+- **Validado:** `node --check` OK (server.js, giroxService.js, Campaign.js) +
+  test aislado del parseo/selección. **Back necesita redeploy** (a PRODUCCIÓN).
+
 ### 191. Reportes agentes 17-18/8: saturación bajó ~4× pero sigue en ONEKEY → cache del status de reembolso + visibilidad SMS
 - **Reportes (Telegram = UTC = hora de los logs):** 18/8 03:09-03:43 "lento la
   carga de bono", "carga manual >30s", "no carga automático (van 4 chats)";

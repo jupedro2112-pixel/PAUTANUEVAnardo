@@ -118,6 +118,16 @@ const campaignSchema = new mongoose.Schema({
     default: null,
     select: false
   },
+  // POOL de keys ADICIONALES del MISMO publicista (2026-08-18). Todas ven a los
+  // mismos jugadores (comprobado: comparten scope bajo el agente), así que el
+  // sistema reparte lecturas y cargas entre `giroxApiKey` + estas → multiplica el
+  // cupo de rate limit (N keys = N×60/min) sin depender de que 1girox suba nada.
+  // Secreto: select:false, jamás se devuelve al panel.
+  giroxApiKeysExtra: {
+    type: [String],
+    default: [],
+    select: false
+  },
   // Espejo booleano de "¿tiene giroxApiKey?", SIN select:false.
   // Existe para que el listado de campañas del panel pueda mostrar el badge
   // "cuenta propia configurada" sin tener que traer la key (que es un secreto) ni
