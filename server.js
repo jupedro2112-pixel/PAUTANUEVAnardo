@@ -6981,7 +6981,8 @@ app.post('/api/refunds/claim/weekly', authMiddleware, async (req, res) => {
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-weekly');
+      // fresh: es la RECLAMACIÓN (paga plata) → netwin exacto, no el cache del status.
+      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-weekly', { fresh: true });
       if (!netRes.success) {
         logger.warn(`[REFUND] weekly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });
@@ -7145,7 +7146,8 @@ app.post('/api/refunds/claim/monthly', authMiddleware, async (req, res) => {
       const toDate = new Date(toEpoch * 1000);
 
       // NETWIN/GGR REAL del período (apostado − ganado), misma fuente que referidos.
-      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-monthly');
+      // fresh: es la RECLAMACIÓN (paga plata) → netwin exacto, no el cache del status.
+      const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'refund-monthly', { fresh: true });
       if (!netRes.success) {
         logger.warn(`[REFUND] monthly — no se pudo leer NETWIN de ${username}: ${netRes.error || 's/detalle'}`);
         return res.json({ success: false, message: 'No pudimos calcular tu pérdida en este momento (la plataforma está demorada). Probá en unos minutos.', canClaim: true });

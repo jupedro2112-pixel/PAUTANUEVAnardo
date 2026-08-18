@@ -8,6 +8,35 @@
 
 ## Sesión 2026-08-16
 
+### 191. Reportes agentes 17-18/8: saturación bajó ~4× pero sigue en ONEKEY → cache del status de reembolso + visibilidad SMS
+- **Reportes (Telegram = UTC = hora de los logs):** 18/8 03:09-03:43 "lento la
+  carga de bono", "carga manual >30s", "no carga automático (van 4 chats)";
+  17/8 00:06 "AUTO-CARGA hgcash FALLÓ — plataforma saturada"; 17/8 21:39
+  "usuarios no reciben el código SMS al querer retirar".
+- **Diagnóstico (logs):** el cache de #188 YA está deployado
+  (`cache jugador=8000ms`) y las saturaciones cayeron ~4× (124/h el 14 → 34 el
+  17 / 12 el 18). Pero SIGUE saturando el carril de PUBLICISTA (30/min), ahora
+  dominado por el **status de reembolso** (`refund-weekly/monthly` = 28 de 40),
+  no cacheado. Es ONEKEY, el publicista gigante (los agentes le crean usuarios
+  sin parar en los logs). El SMS: **cero errores `[smsService]/[otpService]` →
+  los SMS SE ENVÍAN bien a SNS; el problema es de ENTREGA de AWS** (típico:
+  límite de gasto mensual de SMS de SNS → los descarta en silencio).
+- **Fixes:**
+  1. **Cache de `getPlayerStats`** (`GIROX_STATS_CACHE_MS`, default 90s) — el
+     rango del status es un período CERRADO (netwin estable) → seguro. La
+     RECLAMACIÓN de reembolso (paga plata) pasa `{fresh:true}`. Corta el
+     saturador actual (refund-*).
+  2. **Log de envío de SMS a stdout** (`[smsService] OK → SNS MessageId=...`,
+     sin el teléfono) para confirmar envíos y separar "no se envió" de "no se
+     entregó".
+- **⚠️ ACCIONES OWNER:** (a) **ONEKEY a 180** en 1girox (es el mega-publicista;
+  con eso + `GIROX_PUBLISHER_KEY_RPM=<keyOnekey>:90` se cierra la saturación
+  que queda); (b) **AWS SNS → revisar el LÍMITE DE GASTO mensual de SMS** y las
+  métricas de entrega (casi seguro es eso lo del código que no llega); subir el
+  límite.
+- **Validado:** `node --check` OK (giroxService.js, smsService.js, server.js).
+  **Back necesita redeploy** (a PRODUCCIÓN — chat1girox.com).
+
 ### 190. `SSM_SKIP_KEYS`: un entorno CLON puede tener su propia DB/URL sin tocar el SSM compartido
 - **Contexto:** el owner levantó un entorno CLON ("pruebapau",
   pautagirox.sa-east-1.elasticbeanstalk.com) para PROBAR sin riesgo, pero usa

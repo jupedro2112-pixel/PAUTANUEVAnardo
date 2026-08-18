@@ -515,6 +515,10 @@ const _playerCache = new Map();        // usernameLower → { data, ts }
 const _playerInflight = new Map();     // usernameLower → Promise<data|null>
 const _playerInvalidatedAt = new Map(); // usernameLower → ts de la última invalidación
 
+// Cache de stats/netwin (getPlayerStats) — status de reembolso. Ver getPlayerStats.
+const STATS_CACHE_TTL_MS = Number(process.env.GIROX_STATS_CACHE_MS || 90000);
+const _statsCache = new Map();         // "user|from|to" → { data, ts }
+
 /** Borra el saldo cacheado de un usuario (se llama tras cada operación de plata)
  *  y registra CUÁNDO se invalidó, para que una lectura que venía en vuelo no
  *  vuelva a cachear el valor viejo después (ver _maybeCachePlayer). */
@@ -539,6 +543,7 @@ function _maybeCachePlayer(key, data, startTs) {
 const _playerCachePrune = setInterval(() => {
   const now = Date.now();
   for (const [k, v] of _playerCache) if (now - v.ts >= PLAYER_CACHE_TTL_MS) _playerCache.delete(k);
+  for (const [k, v] of _statsCache) if (now - v.ts >= STATS_CACHE_TTL_MS) _statsCache.delete(k);
   // Los timestamps de invalidación se guardan más tiempo que la peor lectura en
   // vuelo posible (timeout + reintentos ~80s) para no reactivar la race.
   for (const [k, ts] of _playerInvalidatedAt) if (now - ts >= 300000) _playerInvalidatedAt.delete(k);
@@ -1063,7 +1068,7 @@ function _statsTotals(t) {
  * @returns {{success, netwin, casinoNetwin, sportsNetwin, wagered, payout, betsCount,
  *            playerId, from, to}} | {success:false, error, code}
  */
-async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
+async function getPlayerStats(username, fromDate, toDate, label = 'stats', opts = {}) {
   const from = formatStatsDate(fromDate);
   const to = formatStatsDate(toDate);
   if (!from || !to) {
@@ -1074,6 +1079,17 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
   const days = Math.abs(new Date(toDate) - new Date(fromDate)) / 86400000;
   if (days > STATS_MAX_DAYS) {
     return { success: false, error: `El rango no puede superar los ${STATS_MAX_DAYS} días.`, code: 'invalid_range' };
+  }
+
+  // Cache corto por (usuario, rango): el status de reembolso consulta esto muy
+  // seguido (weekly+monthly por usuario) y para jugadores de publicista va por
+  // la única key de ese publicista (30/min) → era el top de saturación (logs
+  // 2026-08-18). El rango del status es un período ya cerrado → el netwin es
+  // estable, cachear es seguro. La RECLAMACIÓN (plata) pasa {fresh:true}.
+  const _statsKey = String(username).toLowerCase() + '|' + from + '|' + to;
+  if (!(opts && opts.fresh)) {
+    const _c = _statsCache.get(_statsKey);
+    if (_c && (Date.now() - _c.ts) < STATS_CACHE_TTL_MS) return _c.data;
   }
 
   const r = await _request({
@@ -1092,7 +1108,7 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
   const casino = _statsTotals(cats.casino);
   const sports = _statsTotals(cats.sports);
 
-  return {
+  const out = {
     success: true,
     playerId: d.player && d.player.id != null ? Number(d.player.id) : null,
     username: (d.player && d.player.username) || String(username),
@@ -1106,6 +1122,8 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats') {
     betsCount: totals.betsCount,
     categories: { casino, sports }
   };
+  _statsCache.set(_statsKey, { data: out, ts: Date.now() }); // solo se cachea el éxito
+  return out;
 }
 
 /**

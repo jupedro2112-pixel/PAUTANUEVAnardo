@@ -75,8 +75,13 @@ async function sendSMS(phone, message) {
       }
     });
 
-    await client.send(command);
-    return { success: true };
+    const resp = await client.send(command);
+    // Log a stdout (sin el teléfono) para tener visibilidad: si vemos muchos
+    // "OK" acá pero los usuarios NO reciben el código, el problema es de ENTREGA
+    // de AWS SNS (típico: límite de gasto mensual de SMS alcanzado → SNS los
+    // descarta en silencio), NO del envío. Se revisa en la consola de SNS.
+    try { console.log('[smsService] OK → SNS MessageId=' + ((resp && resp.MessageId) || 'n/a')); } catch (_) {}
+    return { success: true, messageId: resp && resp.MessageId };
   } catch (error) {
     // Avoid logging user-controlled phone number in format strings
     console.error('[smsService] Error enviando SMS:', error.message);
