@@ -11562,27 +11562,24 @@ function normalizeInfluencers(raw) {
 // vea (mismo scope). Devuelve { primary, extras } o lanza Error para el panel.
 async function _parsePublisherKeys(rawKey, campaignCode) {
   const parts = String(rawKey).split(',').map(s => s.trim()).filter(Boolean);
-  for (const k of parts) {
-    if (!k.startsWith('pk_')) {
-      throw new Error(`La API key "${k.slice(0, 8)}…" debe empezar con "pk_".`);
-    }
-  }
-  const primary = parts[0] || null;
-  const extras = parts.slice(1);
-  if (extras.length && campaignCode) {
-    // Un jugador REAL de la campaña para probar que las keys extra lo ven.
-    const sample = await User.findOne({ giroxOwnerCampaign: campaignCode, role: 'user' })
+  const valid = [];
+  const skipped = []; // { key, reason } — las que NO se agregan
+  // Un jugador REAL de la campaña para probar que cada key lo ve (si ya hay).
+  let sample = null;
+  if (campaignCode) {
+    sample = await User.findOne({ giroxOwnerCampaign: campaignCode, role: 'user' })
       .select('username').lean();
-    if (sample && sample.username) {
-      for (const k of extras) {
-        const r = await girox.readPlayerWithKey(k, sample.username);
-        if (!r.found) {
-          throw new Error(`La key extra "${k.slice(0, 8)}…" NO ve a los jugadores de la campaña (probado con ${sample.username}). Tiene que ser del MISMO publicista.`);
-        }
-      }
-    }
   }
-  return { primary, extras };
+  for (const k of parts) {
+    const masked = k.slice(0, 8) + '…';
+    if (!k.startsWith('pk_')) { skipped.push({ key: masked, reason: 'no empieza con "pk_"' }); continue; }
+    if (sample && sample.username) {
+      const r = await girox.readPlayerWithKey(k, sample.username);
+      if (!r.found) { skipped.push({ key: masked, reason: 'no ve a los jugadores del publicista' }); continue; }
+    }
+    if (!valid.includes(k)) valid.push(k); // dedup
+  }
+  return { valid, skipped };
 }
 
 // Crear nueva campaña. Soporta opcionalmente la API key de 1girox del publicista:
@@ -11613,7 +11610,7 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
     const rawKey = (typeof giroxApiKey === 'string' && giroxApiKey.trim())
       || (typeof jugayganaPassword === 'string' && jugayganaPassword.trim())
       || null;
-    let pubApiKey = null, pubExtras = [];
+    let pubApiKey = null, pubExtras = [], pubSkipped = [];
     if (rawKey) {
       // 🔒 SOLO ADMIN GENERAL (fix 2026-08-06): esta key define bajo qué agente
       // de 1girox caen los jugadores y con qué key se firman TODAS sus
@@ -11622,12 +11619,10 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
       if (req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
       }
-      try {
-        const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
-        pubApiKey = parsed.primary; pubExtras = parsed.extras;
-      } catch (e) {
-        return res.status(400).json({ error: e.message });
-      }
+      const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
+      pubApiKey = parsed.valid[0] || null;
+      pubExtras = parsed.valid.slice(1);
+      pubSkipped = parsed.skipped;
     }
     // El username del publicista ya no se usa para operar, pero se conserva como
     // etiqueta informativa (el admin lo usa para saber de quién es la key).
@@ -11668,7 +11663,7 @@ app.post('/api/admin/campaigns', authMiddleware, adminMiddleware, async (req, re
     delete out.giroxApiKeysExtra;
     delete out.jugayganaPassword;
     out.hasJugayganaCreds = !!pubApiKey;
-    res.status(201).json({ campaign: out });
+    res.status(201).json({ campaign: out, skipped: pubSkipped });
   } catch (err) {
     logger.error(`[admin/campaigns POST] ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });
@@ -11685,6 +11680,7 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
     const { publisher, name, commissionType, commissionValue, isActive, notes,
             jugayganaUsername, jugayganaPassword, giroxApiKey, clearJugayganaCreds } = req.body || {};
     const update = {};
+    let keysSkipped = []; // keys del pool que se saltearon (formato o scope)
     if (typeof publisher === 'string') update.publisher = publisher.trim().slice(0, 100);
     if (typeof name === 'string') update.name = name.trim().slice(0, 200);
     if (['cpa', 'revshare', 'none'].includes(commissionType)) update.commissionType = commissionType;
@@ -11727,27 +11723,25 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
         if (req.user.role !== 'admin') {
           return res.status(403).json({ error: 'Solo el administrador general puede configurar la cuenta de 1girox del publicista.' });
         }
-        try {
-          // MODO SUMAR (2026-08-18): las keys pegadas se AGREGAN al pool existente
-          // en vez de reemplazarlo → no se pierde la key que ya estaba guardada
-          // (que puede ser la única copia; el owner borra su copia local por
-          // seguridad). Se deduplica. Para reemplazar/quitar hay borrado por key.
-          const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
-          const prev = await Campaign.findOne({ code: normalizedCode })
-            .select('+giroxApiKey +giroxApiKeysExtra').lean();
-          const existing = prev
-            ? [prev.giroxApiKey, ...(Array.isArray(prev.giroxApiKeysExtra) ? prev.giroxApiKeysExtra : [])].filter(Boolean)
-            : [];
-          const combined = existing.slice();
-          for (const k of [parsed.primary, ...parsed.extras].filter(Boolean)) {
-            if (!combined.includes(k)) combined.push(k);
-          }
-          update.giroxApiKey = combined[0] || null;
-          update.giroxApiKeysExtra = combined.slice(1);
-          update.hasGiroxKey = !!combined[0];
-        } catch (e) {
-          return res.status(400).json({ error: e.message });
+        // MODO SUMAR (2026-08-18): las keys pegadas se AGREGAN al pool existente
+        // en vez de reemplazarlo → no se pierde la key que ya estaba guardada
+        // (que puede ser la única copia; el owner borra su copia local por
+        // seguridad). Se deduplica. Las malas se SALTEAN (no rompen las buenas):
+        // se informan en `skipped`. Para reemplazar/quitar hay borrado por key.
+        const parsed = await _parsePublisherKeys(rawKey, normalizedCode);
+        keysSkipped = parsed.skipped;
+        const prev = await Campaign.findOne({ code: normalizedCode })
+          .select('+giroxApiKey +giroxApiKeysExtra').lean();
+        const existing = prev
+          ? [prev.giroxApiKey, ...(Array.isArray(prev.giroxApiKeysExtra) ? prev.giroxApiKeysExtra : [])].filter(Boolean)
+          : [];
+        const combined = existing.slice();
+        for (const k of parsed.valid) {
+          if (!combined.includes(k)) combined.push(k);
         }
+        update.giroxApiKey = combined[0] || null;
+        update.giroxApiKeysExtra = combined.slice(1);
+        update.hasGiroxKey = !!combined[0];
       }
     }
 
@@ -11789,7 +11783,7 @@ app.put('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (re
     delete updated.giroxApiKeysExtra;
     delete updated.jugayganaPassword;
     updated.hasJugayganaCreds = !!updated.hasGiroxKey;
-    res.json({ campaign: updated, renamedUsers });
+    res.json({ campaign: updated, renamedUsers, skipped: keysSkipped });
   } catch (err) {
     logger.error(`[admin/campaigns PUT] ${err.message}`);
     res.status(500).json({ error: 'Error del servidor' });

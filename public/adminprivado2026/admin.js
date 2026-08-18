@@ -9275,9 +9275,11 @@ async function submitCampaignForm() {
         // acepta ese nombre por compatibilidad; ahí adentro se guarda como giroxApiKey.)
         if (jgUsername) body.jugayganaUsername = jgUsername;
         if (jgPassword) body.jugayganaPassword = jgPassword;
-        // En edición, key vacía = mantener la que ya está guardada.
-        if (jgPassword && !jgPassword.startsWith('pk_')) {
-            errorDiv.textContent = 'La API key de 1girox tiene que empezar con "pk_"';
+        // En edición, key vacía = mantener la que ya está guardada. Se acepta una
+        // o VARIAS separadas por coma; el backend saltea las malas y avisa cuáles.
+        // Acá solo se bloquea si NINGUNA arranca con "pk_" (input claramente mal).
+        if (jgPassword && !jgPassword.split(',').some(k => k.trim().startsWith('pk_'))) {
+            errorDiv.textContent = 'La API key de 1girox tiene que empezar con "pk_" (podés pegar varias separadas por coma).';
             errorDiv.style.display = '';
             return;
         }
@@ -9316,6 +9318,12 @@ async function submitCampaignForm() {
             errorDiv.textContent = data.error || 'Error al guardar';
             errorDiv.style.display = '';
             return;
+        }
+        // Aviso si alguna key del pool se salteó (formato o no ve a los jugadores).
+        // Las buenas SÍ se agregaron; solo se informan las que no.
+        if (Array.isArray(data.skipped) && data.skipped.length) {
+            const det = data.skipped.map(s => `• ${s.key} — ${s.reason}`).join('\n');
+            alert(`⚠️ ${data.skipped.length} key(s) NO se agregaron (las demás sí):\n\n${det}\n\nRevisá esas y volvé a pegarlas.`);
         }
         showToast(data.renamedUsers ? `Campaña guardada · ${data.renamedUsers} usuario(s) reasignado(s) al renombrar` : 'Campaña guardada', 'success');
         closeCampaignFormModal();

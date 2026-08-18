@@ -46,6 +46,10 @@
   un 🗑 "quitar" (`POST /api/admin/campaigns/:code/pool-remove` {index}). Texto
   del panel actualizado explicando el pool y el "se suman" para referencia
   futura. Las keys siguen ocultas para TODOS (select:false).
+- **Tolerante a keys malas (admin-sw v43):** `_parsePublisherKeys` ya NO tira
+  error en la 1ª key mala → agrega las BUENAS y SALTEA las malas (formato o que
+  no ven a los jugadores), devolviendo `skipped[]`. El panel avisa cuáles no se
+  agregaron (las demás sí). Así un typo en una no te hace perder las otras 4.
 
 ### 191. Reportes agentes 17-18/8: saturación bajó ~4× pero sigue en ONEKEY → cache del status de reembolso + visibilidad SMS
 - **Reportes (Telegram = UTC = hora de los logs):** 18/8 03:09-03:43 "lento la
