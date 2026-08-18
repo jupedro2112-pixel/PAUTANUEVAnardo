@@ -11809,6 +11809,36 @@ app.post('/api/admin/campaigns/:code/test-jugaygana-creds', authMiddleware, admi
   }
 });
 
+// GET /api/admin/campaigns/:code/pool-status
+// Estado del POOL de keys de la campaña (2026-08-18): cuántas keys tiene y cuáles
+// VEN a los jugadores. Prueba cada key contra un jugador real de la campaña.
+// Para que el admin confirme que las N keys cargadas quedaron bien.
+app.get('/api/admin/campaigns/:code/pool-status', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo el administrador general.' });
+    const code = String(req.params.code).toUpperCase().trim();
+    const c = await Campaign.findOne({ code })
+      .select('+giroxApiKey +giroxApiKeysExtra').lean();
+    if (!c) return res.status(404).json({ error: 'Campaña no encontrada' });
+    const keys = [c.giroxApiKey, ...(Array.isArray(c.giroxApiKeysExtra) ? c.giroxApiKeysExtra : [])].filter(Boolean);
+    if (!keys.length) return res.json({ total: 0, results: [], note: 'Sin key propia (usa la cuenta master).' });
+    const sample = await User.findOne({ giroxOwnerCampaign: code, role: 'user' }).select('username').lean();
+    const results = [];
+    for (let i = 0; i < keys.length; i++) {
+      let sees = null;
+      if (sample && sample.username) {
+        const r = await girox.readPlayerWithKey(keys[i], sample.username);
+        sees = !!r.found;
+      }
+      results.push({ n: i + 1, key: keys[i].slice(0, 10) + '…', role: i === 0 ? 'principal' : 'extra', sees });
+    }
+    res.json({ total: keys.length, sampleUser: sample ? sample.username : null, results });
+  } catch (err) {
+    logger.error(`[admin/campaigns pool-status] ${err.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 // "Eliminar" = soft delete: marca isActive=false. No borramos para preservar atribuciones.
 app.delete('/api/admin/campaigns/:code', authMiddleware, adminMiddleware, async (req, res) => {
   try {

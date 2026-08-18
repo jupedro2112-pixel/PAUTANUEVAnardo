@@ -8987,6 +8987,8 @@ function _resetCampaignCredsForm(hasCreds) {
         : '· sin configurar (usa la master)';
     document.getElementById('campaignFormCredsStatus').style.color = hasCreds ? '#4caf50' : '#888';
     document.getElementById('campaignFormTestCredsBtn').style.display = hasCreds ? '' : 'none';
+    var _poolBtn = document.getElementById('campaignFormPoolStatusBtn');
+    if (_poolBtn) _poolBtn.style.display = hasCreds ? '' : 'none';
     document.getElementById('campaignFormClearCredsBtn').style.display = hasCreds ? '' : 'none';
     document.getElementById('campaignFormTestCredsResult').textContent = '';
     // Flag interna: en edit, si el usuario tocó "quitar creds", marcamos para enviar
@@ -9141,6 +9143,32 @@ async function testCampaignJgCreds() {
             resultEl.textContent = '✗ ' + (data.error || 'Falló');
             resultEl.style.color = '#ff6666';
         }
+    } catch (e) {
+        resultEl.textContent = '✗ Error de conexión';
+        resultEl.style.color = '#ff6666';
+    }
+}
+
+// Estado del POOL de keys de la campaña: cuántas hay y cuáles ven a los jugadores.
+async function checkCampaignPoolStatus() {
+    const code = document.getElementById('campaignFormOriginalCode').value;
+    if (!code) return;
+    const resultEl = document.getElementById('campaignFormTestCredsResult');
+    resultEl.textContent = 'Consultando el pool…';
+    resultEl.style.color = '#888';
+    try {
+        const r = await fetch(`${API_URL}/api/admin/campaigns/${encodeURIComponent(code)}/pool-status`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await r.json();
+        if (!r.ok) { resultEl.textContent = '✗ ' + (data.error || 'Falló'); resultEl.style.color = '#ff6666'; return; }
+        const oks = (data.results || []).filter(x => x.sees === true).length;
+        const bad = (data.results || []).filter(x => x.sees === false).length;
+        let txt = `${data.total} key${data.total === 1 ? '' : 's'} en el pool`;
+        if (data.sampleUser) txt += ` · ${oks} ✓ ven a los jugadores` + (bad ? ` · ${bad} ✗ NO los ven` : '');
+        else txt += ' (sin jugadores aún para probar)';
+        resultEl.textContent = (bad ? '⚠ ' : '✓ ') + txt;
+        resultEl.style.color = bad ? '#ffb84d' : '#4caf50';
     } catch (e) {
         resultEl.textContent = '✗ Error de conexión';
         resultEl.style.color = '#ff6666';

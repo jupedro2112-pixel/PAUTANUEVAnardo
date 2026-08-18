@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v40'; // v40: pool de keys por publicista (varias keys separadas por coma en el campo API key) para repartir la carga
+const CACHE_VERSION = 'v41'; // v41: botón "🔍 Estado del pool" — muestra cuántas keys tiene el publicista y cuáles ven a los jugadores
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

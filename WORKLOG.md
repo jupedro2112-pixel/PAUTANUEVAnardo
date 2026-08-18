@@ -33,6 +33,12 @@
   cuando quieras).
 - **Validado:** `node --check` OK (server.js, giroxService.js, Campaign.js) +
   test aislado del parseo/selección. **Back necesita redeploy** (a PRODUCCIÓN).
+- **Verificación (botón nuevo):** en el modal de la campaña, **"🔍 Estado del
+  pool"** (`GET /api/admin/campaigns/:code/pool-status`) muestra cuántas keys
+  tiene y prueba cada una contra un jugador real → "5 keys en el pool · 5 ✓ ven
+  a los jugadores". admin-sw **v41**. ⚠️ ORDEN: primero deployar el código del
+  pool, DESPUÉS cargar las keys separadas por coma (si se cargan en el back
+  viejo, guardaría todo como una key inválida y rompe el publicista).
 
 ### 191. Reportes agentes 17-18/8: saturación bajó ~4× pero sigue en ONEKEY → cache del status de reembolso + visibilidad SMS
 - **Reportes (Telegram = UTC = hora de los logs):** 18/8 03:09-03:43 "lento la
