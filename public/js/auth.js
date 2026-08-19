@@ -559,6 +559,16 @@ VIP.auth = (function () {
         // quedar en el historial ni compartirse por accidente.
         try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
 
+        // Recuadro "🎰 Entrando al casino…" YA, antes de cualquier request —
+        // junto con la clase `casino-boot` del <head> (que esconde el login
+        // desde el primer frame) el cliente nunca ve el login/registro.
+        if (goCasino) { try { VIP.ui._showCasinoFrame(); } catch (e) {} }
+        // Si el canje falla, volver al login normal (sacar el modo casino).
+        const casinoBootFail = function () {
+            try { document.documentElement.classList.remove('casino-boot'); } catch (e) {}
+            if (goCasino) { try { VIP.ui.closeCasinoFrame(); } catch (e) {} }
+        };
+
         try {
             const response = await fetch(`${VIP.config.API_URL}/api/auth/access-link`, {
                 method: 'POST',
@@ -584,8 +594,10 @@ VIP.auth = (function () {
                 }
                 return true; // el caller sigue con verifyToken() → sesión completa
             }
+            casinoBootFail();
             VIP.ui.showToast(data.error || 'Este link de acceso ya fue usado o no es válido.', 'error');
         } catch (e) {
+            casinoBootFail();
             VIP.ui.showToast('Error de conexión al validar tu link de acceso. Probá de nuevo.', 'error');
         }
         return false;

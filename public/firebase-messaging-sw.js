@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v107'; // v107: entrada por landing MUCHO más rápida — el SSO del casino viaja adelantado en el canje del access-link (1 sola ida) y el chat de soporte queda abierto a la derecha
+const CACHE_VERSION = 'v108'; // v108: landing sin flash de login (casino-boot), clave fija asd123, chat solo con credenciales (sin bienvenida ni CBU)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

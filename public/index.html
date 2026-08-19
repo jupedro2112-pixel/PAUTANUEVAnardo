@@ -20,6 +20,24 @@
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180x180.png">
+
+    <!-- ENTRADA POR LANDING (?acceso=...&ir=casino): marcar el <html> ANTES de
+         que el body se parsee → el CSS de abajo esconde el login/registro desde
+         el PRIMER frame (el owner veía la pantalla de login "flashear" antes
+         del casino). auth.js muestra el "Entrando al casino…" al arrancar y
+         SACA la clase si el link resulta inválido (ahí sí se ve el login). -->
+    <script>
+        try {
+            var _q = new URLSearchParams(location.search);
+            if (_q.get('acceso') && _q.get('ir') === 'casino') {
+                document.documentElement.classList.add('casino-boot');
+            }
+        } catch (e) {}
+    </script>
+    <style>
+        html.casino-boot body { background: #0d0d1a; }
+        html.casino-boot #loginScreen { display: none !important; }
+    </style>
     
     <!-- Firebase SDK: lo carga el loader robusto de abajo (reintentos +
          fallback de CDN). No se ponen <script> estáticos acá para no bloquear

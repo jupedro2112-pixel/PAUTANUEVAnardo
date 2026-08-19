@@ -13,6 +13,34 @@
 > RESTAURADOS a las 03:46 (`6da0366`, revert del revert) — el owner confirmó que
 > SÍ van en este repo. Si se mira `git log`, ese par de commits se cancela.
 
+### 198. Landing v3 (screencast 04:06): credenciales ANTES de entrar, clave fija asd123, sin flash de login, chat solo con usuario+clave
+- **Pedidos del owner (4):**
+  1. **Recuadro de usuario+clave ANTES de abrir el casino** → la pantalla 2 de
+     la landing (#184, que #196 había salteado) se reconectó: crear cuenta →
+     muestra usuario+clave → botón "ENTRAR A MI CUENTA" → PWA con casino+chat.
+  2. **Clave fija `asd123` en TODOS los de landing** (antes PIN random de 6
+     dígitos; misma clave precargada que el alta de publicistas #156). ⚠️
+     Riesgo aceptado: la cuenta no fuerza cambio de clave → username adivinado
+     = acceso, mientras el cliente no la cambie. No reabre #149 (acá es a
+     propósito y el login valida contra 1girox).
+  3. **Chau flash del login/registro de la PWA:** script mínimo en el <head>
+     de index.html marca `html.casino-boot` cuando la URL trae
+     `?acceso&ir=casino` → CSS esconde #loginScreen desde el PRIMER frame; y
+     `tryAccessLink` muestra el recuadro "🎰 Entrando al casino…" ANTES de
+     cualquier request (también mejora la velocidad percibida). Si el canje
+     falla, `casinoBootFail()` saca la clase y vuelve el login normal.
+  4. **Chat SOLO con usuario+clave:** `/api/messages/welcome` se SALTEA para
+     `acquisitionSource:'landing'` (ni bienvenida ni CBU automático) pero SÍ
+     crea el ChatStatus (sin él, el chat no aparecería en el panel). El único
+     mensaje inicial es el de credenciales del signup; las acciones Depositar/
+     Retirar/Soporte ya están en el widget del casino.
+- **Validado:** `node --check` OK (server.js, auth.js, SW). SW a **v108**.
+  **Back necesita redeploy** (Render para pruebas); landing en Vercel se
+  actualiza sola con el push. PROBAR: landing → nombre → recuadro con usuario
+  gx.../asd123 → ENTRAR → nada de login de la PWA, directo "Entrando al
+  casino…" → 1girox embebido + chat a la derecha con SOLO el mensaje de
+  credenciales.
+
 ### 197. Marcha atrás del "directo a 1girox.com" (#195): la landing vuelve a la PWA con el casino EMBEBIDO + chat
 - **Owner (screencast 04:00):** probó la entrada directa a 1girox.com y notó lo
   que pierde: "si abre 1girox no está el chat". Quiere que abra la PWA (Render

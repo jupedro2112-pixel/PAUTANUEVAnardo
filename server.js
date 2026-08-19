@@ -3618,10 +3618,13 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     if (!username) {
       return res.status(503).json({ error: 'No pudimos generar tu usuario. Probá de nuevo.' });
     }
-    // PIN de 6 dígitos: cumple el mínimo de 1girox (≥6) y es fácil de anotar.
-    // Se le MUESTRA al cliente en la landing (se devuelve en la respuesta) para
-    // que pueda volver a entrar desde cualquier dispositivo, además del link.
-    const password = String(crypto.randomInt(100000, 1000000));
+    // Clave FIJA "asd123" para TODOS los de landing (pedido owner 2026-08-19,
+    // misma clave precargada que usa el alta de publicistas #156). Cumple el
+    // mínimo de 6 de 1girox. ⚠️ Riesgo aceptado por el owner: la cuenta NO
+    // fuerza cambio de clave, así que cualquiera que adivine el username puede
+    // entrar mientras el cliente no la cambie (esto NO reabre el hueco #149:
+    // el login valida contra 1girox y estas cuentas se crean a propósito así).
+    const password = 'asd123';
 
     // 1) Crear en 1girox PRIMERO (igual que register-quick): si falla, no dejamos
     //    una cuenta local huérfana. Si la campaña tiene key de publicista, el
@@ -5625,6 +5628,21 @@ app.post('/api/messages/welcome', authMiddleware, async (req, res) => {
     }).lean();
     if (recentWelcome) {
       return res.json({ success: true, alreadySent: true });
+    }
+
+    // Cuentas de LANDING: SIN bienvenida ni CBU automático (owner 2026-08-19 —
+    // "que no envíe el CBU ni el bienvenido, solo usuario y contraseña"). El
+    // único mensaje que ven es el de credenciales que dejó el signup. El
+    // ChatStatus SÍ se crea igual: sin él, el chat no aparece en el panel y el
+    // agente no vería al cliente cuando escriba.
+    const _welcomeUser = await User.findOne({ id: userId }).select('acquisitionSource').lean();
+    if (_welcomeUser && _welcomeUser.acquisitionSource === 'landing') {
+      await ChatStatus.findOneAndUpdate(
+        { userId },
+        { userId, username, lastMessageAt: new Date() },
+        { upsert: true }
+      );
+      return res.json({ success: true, skipped: 'landing' });
     }
 
     // CBU activo (puede no estar configurado).

@@ -281,15 +281,22 @@
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (res.ok && res.d && res.d.accessUrl) {
-        // Sin pantalla de usuario+clave: se redirige apenas la cuenta existe.
-        // accessUrl = la PWA con ?acceso=...&ir=casino → abre 1girox EMBEBIDO a
-        // pantalla completa CON el chat de soporte a la derecha (owner
-        // 2026-08-19: "si abre 1girox.com pelado no está el chat"). El SSO viaja
-        // adelantado en el canje, así que es 1 sola ida igual. enterUrl (el 302
-        // directo a 1girox.com, sin chat) queda solo como último fallback.
-        // Las credenciales le quedan al cliente en el chat de soporte.
-        ctaLabel.textContent = 'Entrando al casino';
-        window.location.href = res.d.accessUrl || res.d.enterUrl;
+        // Pantalla de CREDENCIALES antes de entrar (owner 2026-08-19: "quiero
+        // que aparezca el recuadro de la información de usuario antes que
+        // abra"). El botón ENTRAR va a la PWA (?acceso=...&ir=casino) → 1girox
+        // EMBEBIDO a pantalla completa con el chat de soporte a la derecha.
+        var dest = res.d.accessUrl || res.d.enterUrl;
+        document.getElementById('outUser').textContent = res.d.username || '—';
+        document.getElementById('outPass').textContent = res.d.password || '—';
+        scForm.style.display = 'none';
+        scDone.classList.add('on');
+        var enterBtn = document.getElementById('enterBtn');
+        enterBtn.onclick = function () {
+          enterBtn.disabled = true;
+          enterBtn.textContent = 'Entrando al casino…';
+          window.location.href = dest;
+        };
+        window.scrollTo(0, 0);
       } else {
         cta.disabled = false; sp.remove(); ctaLabel.textContent = 'CREAR MI CUENTA';
         msg.className = 'msg err';
