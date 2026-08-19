@@ -946,6 +946,28 @@ VIP.ui.enterCasino = async function() {
 };
 
 /**
+ * Camino RÁPIDO de la landing: el link SSO ya vino adelantado en el canje del
+ * access-link (una sola ida al server), así que acá no se pide nada — se abre
+ * el recuadro y se carga el casino DIRECTO. El código SSO vence a los 60s pero
+ * se usa en el mismo instante en que llegó. Si por lo que sea no hay URL, cae
+ * al camino normal (enterCasino pide la sesión como siempre).
+ */
+VIP.ui.enterCasinoWithUrl = function(url) {
+  if (!url) return VIP.ui.enterCasino();
+  VIP.ui.closePlatformModal();
+  VIP.ui._showCasinoFrame();
+  const frame = document.getElementById('casinoFrame');
+  if (frame) frame.src = url;
+  // Mismo vigilante que enterCasino: si el casino no termina de cargar
+  // (cookies de terceros bloqueadas), se ofrece abrirlo aparte.
+  clearTimeout(VIP.ui._casinoWatchdog);
+  VIP.ui._casinoWatchdog = setTimeout(function() {
+    if (!VIP.ui._casinoOpen) return;
+    VIP.ui._casinoFrameStuck();
+  }, 15000);
+};
+
+/**
  * Abre el casino en una PESTAÑA APARTE (no embebido).
  *
  * Es la salida cuando el navegador no deja que el casino funcione dentro del

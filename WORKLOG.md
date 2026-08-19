@@ -8,6 +8,39 @@
 
 ## Sesión 2026-08-19
 
+### 194. Entrada por LANDING mucho más rápida: SSO del casino ADELANTADO en el canje + chat de soporte abierto a la derecha
+- **Reclamo del owner:** entrar por la landing de pauta era "muy lento todo";
+  quiere que abra 1girox directo y el soporte a la derecha con el chat abierto.
+- **Causa de la lentitud (flujo viejo):** 4 idas al server EN SERIE antes de que
+  el casino empezara a cargar: canje del access-link → `GET /api/auth/verify` →
+  espera artificial de 600ms → `POST /api/platform/session` (SSO) → recién ahí
+  el iframe. En mobile/red lenta cada ida son cientos de ms; y el SSO encima
+  puede hacer cola en el carril de la key del publicista.
+- **Fix backend (`/api/auth/access-link`):** acepta `casino:true` en el body →
+  genera el link SSO (`girox.createSession`) EN EL MISMO canje y lo devuelve
+  como `casinoUrl`. El código SSO vence a los 60s pero el front lo usa en el
+  instante en que llega. Si el SSO falla (plataforma saturada), responde sin
+  `casinoUrl` y el front cae al camino normal — nunca bloquea el login.
+- **Fix front (auth.js + ui.js, SW v107):**
+  1. `tryAccessLink` manda `casino:true` cuando el link trae `ir=casino` y, al
+     recibir el token, abre el casino AL INSTANTE con el nuevo
+     `VIP.ui.enterCasinoWithUrl(url)` (recuadro + iframe directo, mismo
+     vigilante de 15s) — `verifyToken` corre EN PARALELO y completa la sesión
+     detrás. Sin `casinoUrl`, cae a `enterCasino()` (camino de siempre) también
+     sin esperar el verify. Resultado: 1 sola ida al server en el camino feliz.
+  2. El bloque de `verifyToken` quedó como red de seguridad (solo si el casino
+     no está ya abierto) y SIN el delay de 600ms.
+  3. **Chat de soporte ABIERTO a la derecha** (flag `_landingCasinoChat`): tras
+     `showChatScreen`, si el casino está abierto se auto-monta el widget
+     (`_casinoChatMount`) — el jugador cae en el casino con el chat de cargas
+     ya desplegado. Solo en el flujo de landing; el resto no cambia.
+- **Validado:** `node --check` OK (server.js, auth.js, ui.js, SW). **Back
+  necesita redeploy**; PWA con SW v107. PROBAR: landing → crear cuenta →
+  "ENTRAR A MI CUENTA" → el casino carga de una (sin pantalla de chat en el
+  medio) con el widget de soporte abierto a la derecha; con la plataforma
+  saturada igual entra (camino viejo). Log del server: `[access-link] canjeado
+  por X ... + SSO casino adelantado`.
+
 ### 193. Meta CAPI: soporte de 2º PIXEL (partner de tracking) — solo cargar 2 env y deployar
 - **Pedido:** el partner de la pauta pidió recibir los MISMOS eventos
   server-side en SU pixel (confirmó que quiere server-side/CAPI, no lectura de

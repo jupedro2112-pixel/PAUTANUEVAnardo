@@ -15136,9 +15136,29 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    logger.info(`[access-link] canjeado por ${user.username}${forcePwd ? '' : ' (landing, sin cambio de clave)'}`);
+    // Destino CASINO (`casino:true` en el body — lo manda la PWA cuando el link
+    // vino con `ir=casino`, o sea la LANDING de pauta): el link SSO se genera ACÁ
+    // y viaja en la MISMA respuesta. Le ahorra al cliente toda la cadena
+    // canje → verify → espera → POST /api/platform/session (4 idas en serie) y el
+    // casino empieza a cargar apenas la PWA procesa este canje. El código SSO
+    // vence a los 60s pero el front lo mete en el iframe en el mismo instante.
+    // Si falla (plataforma saturada, etc.) se responde sin casinoUrl y el front
+    // cae al camino normal de VIP.ui.enterCasino() — nunca bloquea el login.
+    let casinoUrl = null;
+    if (req.body && req.body.casino === true && girox.isEnabled()) {
+      try {
+        const session = await girox.createSession(user.username);
+        if (session.success) casinoUrl = session.redirectUrl;
+        else logger.warn(`[access-link] SSO adelantado falló para ${user.username}: ${session.code || session.error} — el front reintenta por /api/platform/session`);
+      } catch (e) {
+        logger.warn(`[access-link] SSO adelantado error para ${user.username}: ${e.message}`);
+      }
+    }
+
+    logger.info(`[access-link] canjeado por ${user.username}${forcePwd ? '' : ' (landing, sin cambio de clave)'}${casinoUrl ? ' + SSO casino adelantado' : ''}`);
     res.json({
       token: jwtToken,
+      casinoUrl,
       user: { id: user.id, username: user.username, role: user.role, mustChangePassword: forcePwd }
     });
   } catch (error) {
