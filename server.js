@@ -3724,9 +3724,25 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
       return res.status(500).json({ error: 'Tu cuenta se creó pero no pudimos generar tu acceso. Escribinos por soporte.' });
     }
 
+    // Credenciales al CHAT del cliente (owner 2026-08-19: la landing ya no
+    // muestra la pantalla de usuario+clave — entra directo al casino). Así el
+    // cliente las tiene en el chat de soporte cuando las necesite (y si el
+    // mensaje expira por el TTL de 3 días, soporte se las regenera).
+    try {
+      await Message.create({
+        id: uuidv4(),
+        senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+        receiverId: userId, receiverRole: 'user',
+        content: `🎉 ¡Tu cuenta está creada!\n\n👤 Usuario: ${username}\n🔑 Clave: ${password}\n\n📌 Guardalos para volver a entrar cuando quieras desde ${getPublicBaseUrl()}`,
+        type: 'system', timestamp: new Date(), read: false
+      });
+    } catch (credMsgErr) {
+      logger.warn(`[landing-signup] no se pudo dejar las credenciales en el chat de ${username}: ${credMsgErr.message}`);
+    }
+
     logger.info(`[landing-signup] alta ${username} campaign=${normalizedCode}${giroxOwner ? ' (key publicista)' : ''}`);
-    // La landing muestra usuario+clave y "entrar" navega a enterUrl (casino
-    // directo); accessUrl queda como fallback/compat.
+    // La landing redirige DIRECTO a enterUrl (casino); accessUrl queda como
+    // fallback/compat con landings viejas.
     res.status(201).json({ success: true, accessUrl, enterUrl, username, password });
   } catch (error) {
     // A stdout además del logger de archivo: los 500 de este endpoint tienen que

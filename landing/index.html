@@ -281,14 +281,12 @@
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (res.ok && res.d && res.d.accessUrl) {
-        document.getElementById('outUser').textContent = res.d.username || '—';
-        document.getElementById('outPass').textContent = res.d.password || '—';
-        // enterUrl = casino DIRECTO (el backend redirige al SSO de 1girox sin
-        // pasar por la PWA). accessUrl queda de fallback (backend viejo).
-        enterBtn.onclick = function () { window.location.href = res.d.enterUrl || res.d.accessUrl; };
-        scForm.style.display = 'none';
-        scDone.classList.add('on');
-        window.scrollTo(0, 0);
+        // ENTRADA DIRECTA (owner 2026-08-19): sin pantalla de usuario+clave —
+        // se redirige al casino apenas la cuenta existe. enterUrl = redirect
+        // 302 al SSO de 1girox; accessUrl = fallback (backend viejo → PWA).
+        // Las credenciales le quedan al cliente en el chat de soporte.
+        ctaLabel.textContent = 'Entrando al casino';
+        window.location.href = res.d.enterUrl || res.d.accessUrl;
       } else {
         cta.disabled = false; sp.remove(); ctaLabel.textContent = 'CREAR MI CUENTA';
         msg.className = 'msg err';

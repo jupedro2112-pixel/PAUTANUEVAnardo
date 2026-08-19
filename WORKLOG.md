@@ -8,6 +8,24 @@
 
 ## Sesión 2026-08-19
 
+### 196. Landing SIN pantalla de usuario+clave: crear cuenta → casino directo
+- **Owner (screencast del 19/08 3:14):** "tarda mucho, ¿no se puede sacar que
+  aparezca el login? que entre directo". El video además confirmó que la landing
+  de VERCEL seguía vieja (usaba accessUrl → PWA con "Entrando al casino..." ~20s);
+  el backend de Render sí estaba al día (el usuario salió gxcarlos801 ✓).
+- **Landing:** al crear la cuenta se redirige AL INSTANTE a `enterUrl` (302 →
+  SSO de 1girox) — ya no se muestra la pantalla "¡Listo! usuario/clave" ni el
+  botón ENTRAR (el HTML de esa pantalla queda en el archivo pero nadie lo
+  activa). El CTA pasa a decir "Entrando al casino" mientras navega.
+- **Backend (`/api/landing/signup`):** como el cliente ya no VE su clave, se le
+  deja un mensaje de sistema EN SU CHAT con usuario + clave + el dominio para
+  volver a entrar (lo ve en el widget de Soporte dentro del casino). ⚠️ Message
+  tiene TTL de 3 días: si expira, soporte se las regenera — igual que siempre.
+- **Validado:** `node --check` OK. **Redeploy de backend Y de la landing en
+  Vercel** (sin el redeploy de Vercel se sigue viendo el flujo viejo — fue lo
+  que pasó en el screencast). PROBAR: nombre → CREAR → va directo a 1girox.com
+  ya logueado; abrir el widget de soporte y ver el mensaje con las credenciales.
+
 ### 195. Landing → 1girox.com DIRECTO (sin PWA en el medio) + usuarios "gx" con sufijo de máx 3 dígitos
 - **Pedido del owner (con screencast):** que "ENTRAR A MI CUENTA" lleve a
   1girox.com directo — ni chat ni página intermedia (#194 aceleró el flujo pero
