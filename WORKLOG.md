@@ -4,9 +4,39 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-16**
+> **Última actualización: 2026-08-19**
 
 ## Sesión 2026-08-19
+
+### 195. Landing → 1girox.com DIRECTO (sin PWA en el medio) + usuarios "gx" con sufijo de máx 3 dígitos
+- **Pedido del owner (con screencast):** que "ENTRAR A MI CUENTA" lleve a
+  1girox.com directo — ni chat ni página intermedia (#194 aceleró el flujo pero
+  el navegador seguía cargando la PWA con el casino en iframe). Y que los
+  usuarios de la landing se creen con **"gx" al principio** y **máximo 3
+  números** (antes: juan29352, 3-6 dígitos).
+- **Usernames (`_sanitizeUsernameBase`/`_deriveUniqueUsername`):** siempre
+  `gx` + nombre (≤13) + sufijo 0-999 sin padding (ej: gxjuan813, gxjuan7).
+  Tope 18 chars de 1girox respetado. ⚠️ Con sólo 1000 sufijos por nombre, un
+  nombre MUY repetido puede agotar los 12 intentos → 503 "probá de nuevo"
+  (aceptado: límite pedido por el owner).
+- **Entrada directa:** endpoint nuevo **`GET /api/landing/ir-casino?al=TOKEN`**
+  (público, authLimiter): busca el access-link SIN consumirlo → genera el SSO
+  (`girox.createSession`) → si sale OK consume el link y responde **302 al link
+  SSO de 1girox** (el navegador queda en 1girox.com, top-level, sin cargar la
+  PWA). Si el SSO falla → 302 a la PWA con `?acceso=TOKEN&ir=casino` y el link
+  TODAVÍA VIVO (flujo #194, nunca quema el acceso sin entregar nada). Token
+  inválido/usado → 302 al home de la PWA (login normal).
+- **`/api/landing/signup` devuelve `enterUrl`** (el ir-casino armado) además de
+  `accessUrl` (compat con landings viejas cacheadas en Vercel). La landing usa
+  `enterUrl || accessUrl`.
+- **Consecuencia asumida:** entrando directo al casino NO queda sesión en el
+  origen de la PWA (el JWT no se emite) — si el cliente después va a
+  chat1girox.com entra con usuario+PIN (que la landing le mostró). El camino
+  #194 sigue intacto como fallback.
+- **Validado:** `node --check` OK. **Back necesita redeploy** y la **landing
+  redeploy en Vercel**. PROBAR: crear cuenta → usuario tipo gxnombre123 →
+  ENTRAR → la barra de direcciones va a 1girox.com directo; matar la API de
+  girox y verificar que cae a la PWA logueando normal.
 
 ### 194. Entrada por LANDING mucho más rápida: SSO del casino ADELANTADO en el canje + chat de soporte abierto a la derecha
 - **Reclamo del owner:** entrar por la landing de pauta era "muy lento todo";

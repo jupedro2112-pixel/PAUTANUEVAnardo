@@ -283,7 +283,9 @@
       if (res.ok && res.d && res.d.accessUrl) {
         document.getElementById('outUser').textContent = res.d.username || '—';
         document.getElementById('outPass').textContent = res.d.password || '—';
-        enterBtn.onclick = function () { window.location.href = res.d.accessUrl; };
+        // enterUrl = casino DIRECTO (el backend redirige al SSO de 1girox sin
+        // pasar por la PWA). accessUrl queda de fallback (backend viejo).
+        enterBtn.onclick = function () { window.location.href = res.d.enterUrl || res.d.accessUrl; };
         scForm.style.display = 'none';
         scDone.classList.add('on');
         window.scrollTo(0, 0);
