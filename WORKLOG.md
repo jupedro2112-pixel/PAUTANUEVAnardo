@@ -41,6 +41,30 @@
   casino…" → 1girox embebido + chat a la derecha con SOLO el mensaje de
   credenciales.
 
+### 200. FLUJO SOLAPADO (`ir=creds`, idea del owner): las credenciales se muestran EN LA PWA mientras todo carga por atrás
+- **Idea del owner (correcta):** en vez de mostrar usuario+clave en la landing
+  y recién después cargar la PWA, que los datos aparezcan YA en la PWA
+  (vipcargas.onrender / chat1girox.com) — así el tiempo en que el cliente lee
+  sus datos se usa para cargar la PWA, canjear el link, conectar el chat y
+  dejar el SSO listo. "ENTRAR AL CASINO" ya no espera nada.
+- **Cómo quedó:**
+  - **Landing:** tras el signup redirige DE UNA a la PWA (`?acceso=...&ir=creds`)
+    con las credenciales en el FRAGMENTO (`#lc=user:pass` — no viaja al server
+    ni queda en logs; la PWA lo lee y limpia la URL). La pantalla 2 de la
+    landing quedó sin uso (markup intacto). Reemplaza el "otra pestaña" de #199.
+  - **PWA (auth.js + ui.js, SW v109):** `ir=creds` → recuadro de usuario+clave
+    INMEDIATO (`_showLandingCredsScreen`, botón "⏳ Preparando…") mientras el
+    canje corre por atrás con `casino:true` (guarda el `casinoUrl` adelantado).
+    Canje OK → botón pasa a "🎰 ENTRAR AL CASINO". `landingEnterCasino()`: usa
+    el SSO adelantado si tiene <45s (el código vive 60s), si no pide uno
+    fresco — rápido igual porque la PWA ya está cargada — y abre el chat a la
+    derecha. El script del <head> (`casino-boot`) acepta `creds` → cero flash
+    de login. `ir=casino` sigue andando (links viejos: casino directo).
+- **Validado:** `node --check` OK (server.js, auth.js, ui.js, SW v109). **Back
+  necesita redeploy**; Vercel se actualiza con el push. PROBAR: landing →
+  nombre → aparece el recuadro con gx.../asd123 casi al toque (sin login de la
+  PWA) → ENTRAR AL CASINO → 1girox al instante + chat a la derecha.
+
 ### 199. Landing: "ENTRAR A MI CUENTA" abre el casino en OTRA pestaña (la landing queda atrás con los datos)
 - Pedido owner: que la página se abra aparte y la landing quede con el
   usuario+clave a la vista. `window.open(dest,'_blank')` dentro del click

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v108'; // v108: landing sin flash de login (casino-boot), clave fija asd123, chat solo con credenciales (sin bienvenida ni CBU)
+const CACHE_VERSION = 'v109'; // v109: flujo solapado ir=creds — recuadro usuario+clave en la PWA apenas carga; ENTRAR abre el casino al instante (SSO ya listo)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

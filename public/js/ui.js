@@ -967,6 +967,86 @@ VIP.ui.enterCasinoWithUrl = function(url) {
   }, 15000);
 };
 
+// ============================================================
+// ENTRADA POR LANDING v4 (`ir=creds`, owner 2026-08-19): recuadro de
+// usuario+clave APENAS carga la PWA. Mientras el cliente lee sus datos, por
+// atrás ya se canjeó el link, se conectó el chat y quedó el SSO listo →
+// "ENTRAR AL CASINO" abre 1girox al instante (la espera se solapa, no se suma).
+// ============================================================
+
+/** Muestra el recuadro de credenciales (lo llama tryAccessLink ANTES del canje;
+ *  el botón queda "Preparando…" hasta que el canje confirma). */
+VIP.ui._showLandingCredsScreen = function(creds) {
+  let ov = document.getElementById('landingCredsOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'landingCredsOverlay';
+    ov.style.cssText =
+      'position:fixed;inset:0;z-index:99998;background:#0d0d1a;display:flex;align-items:center;' +
+      'justify-content:center;padding:24px;padding-top:calc(24px + env(safe-area-inset-top,0px));';
+    ov.innerHTML =
+      '<div style="width:min(420px,100%);background:#151226;border:1px solid rgba(212,175,55,0.4);' +
+      'border-radius:18px;padding:26px 22px;text-align:center;box-shadow:0 14px 44px rgba(0,0,0,0.6);">' +
+        '<div style="font-size:34px;">🎰</div>' +
+        '<div style="color:#25d366;font-weight:900;font-size:20px;margin:6px 0 2px;">¡Tu cuenta está lista!</div>' +
+        '<div style="color:#a7b7a8;font-size:13px;margin-bottom:16px;">Guardá tus datos para volver a entrar cuando quieras.</div>' +
+        '<div style="background:#0d0b16;border:1px dashed rgba(212,175,55,0.5);border-radius:12px;' +
+        'padding:12px;margin-bottom:18px;text-align:left;">' +
+          '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 2px;">' +
+            '<span style="color:#8a8fa3;font-size:13px;">Usuario</span>' +
+            '<b id="landingCredsUser" style="color:#fff;font-size:15px;word-break:break-all;">…</b></div>' +
+          '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 2px;">' +
+            '<span style="color:#8a8fa3;font-size:13px;">Clave</span>' +
+            '<b id="landingCredsPass" style="color:#e3bd48;font-size:15px;">…</b></div>' +
+        '</div>' +
+        '<button type="button" id="landingCredsEnter" onclick="VIP.ui.landingEnterCasino()" ' +
+          'style="width:100%;background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;' +
+          'border-radius:14px;padding:15px;font-size:16px;font-weight:900;cursor:pointer;">⏳ Preparando tu cuenta…</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+  }
+  if (creds && creds.username) document.getElementById('landingCredsUser').textContent = creds.username;
+  if (creds && creds.password) document.getElementById('landingCredsPass').textContent = creds.password;
+  ov.style.display = 'flex';
+};
+
+/** El canje terminó OK: habilita el botón (y completa el usuario si el
+ *  fragmento no vino — la clave en ese caso queda en el mensaje del chat). */
+VIP.ui._landingCredsReady = function(username, ssoUrl) {
+  VIP.ui._landingSsoUrl = ssoUrl || null;
+  VIP.ui._landingSsoAt = Date.now();
+  const u = document.getElementById('landingCredsUser');
+  if (u && username && u.textContent === '…') u.textContent = username;
+  const btn = document.getElementById('landingCredsEnter');
+  if (btn) btn.textContent = '🎰 ENTRAR AL CASINO';
+};
+
+VIP.ui._hideLandingCreds = function() {
+  const ov = document.getElementById('landingCredsOverlay');
+  if (ov) ov.style.display = 'none';
+};
+
+/** ENTRAR AL CASINO: usa el SSO adelantado si sigue fresco (el código vive
+ *  60s; margen 45s), si no pide uno nuevo — igual es rápido porque la PWA ya
+ *  está cargada. Después abre el chat de soporte a la derecha. */
+VIP.ui.landingEnterCasino = function() {
+  const btn = document.getElementById('landingCredsEnter');
+  if (btn && btn.textContent.indexOf('Preparando') !== -1) return; // canje en curso
+  VIP.ui._hideLandingCreds();
+  const url = VIP.ui._landingSsoUrl;
+  const fresh = url && (Date.now() - (VIP.ui._landingSsoAt || 0)) < 45000;
+  VIP.ui._landingSsoUrl = null;
+  if (fresh) VIP.ui.enterCasinoWithUrl(url); else VIP.ui.enterCasino();
+  setTimeout(function() {
+    try {
+      const d = document.getElementById('casinoChatDrawer');
+      if (VIP.ui._casinoOpen && d && (d.style.display === 'none' || !d.style.display) && VIP.ui._casinoChatMount) {
+        VIP.ui._casinoChatMount();
+      }
+    } catch (e) {}
+  }, 500);
+};
+
 /**
  * Abre el casino en una PESTAÑA APARTE (no embebido).
  *

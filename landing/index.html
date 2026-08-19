@@ -281,28 +281,19 @@
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (res.ok && res.d && res.d.accessUrl) {
-        // Pantalla de CREDENCIALES antes de entrar (owner 2026-08-19: "quiero
-        // que aparezca el recuadro de la información de usuario antes que
-        // abra"). El botón ENTRAR va a la PWA (?acceso=...&ir=casino) → 1girox
-        // EMBEBIDO a pantalla completa con el chat de soporte a la derecha.
+        // FLUJO SOLAPADO (owner 2026-08-19): la landing NO muestra más las
+        // credenciales — redirige YA a la PWA, que muestra el recuadro de
+        // usuario+clave apenas carga (`ir=creds`) mientras por atrás canjea el
+        // link, conecta el chat y deja el SSO listo. Al tocar "ENTRAR AL
+        // CASINO" 1girox abre al instante: la espera se solapa con la lectura.
+        // Las credenciales viajan en el FRAGMENTO (#lc=...) — el fragmento no
+        // llega al servidor ni queda en logs; la PWA lo lee y limpia la URL.
         var dest = res.d.accessUrl || res.d.enterUrl;
-        document.getElementById('outUser').textContent = res.d.username || '—';
-        document.getElementById('outPass').textContent = res.d.password || '—';
-        scForm.style.display = 'none';
-        scDone.classList.add('on');
-        // Abre en OTRA pestaña y la landing queda atrás con los datos a la
-        // vista (owner 2026-08-19). Re-click: si la pestaña sigue viva, la
-        // trae al frente (el link de acceso es de UN uso — reabrirlo de cero
-        // caería en el login, y para eso el cliente ya tiene sus datos acá).
-        var enterBtn = document.getElementById('enterBtn');
-        var casinoWin = null;
-        enterBtn.onclick = function () {
-          if (casinoWin && !casinoWin.closed) { casinoWin.focus(); return; }
-          casinoWin = window.open(dest, '_blank');
-          if (!casinoWin) { window.location.href = dest; return; } // pop-up bloqueado
-          enterBtn.textContent = '✅ Abierto en otra pestaña — volver al casino';
-        };
-        window.scrollTo(0, 0);
+        try {
+          dest += '#lc=' + encodeURIComponent((res.d.username || '') + ':' + (res.d.password || ''));
+        } catch (e) {}
+        ctaLabel.textContent = 'Entrando';
+        window.location.href = dest;
       } else {
         cta.disabled = false; sp.remove(); ctaLabel.textContent = 'CREAR MI CUENTA';
         msg.className = 'msg err';

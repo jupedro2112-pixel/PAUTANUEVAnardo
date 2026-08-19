@@ -542,31 +542,48 @@ VIP.auth = (function () {
         try { token = new URLSearchParams(window.location.search).get('acceso'); } catch (e) {}
         if (!token) return false;
 
-        // `ir=casino` (link de la landing): abrir el casino DIRECTO al loguear.
-        // Se lee ANTES de limpiar la URL; verifyToken() lo consume tras showChatScreen.
+        // Modos de la landing — se leen ANTES de limpiar la URL:
+        //   `ir=casino` (legacy): abrir el casino DIRECTO al loguear.
+        //   `ir=creds` (flujo actual): mostrar el recuadro de usuario+clave YA
+        //     y dejar todo listo por atrás; el casino abre al tocar ENTRAR.
+        //     Las credenciales llegan en el FRAGMENTO (#lc=user:pass) — nunca
+        //     viajan al server ni quedan en el historial (se limpia abajo).
         let goCasino = false;
+        let goCreds = false;
+        let landingCreds = null;
         try {
-            if (new URLSearchParams(window.location.search).get('ir') === 'casino') {
+            const ir = new URLSearchParams(window.location.search).get('ir');
+            if (ir === 'casino') {
                 goCasino = true;
                 VIP.state._openCasinoAfterLogin = true;
                 // verifyToken() lo usa para dejar el chat de soporte ABIERTO
                 // a la derecha sobre el casino (flujo de landing).
                 VIP.state._landingCasinoChat = true;
+            } else if (ir === 'creds') {
+                goCreds = true;
+                const m = (window.location.hash || '').match(/lc=([^&]+)/);
+                if (m) {
+                    const parts = decodeURIComponent(m[1]).split(':');
+                    landingCreds = { username: parts[0] || '', password: parts.slice(1).join(':') || '' };
+                }
             }
         } catch (e) {}
 
-        // Sacar el token de la URL YA MISMO: es de un solo uso y no tiene que
-        // quedar en el historial ni compartirse por accidente.
+        // Sacar el token (y el fragmento con la clave) de la URL YA MISMO: es
+        // de un solo uso y no tiene que quedar en el historial ni compartirse.
         try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
 
-        // Recuadro "🎰 Entrando al casino…" YA, antes de cualquier request —
-        // junto con la clase `casino-boot` del <head> (que esconde el login
-        // desde el primer frame) el cliente nunca ve el login/registro.
+        // Pantalla inmediata, antes de cualquier request — junto con la clase
+        // `casino-boot` del <head> (que esconde el login desde el primer
+        // frame) el cliente nunca ve el login/registro:
+        //   casino → "🎰 Entrando al casino…" · creds → recuadro usuario+clave.
         if (goCasino) { try { VIP.ui._showCasinoFrame(); } catch (e) {} }
+        if (goCreds) { try { VIP.ui._showLandingCredsScreen(landingCreds); } catch (e) {} }
         // Si el canje falla, volver al login normal (sacar el modo casino).
         const casinoBootFail = function () {
             try { document.documentElement.classList.remove('casino-boot'); } catch (e) {}
             if (goCasino) { try { VIP.ui.closeCasinoFrame(); } catch (e) {} }
+            if (goCreds) { try { VIP.ui._hideLandingCreds(); } catch (e) {} }
         };
 
         try {
@@ -574,8 +591,9 @@ VIP.auth = (function () {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 // `casino:true` → el server genera el link SSO del casino en la
-                // MISMA respuesta (una sola ida) y el casino abre al instante.
-                body: JSON.stringify({ token, casino: goCasino })
+                // MISMA respuesta (una sola ida); en modo creds queda guardado
+                // para que ENTRAR no tenga que pedir nada si se toca a tiempo.
+                body: JSON.stringify({ token, casino: goCasino || goCreds })
             });
             const data = await response.json();
             if (response.ok && data.token) {
@@ -591,6 +609,11 @@ VIP.auth = (function () {
                         if (data.casinoUrl && VIP.ui.enterCasinoWithUrl) VIP.ui.enterCasinoWithUrl(data.casinoUrl);
                         else if (VIP.ui.enterCasino) VIP.ui.enterCasino();
                     } catch (e) {}
+                }
+                if (goCreds) {
+                    // Canje OK → habilitar "ENTRAR AL CASINO" (guarda el SSO
+                    // adelantado; landingEnterCasino decide si sigue fresco).
+                    try { VIP.ui._landingCredsReady(data.user && data.user.username, data.casinoUrl); } catch (e) {}
                 }
                 return true; // el caller sigue con verifyToken() → sesión completa
             }

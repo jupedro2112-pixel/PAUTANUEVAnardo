@@ -3722,7 +3722,11 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
       // owner (2026-08-19: "si abre 1girox.com pelado no está el chat") — así
       // hasta una landing vieja cacheada en Vercel (que prioriza enterUrl) cae
       // al camino con chat. El endpoint ir-casino queda vivo por si se revierte.
-      accessUrl += (accessUrl.indexOf('?') === -1 ? '?' : '&') + 'ir=casino';
+      // `ir=creds` (owner 2026-08-19): la PWA muestra el recuadro de
+      // usuario+clave APENAS carga y recién al tocar "ENTRAR AL CASINO" abre
+      // 1girox — mientras el cliente lee sus datos, la sesión, el chat y el
+      // SSO ya quedaron listos por atrás (la espera se solapa, no se suma).
+      accessUrl += (accessUrl.indexOf('?') === -1 ? '?' : '&') + 'ir=creds';
     } catch (linkErr) {
       logger.warn(`[landing-signup] no se pudo generar el access-link de ${username}: ${linkErr.message}`);
       return res.status(500).json({ error: 'Tu cuenta se creó pero no pudimos generar tu acceso. Escribinos por soporte.' });

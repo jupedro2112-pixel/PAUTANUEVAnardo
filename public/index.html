@@ -29,7 +29,8 @@
     <script>
         try {
             var _q = new URLSearchParams(location.search);
-            if (_q.get('acceso') && _q.get('ir') === 'casino') {
+            var _ir = _q.get('ir');
+            if (_q.get('acceso') && (_ir === 'casino' || _ir === 'creds')) {
                 document.documentElement.classList.add('casino-boot');
             }
         } catch (e) {}
