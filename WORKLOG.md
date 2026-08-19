@@ -6,6 +6,29 @@
 >
 > **Última actualización: 2026-08-16**
 
+## Sesión 2026-08-19
+
+### 193. Meta CAPI: soporte de 2º PIXEL (partner de tracking) — solo cargar 2 env y deployar
+- **Pedido:** el partner de la pauta pidió recibir los MISMOS eventos
+  server-side en SU pixel (confirmó que quiere server-side/CAPI, no lectura de
+  pixel). Alcanza con que manden su Pixel ID + Access Token.
+- **Ya estaba:** el sistema tiene Meta CAPI (`metaCapiService`) que dispara
+  server-to-server `CompleteRegistration`, `Purchase` (carga), `WithdrawRequest`
+  (retiro), `Lead`, `InitiateCheckout`, `RefundClaim`, `Login` — todo el embudo.
+- **Cambio (aditivo):** `sendEvent` ahora dispara a TODOS los destinos
+  configurados en paralelo (mismo event_id, cada pixel deduplica por su lado).
+  2º pixel OPCIONAL por env: `META_PIXEL_ID_2` + `META_CAPI_ACCESS_TOKEN_2`
+  (+ `META_TEST_EVENT_CODE_2` opcional para que el partner verifique en su
+  Events Manager → Probar eventos). Sin esas env, se comporta igual que antes
+  (solo el pixel propio). Boot loguea `[MetaCAPI] pixels: propio=OK · partner=…`.
+- **⚠️ ACCIÓN OWNER (cuando el partner mande los datos):** cargar en SSM
+  `/nardo1girox/prod/` → `META_PIXEL_ID_2` y `META_CAPI_ACCESS_TOKEN_2` (y si dan
+  un test code, `META_TEST_EVENT_CODE_2`), redeploy, y verificar en el boot
+  `partner=OK`. Ellos confirman en su Events Manager que llegan los eventos.
+- **Validado:** `node --check` OK + test de la lógica de destinos. **Back
+  necesita redeploy** (recién cuando se carguen las env del partner; el cambio
+  de código se puede deployar antes sin efecto hasta que existan las env).
+
 ## Sesión 2026-08-16
 
 ### 192. POOL de keys por publicista: varias keys del MISMO publicista para repartir la carga (soluciona ONEKEY sin subir límites)

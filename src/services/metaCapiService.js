@@ -9,7 +9,14 @@
 //   META_CAPI_ACCESS_TOKEN        — Token de acceso CAPI (Eventos → Configuración → Conversions API)
 //   META_TEST_EVENT_CODE          — (opcional) código de Test Events para validar antes de prod
 //
-// Si falta PIXEL_ID o ACCESS_TOKEN, el módulo queda en no-op (loguea warning una sola vez).
+// 2º PIXEL OPCIONAL (partner de tracking, 2026-08-19): cuando un tercero (ej. la
+// pauta) pide recibir los MISMOS eventos server-side en SU pixel, se cargan estas
+// y TODOS los eventos se disparan también a su pixel, en paralelo, sin tocar código:
+//   META_PIXEL_ID_2               — Pixel ID del partner
+//   META_CAPI_ACCESS_TOKEN_2      — Access Token CAPI del partner
+//   META_TEST_EVENT_CODE_2        — (opcional) su código de Test Events para verificar
+//
+// Si no hay ningún pixel configurado, el módulo queda en no-op (warning una vez).
 // Nunca lanza ni bloquea el flujo de negocio: errores se loguean como warning.
 // ============================================
 
@@ -22,8 +29,21 @@ try { logger = require('../utils/logger') || console; } catch (e) { /* fallback 
 const GRAPH_API_VERSION = 'v22.0';
 let _missingConfigLogged = false;
 
+// Destinos del CAPI: el pixel propio + un 2º OPCIONAL (partner). Se lee en cada
+// envío (las env de SSM cargan en el bootstrap async, después del require).
+function _capiDestinations() {
+  const dests = [];
+  if (process.env.META_PIXEL_ID && process.env.META_CAPI_ACCESS_TOKEN) {
+    dests.push({ label: 'propio', pixelId: process.env.META_PIXEL_ID, token: process.env.META_CAPI_ACCESS_TOKEN, testCode: process.env.META_TEST_EVENT_CODE });
+  }
+  if (process.env.META_PIXEL_ID_2 && process.env.META_CAPI_ACCESS_TOKEN_2) {
+    dests.push({ label: 'partner', pixelId: process.env.META_PIXEL_ID_2, token: process.env.META_CAPI_ACCESS_TOKEN_2, testCode: process.env.META_TEST_EVENT_CODE_2 });
+  }
+  return dests;
+}
+
 function isConfigured() {
-  return Boolean(process.env.META_PIXEL_ID && process.env.META_CAPI_ACCESS_TOKEN);
+  return _capiDestinations().length > 0;
 }
 
 function sha256(value) {
@@ -139,7 +159,8 @@ function parseCookies(cookieHeader) {
 //   customData      — { value, currency, content_name, ... } pasado tal cual a Meta
 //   options         — { eventId, eventSourceUrl, actionSource, testEventCode, req }
 async function sendEvent(eventName, userInfo, customData, options) {
-  if (!isConfigured()) {
+  const dests = _capiDestinations();
+  if (!dests.length) {
     if (!_missingConfigLogged) {
       _missingConfigLogged = true;
       logger.warn('[MetaCAPI] META_PIXEL_ID o META_CAPI_ACCESS_TOKEN no configurados — eventos server-side deshabilitados');
@@ -157,6 +178,7 @@ async function sendEvent(eventName, userInfo, customData, options) {
 
   const user_data = buildUserData(userInfo || {}, requestCtx);
 
+  // El MISMO event_id para todos los destinos (cada pixel deduplica por su lado).
   const event = {
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
@@ -172,24 +194,27 @@ async function sendEvent(eventName, userInfo, customData, options) {
     event.event_source_url = String(req.headers.referer);
   }
 
-  const payload = { data: [event] };
-  if (opts.testEventCode || process.env.META_TEST_EVENT_CODE) {
-    payload.test_event_code = opts.testEventCode || process.env.META_TEST_EVENT_CODE;
-  }
+  // Se dispara a CADA pixel configurado (propio + partner) en paralelo. Un fallo
+  // en uno no afecta al otro. Cada destino usa su propio test_event_code.
+  const results = await Promise.all(dests.map(async (d) => {
+    const payload = { data: [event] };
+    const tc = opts.testEventCode || d.testCode;
+    if (tc) payload.test_event_code = tc;
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${d.pixelId}/events`;
+    try {
+      const response = await axios.post(url, payload, {
+        params: { access_token: d.token },
+        timeout: 5000
+      });
+      return { dest: d.label, sent: true, data: response.data };
+    } catch (err) {
+      const detail = err.response && err.response.data ? JSON.stringify(err.response.data) : err.message;
+      logger.warn(`[MetaCAPI] Error enviando evento ${eventName} a pixel ${d.label}: ${detail}`);
+      return { dest: d.label, sent: false, error: detail };
+    }
+  }));
 
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${process.env.META_PIXEL_ID}/events`;
-
-  try {
-    const response = await axios.post(url, payload, {
-      params: { access_token: process.env.META_CAPI_ACCESS_TOKEN },
-      timeout: 5000
-    });
-    return { sent: true, eventId: event.event_id, data: response.data };
-  } catch (err) {
-    const detail = err.response && err.response.data ? JSON.stringify(err.response.data) : err.message;
-    logger.warn(`[MetaCAPI] Error enviando evento ${eventName}: ${detail}`);
-    return { sent: false, reason: 'request_failed', error: detail };
-  }
+  return { sent: results.some((r) => r.sent), eventId: event.event_id, results };
 }
 
 // Fire-and-forget. Útil para no bloquear el response del endpoint.

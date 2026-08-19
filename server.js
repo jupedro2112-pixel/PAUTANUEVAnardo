@@ -19484,6 +19484,11 @@ if (process.env.VERCEL) {
       `${girox.getPublisherKeyOverridesCount() ? ` (+${girox.getPublisherKeyOverridesCount()} overrides)` : ''} · ` +
       `cache jugador=${process.env.GIROX_PLAYER_CACHE_MS || '8000 (default)'}ms`
     );
+    // Pixels del Meta CAPI configurados (propio + partner opcional).
+    console.log(
+      `[MetaCAPI] pixels: propio=${process.env.META_PIXEL_ID ? 'OK' : 'no'} · ` +
+      `partner(2º)=${process.env.META_PIXEL_ID_2 ? 'OK ' + String(process.env.META_PIXEL_ID_2).slice(0, 6) + '…' : 'no configurado'}`
+    );
 
     await initializeData();
     await setupRedisAdapter();
