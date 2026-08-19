@@ -480,13 +480,32 @@ VIP.auth = (function () {
                 VIP.refunds.loadRefundStatus();
                 VIP.fire.loadFireStatus();
 
-                // Entrada por la landing (`ir=casino`): abrir el casino directo,
-                // con el chat de cargas en el pop-up "Cargar acá" (owner 2026-08-15).
+                // Entrada por la landing (`ir=casino`): el casino normalmente YA
+                // está abierto (tryAccessLink lo dispara apenas llega el token,
+                // sin esperar este verify) — esto es solo la red de seguridad si
+                // aquel camino falló. Sin el delay de 600ms que había antes.
                 if (VIP.state._openCasinoAfterLogin) {
                     VIP.state._openCasinoAfterLogin = false;
+                    try {
+                        if (VIP.ui && VIP.ui.enterCasino && !VIP.ui._casinoOpen) VIP.ui.enterCasino();
+                    } catch (e) {}
+                }
+
+                // Flujo de landing: dejar el CHAT DE SOPORTE ABIERTO a la derecha
+                // sobre el casino (owner 2026-08-19). Recién acá, con la sesión
+                // completa, para que el chat monte con sus mensajes cargando.
+                if (VIP.state._landingCasinoChat) {
+                    VIP.state._landingCasinoChat = false;
                     setTimeout(function () {
-                        try { if (VIP.ui && VIP.ui.enterCasino) VIP.ui.enterCasino(); } catch (e) {}
-                    }, 600);
+                        try {
+                            const drawer = document.getElementById('casinoChatDrawer');
+                            if (VIP.ui._casinoOpen && drawer &&
+                                (drawer.style.display === 'none' || !drawer.style.display) &&
+                                VIP.ui._casinoChatMount) {
+                                VIP.ui._casinoChatMount();
+                            }
+                        } catch (e) {}
+                    }, 400);
                 }
 
                 // Server-side enforcement: if the user must change their
@@ -525,9 +544,14 @@ VIP.auth = (function () {
 
         // `ir=casino` (link de la landing): abrir el casino DIRECTO al loguear.
         // Se lee ANTES de limpiar la URL; verifyToken() lo consume tras showChatScreen.
+        let goCasino = false;
         try {
             if (new URLSearchParams(window.location.search).get('ir') === 'casino') {
+                goCasino = true;
                 VIP.state._openCasinoAfterLogin = true;
+                // verifyToken() lo usa para dejar el chat de soporte ABIERTO
+                // a la derecha sobre el casino (flujo de landing).
+                VIP.state._landingCasinoChat = true;
             }
         } catch (e) {}
 
@@ -539,12 +563,25 @@ VIP.auth = (function () {
             const response = await fetch(`${VIP.config.API_URL}/api/auth/access-link`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token })
+                // `casino:true` → el server genera el link SSO del casino en la
+                // MISMA respuesta (una sola ida) y el casino abre al instante.
+                body: JSON.stringify({ token, casino: goCasino })
             });
             const data = await response.json();
             if (response.ok && data.token) {
                 VIP.state.currentToken = data.token;
                 localStorage.setItem('userToken', data.token);
+                // Casino YA, sin esperar verifyToken (que corre en paralelo y
+                // completa la sesión/chat detrás del casino). Con el link SSO
+                // adelantado no hay ni un request más; sin él, enterCasino()
+                // pide la sesión por el camino de siempre.
+                if (goCasino) {
+                    VIP.state._openCasinoAfterLogin = false;
+                    try {
+                        if (data.casinoUrl && VIP.ui.enterCasinoWithUrl) VIP.ui.enterCasinoWithUrl(data.casinoUrl);
+                        else if (VIP.ui.enterCasino) VIP.ui.enterCasino();
+                    } catch (e) {}
+                }
                 return true; // el caller sigue con verifyToken() → sesión completa
             }
             VIP.ui.showToast(data.error || 'Este link de acceso ya fue usado o no es válido.', 'error');

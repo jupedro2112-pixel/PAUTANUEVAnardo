@@ -3573,20 +3573,23 @@ function _sanitizeUsernameBase(name) {
   const noAccents = String(name || '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '');
   let base = noAccents.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (base.length > 12) base = base.slice(0, 12);   // deja lugar para el sufijo (máx 18)
-  if (base.length < 3) base = 'gx' + base;           // nombres muy cortos / vacíos
-  return base;
+  // 'gx' (2) + base (≤13) + sufijo (≤3) = 18 máx (límite de 1girox).
+  if (base.length > 13) base = base.slice(0, 13);
+  // TODOS los usuarios de la landing arrancan con "gx" (owner 2026-08-19).
+  return 'gx' + base;
 }
 async function _deriveUniqueUsername(name) {
   const base = _sanitizeUsernameBase(name);
   for (let i = 0; i < 12; i++) {
-    const suffix = String(crypto.randomInt(100, 999999)); // 3-6 dígitos
-    const candidate = (base + suffix).slice(0, 18);
+    // Sufijo de MÁXIMO 3 dígitos (owner 2026-08-19; antes eran 3-6 y quedaban
+    // usuarios tipo juan29352). 0-999 sin padding → "7", "42", "813".
+    const suffix = String(crypto.randomInt(0, 1000));
+    const candidate = base + suffix;
     if (!girox.validateUsername(candidate).valid) continue;
     const taken = await findUserByUsernameCI(candidate, { lean: true });
     if (!taken) return candidate;
   }
-  return null; // improbable: 12 intentos con sufijo aleatorio
+  return null; // con sólo 1000 sufijos por nombre puede agotarse si el nombre es muy común
 }
 
 app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
@@ -3706,17 +3709,41 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     //    por el owner 2026-08-15) — el chat de cargas queda en el pop-up "Cargar
     //    acá" adentro del casino.
     let accessUrl = null;
+    let enterUrl = null;
     try {
       accessUrl = await issueAccessLinkFor(newUser.id);
+      // ENTRADA DIRECTA (owner 2026-08-19): la landing navega a /api/landing/
+      // ir-casino, que redirige al SSO de 1girox sin cargar la PWA en el medio.
+      // accessUrl se sigue devolviendo por compatibilidad (landings viejas
+      // cacheadas en Vercel) y como fallback si ir-casino no puede armar el SSO.
+      const _alToken = new URL(accessUrl).searchParams.get('acceso');
+      if (_alToken) enterUrl = `${getPublicBaseUrl()}/api/landing/ir-casino?al=${encodeURIComponent(_alToken)}`;
       accessUrl += (accessUrl.indexOf('?') === -1 ? '?' : '&') + 'ir=casino';
     } catch (linkErr) {
       logger.warn(`[landing-signup] no se pudo generar el access-link de ${username}: ${linkErr.message}`);
       return res.status(500).json({ error: 'Tu cuenta se creó pero no pudimos generar tu acceso. Escribinos por soporte.' });
     }
 
+    // Credenciales al CHAT del cliente (owner 2026-08-19: la landing ya no
+    // muestra la pantalla de usuario+clave — entra directo al casino). Así el
+    // cliente las tiene en el chat de soporte cuando las necesite (y si el
+    // mensaje expira por el TTL de 3 días, soporte se las regenera).
+    try {
+      await Message.create({
+        id: uuidv4(),
+        senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+        receiverId: userId, receiverRole: 'user',
+        content: `🎉 ¡Tu cuenta está creada!\n\n👤 Usuario: ${username}\n🔑 Clave: ${password}\n\n📌 Guardalos para volver a entrar cuando quieras desde ${getPublicBaseUrl()}`,
+        type: 'system', timestamp: new Date(), read: false
+      });
+    } catch (credMsgErr) {
+      logger.warn(`[landing-signup] no se pudo dejar las credenciales en el chat de ${username}: ${credMsgErr.message}`);
+    }
+
     logger.info(`[landing-signup] alta ${username} campaign=${normalizedCode}${giroxOwner ? ' (key publicista)' : ''}`);
-    // La landing muestra usuario+clave y ofrece "entrar" con accessUrl (logueado).
-    res.status(201).json({ success: true, accessUrl, username, password });
+    // La landing redirige DIRECTO a enterUrl (casino); accessUrl queda como
+    // fallback/compat con landings viejas.
+    res.status(201).json({ success: true, accessUrl, enterUrl, username, password });
   } catch (error) {
     // A stdout además del logger de archivo: los 500 de este endpoint tienen que
     // verse en los logs de EB para diagnosticar (el logger winston va solo a
@@ -3724,6 +3751,52 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     logger.error(`[landing-signup] error: ${error.message}`);
     try { console.error(`[landing-signup][500] ${error.stack || error.message}`); } catch (_) {}
     res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
+  }
+});
+
+// ENTRADA DIRECTA AL CASINO desde la landing (owner 2026-08-19): el botón
+// "ENTRAR A MI CUENTA" navega ACÁ y esto responde 302 al link SSO de 1girox —
+// el navegador queda en 1girox.com directo, sin cargar la PWA en el medio.
+// El access-link NO se consume hasta tener el SSO en mano: si la plataforma
+// falla, se redirige al camino viejo (PWA con ?acceso=TOKEN&ir=casino) con el
+// link todavía VIVO — nunca se quema el acceso sin entregar nada a cambio.
+app.get('/api/landing/ir-casino', authLimiter, async (req, res) => {
+  const _home = () => res.redirect(302, getPublicBaseUrl());
+  try {
+    const token = String((req.query && req.query.al) || '').trim();
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return _home();
+    const pwaUrl = `${getPublicBaseUrl()}/?acceso=${encodeURIComponent(token)}&ir=casino`;
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Lookup SIN consumir (el consumo es recién con el SSO OK).
+    const user = await User.findOne({
+      accessLinkHash: hash, role: 'user', isActive: { $ne: false }, isBlocked: { $ne: true }
+    }).select('id username').lean();
+    if (!user) return _home(); // usado/inválido → la PWA le pide login normal
+
+    let session = null;
+    try {
+      session = await girox.createSession(user.username);
+    } catch (e) {
+      session = { success: false, error: e.message };
+    }
+    if (!session || !session.success || !session.redirectUrl) {
+      logger.warn(`[ir-casino] SSO falló para ${user.username} (${(session && (session.code || session.error)) || 's/detalle'}) — fallback a la PWA con el link vivo`);
+      return res.redirect(302, pwaUrl);
+    }
+
+    // Consumir el link (single-use). Si otro request ganó la carrera (doble
+    // click), seguimos igual: es el mismo cliente y ya tiene su SSO.
+    await User.updateOne(
+      { id: user.id, accessLinkHash: hash },
+      { $set: { accessLinkHash: null, lastLogin: new Date() } }
+    ).catch(() => {});
+
+    logger.info(`[ir-casino] ${user.username} → casino DIRECTO desde la landing`);
+    return res.redirect(302, session.redirectUrl);
+  } catch (error) {
+    logger.error(`[ir-casino] error: ${error.message}`);
+    return _home();
   }
 });
 
@@ -15136,9 +15209,29 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    logger.info(`[access-link] canjeado por ${user.username}${forcePwd ? '' : ' (landing, sin cambio de clave)'}`);
+    // Destino CASINO (`casino:true` en el body — lo manda la PWA cuando el link
+    // vino con `ir=casino`, o sea la LANDING de pauta): el link SSO se genera ACÁ
+    // y viaja en la MISMA respuesta. Le ahorra al cliente toda la cadena
+    // canje → verify → espera → POST /api/platform/session (4 idas en serie) y el
+    // casino empieza a cargar apenas la PWA procesa este canje. El código SSO
+    // vence a los 60s pero el front lo mete en el iframe en el mismo instante.
+    // Si falla (plataforma saturada, etc.) se responde sin casinoUrl y el front
+    // cae al camino normal de VIP.ui.enterCasino() — nunca bloquea el login.
+    let casinoUrl = null;
+    if (req.body && req.body.casino === true && girox.isEnabled()) {
+      try {
+        const session = await girox.createSession(user.username);
+        if (session.success) casinoUrl = session.redirectUrl;
+        else logger.warn(`[access-link] SSO adelantado falló para ${user.username}: ${session.code || session.error} — el front reintenta por /api/platform/session`);
+      } catch (e) {
+        logger.warn(`[access-link] SSO adelantado error para ${user.username}: ${e.message}`);
+      }
+    }
+
+    logger.info(`[access-link] canjeado por ${user.username}${forcePwd ? '' : ' (landing, sin cambio de clave)'}${casinoUrl ? ' + SSO casino adelantado' : ''}`);
     res.json({
       token: jwtToken,
+      casinoUrl,
       user: { id: user.id, username: user.username, role: user.role, mustChangePassword: forcePwd }
     });
   } catch (error) {
