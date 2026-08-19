@@ -290,11 +290,17 @@
         document.getElementById('outPass').textContent = res.d.password || '—';
         scForm.style.display = 'none';
         scDone.classList.add('on');
+        // Abre en OTRA pestaña y la landing queda atrás con los datos a la
+        // vista (owner 2026-08-19). Re-click: si la pestaña sigue viva, la
+        // trae al frente (el link de acceso es de UN uso — reabrirlo de cero
+        // caería en el login, y para eso el cliente ya tiene sus datos acá).
         var enterBtn = document.getElementById('enterBtn');
+        var casinoWin = null;
         enterBtn.onclick = function () {
-          enterBtn.disabled = true;
-          enterBtn.textContent = 'Entrando al casino…';
-          window.location.href = dest;
+          if (casinoWin && !casinoWin.closed) { casinoWin.focus(); return; }
+          casinoWin = window.open(dest, '_blank');
+          if (!casinoWin) { window.location.href = dest; return; } // pop-up bloqueado
+          enterBtn.textContent = '✅ Abierto en otra pestaña — volver al casino';
         };
         window.scrollTo(0, 0);
       } else {

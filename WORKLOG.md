@@ -41,6 +41,14 @@
   casino…" → 1girox embebido + chat a la derecha con SOLO el mensaje de
   credenciales.
 
+### 199. Landing: "ENTRAR A MI CUENTA" abre el casino en OTRA pestaña (la landing queda atrás con los datos)
+- Pedido owner: que la página se abra aparte y la landing quede con el
+  usuario+clave a la vista. `window.open(dest,'_blank')` dentro del click
+  (gesto del usuario → el pop-up blocker lo permite); si lo bloquea igual,
+  fallback a navegar en la misma pestaña. Re-click con la pestaña viva → la
+  trae al frente (`focus`); no se reabre de cero porque el access-link es de
+  UN uso. Solo landing (Vercel se actualiza con el push; el back no cambia).
+
 ### 197. Marcha atrás del "directo a 1girox.com" (#195): la landing vuelve a la PWA con el casino EMBEBIDO + chat
 - **Owner (screencast 04:00):** probó la entrada directa a 1girox.com y notó lo
   que pierde: "si abre 1girox no está el chat". Quiere que abra la PWA (Render
