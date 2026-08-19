@@ -8,6 +8,11 @@
 
 ## Sesión 2026-08-19
 
+> ⚠️ **Nota de historial:** los cambios #194–#196 fueron REVERTIDOS por error a
+> las 03:44 (`1c94652`, con el mensaje "eran cambios de OTRO repo") y
+> RESTAURADOS a las 03:46 (`6da0366`, revert del revert) — el owner confirmó que
+> SÍ van en este repo. Si se mira `git log`, ese par de commits se cancela.
+
 ### 196. Landing SIN pantalla de usuario+clave: crear cuenta → casino directo
 - **Owner (screencast del 19/08 3:14):** "tarda mucho, ¿no se puede sacar que
   aparezca el login? que entre directo". El video además confirmó que la landing
