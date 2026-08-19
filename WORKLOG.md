@@ -13,6 +13,23 @@
 > RESTAURADOS a las 03:46 (`6da0366`, revert del revert) — el owner confirmó que
 > SÍ van en este repo. Si se mira `git log`, ese par de commits se cancela.
 
+### 197. Marcha atrás del "directo a 1girox.com" (#195): la landing vuelve a la PWA con el casino EMBEBIDO + chat
+- **Owner (screencast 04:00):** probó la entrada directa a 1girox.com y notó lo
+  que pierde: "si abre 1girox no está el chat". Quiere que abra la PWA (Render
+  en pruebas / chat1girox.com en prod) con 1girox adentro a pantalla completa
+  Y el chat de soporte a la derecha.
+- **Cambio:** la landing redirige de nuevo a `accessUrl` (PWA con
+  `?acceso=...&ir=casino` → flujo #194: SSO adelantado en el canje, casino
+  embebido, chat abierto). El backend **dejó de devolver `enterUrl`** para que
+  hasta una landing vieja cacheada (que priorizaba enterUrl) caiga al camino
+  con chat. Sigue sin pantalla de usuario+clave (#196) y con usuarios gx
+  (#195). El endpoint `/api/landing/ir-casino` queda vivo (sin callers) por si
+  se vuelve a querer el directo pelado.
+- **Validado:** `node --check` OK (server.js). **Back necesita redeploy**
+  (Render para pruebas); la landing de Vercel se actualiza sola con el push.
+  PROBAR: landing → nombre → cae en la PWA con 1girox embebido cargando y el
+  widget de chat abierto a la derecha.
+
 ### 196. Landing SIN pantalla de usuario+clave: crear cuenta → casino directo
 - **Owner (screencast del 19/08 3:14):** "tarda mucho, ¿no se puede sacar que
   aparezca el login? que entre directo". El video además confirmó que la landing

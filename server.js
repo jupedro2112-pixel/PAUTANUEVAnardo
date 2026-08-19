@@ -3712,12 +3712,13 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     let enterUrl = null;
     try {
       accessUrl = await issueAccessLinkFor(newUser.id);
-      // ENTRADA DIRECTA (owner 2026-08-19): la landing navega a /api/landing/
-      // ir-casino, que redirige al SSO de 1girox sin cargar la PWA en el medio.
-      // accessUrl se sigue devolviendo por compatibilidad (landings viejas
-      // cacheadas en Vercel) y como fallback si ir-casino no puede armar el SSO.
-      const _alToken = new URL(accessUrl).searchParams.get('acceso');
-      if (_alToken) enterUrl = `${getPublicBaseUrl()}/api/landing/ir-casino?al=${encodeURIComponent(_alToken)}`;
+      // El destino es la PWA (`?acceso=...&ir=casino`): abre 1girox EMBEBIDO a
+      // pantalla completa CON el chat de soporte a la derecha, y el SSO viaja
+      // adelantado en el canje (1 sola ida, #194). `enterUrl` (el 302 directo a
+      // 1girox.com de /api/landing/ir-casino) se DEJÓ DE DEVOLVER a pedido del
+      // owner (2026-08-19: "si abre 1girox.com pelado no está el chat") — así
+      // hasta una landing vieja cacheada en Vercel (que prioriza enterUrl) cae
+      // al camino con chat. El endpoint ir-casino queda vivo por si se revierte.
       accessUrl += (accessUrl.indexOf('?') === -1 ? '?' : '&') + 'ir=casino';
     } catch (linkErr) {
       logger.warn(`[landing-signup] no se pudo generar el access-link de ${username}: ${linkErr.message}`);
