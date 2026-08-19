@@ -662,21 +662,11 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   también desde el alta del panel; regenerar pisa el anterior). En `User` vive SOLO
   el sha256 (`accessLinkHash`). El canje (`POST /api/auth/access-link`, público +
   authLimiter) borra el hash EN EL MISMO findOneAndUpdate (single-use a prueba de
-  carreras), fuerza `mustChangePassword` (salvo cuentas de LANDING) y emite el
-  mismo JWT del login → la PWA (auth.js `tryAccessLink`, disparado en el arranque
-  por app.js) guarda el token, limpia la URL del historial y `verifyToken()` abre
-  el recuadro obligatorio de crear contraseña (estilo WhatsApp claro/oscuro; piso
-  front: 8+ chars con letras y números). No hay botón de logout en la app
-  (eliminado a pedido del owner).
-  - **Flujo LANDING (`ir=casino`, 2026-08-19):** el canje además acepta
-    `casino:true` en el body → el server genera el link SSO del casino
-    (`girox.createSession`) y lo devuelve como `casinoUrl` EN LA MISMA respuesta.
-    El front (`tryAccessLink`) abre el casino al instante con
-    `VIP.ui.enterCasinoWithUrl(url)` — sin esperar `verifyToken`, que corre en
-    paralelo y al completar deja el widget de chat de soporte ABIERTO a la
-    derecha (`_casinoChatMount`, flag `_landingCasinoChat`). Si el SSO adelantado
-    falla, la respuesta viene sin `casinoUrl` y el front cae al camino normal
-    (`enterCasino()` → `POST /api/platform/session`).
+  carreras), fuerza `mustChangePassword` y emite el mismo JWT del login → la PWA
+  (auth.js `tryAccessLink`, disparado en el arranque por app.js) guarda el token,
+  limpia la URL del historial y `verifyToken()` abre el recuadro obligatorio de
+  crear contraseña (estilo WhatsApp claro/oscuro; piso front: 8+ chars con letras
+  y números). No hay botón de logout en la app (eliminado a pedido del owner).
 - **SLA demoras**: reloj en ChatStatus (`delayClockOnUserMessage`/`delayClockResolve`);
   responder (mensaje/comando/carga/retiro/CBU) o cerrar lo resuelve; sobre-umbral →
   ChatDelay. Reporte `GET /api/admin/chat-delays` (solo admin).
