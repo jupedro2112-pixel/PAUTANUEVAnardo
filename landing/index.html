@@ -252,6 +252,22 @@
   }
   function cookie(n) { var m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; }
 
+  // ATRIBUCIÓN DE PAUTA: la cookie _fbc solo la crea el pixel de navegador de
+  // Meta, y esta landing NO tiene pixel → sin esto, el click del anuncio
+  // (?fbclid=...) se PERDÍA y la conversión no se atribuía a la campaña. Se
+  // construye el fbc a mano con el formato oficial (fb.1.<timestamp>.<fbclid>)
+  // y el backend lo persiste en el usuario → TODOS los eventos del embudo
+  // (registro, carga, retiro) viajan atribuidos al anuncio que trajo al lead.
+  function fbcFromUrl() {
+    var existing = cookie('_fbc');
+    if (existing) return existing;
+    try {
+      var id = new URLSearchParams(location.search).get('fbclid');
+      if (id) return 'fb.1.' + Date.now() + '.' + id;
+    } catch (e) {}
+    return null;
+  }
+
   var form = document.getElementById('form');
   var nameEl = document.getElementById('name');
   var cta = document.getElementById('cta');
@@ -276,7 +292,7 @@
     fetch(API_BASE + '/api/landing/signup', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, campaignCode: campaign, utm: utmFromUrl(),
-        fbc: cookie('_fbc'), fbp: cookie('_fbp'), landingUrl: location.href })
+        fbc: fbcFromUrl(), fbp: cookie('_fbp'), landingUrl: location.href })
     })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {

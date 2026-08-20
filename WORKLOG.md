@@ -43,6 +43,22 @@
 
 ## Sesión 2026-08-20
 
+### 202. FIX ATRIBUCIÓN: la landing ahora captura el `fbclid` del anuncio (antes se PERDÍA)
+- **Contexto (feedback de Martin):** preguntó "qué parámetros atribuye". Al
+  revisarlo: la landing leía la cookie `_fbc`, que solo la crea el PIXEL de
+  navegador — y la landing NO tiene pixel → el `?fbclid=` del click del
+  anuncio se perdía y la atribución quedaba solo por IP+user-agent (débil).
+- **Fix (`fbcFromUrl()` en landing/index.html):** si no hay cookie `_fbc`, se
+  construye a mano con el formato oficial `fb.1.<timestamp>.<fbclid>` (el
+  `sanitizeFbCookie` del server ya lo acepta). El signup lo persiste en
+  `User.metaFbc` → TODOS los eventos del embudo (registro, InitiateCheckout,
+  Purchase, WithdrawRequest) viajan atribuidos al anuncio original, a los DOS
+  pixels. Solo landing (Vercel se actualiza con el push).
+- **Dedup (respuesta a Martin, sin cambio de código):** cada evento lleva un
+  `event_id` único; al pixel del partner va UN solo evento server-side por
+  acción (no hay pixel de navegador de ellos que duplique). El event_id
+  compartido con nuestro pixel browser es el mecanismo de dedup estándar.
+
 ### 201. Meta CAPI: hasta 8 pixels de PARTNER (numerados _2.._9) — 2+ publicistas pueden probar a la vez
 - **Contexto:** el partner Martin mandó su Pixel/Token/test code (TEST5036); se
   cargó en Render y la prueba completa funcionó (registro gxmartin521 +
