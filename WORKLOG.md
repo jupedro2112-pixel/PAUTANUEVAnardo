@@ -41,6 +41,28 @@
   casino…" → 1girox embebido + chat a la derecha con SOLO el mensaje de
   credenciales.
 
+## Sesión 2026-08-20
+
+### 201. Meta CAPI: hasta 8 pixels de PARTNER (numerados _2.._9) — 2+ publicistas pueden probar a la vez
+- **Contexto:** el partner Martin mandó su Pixel/Token/test code (TEST5036); se
+  cargó en Render y la prueba completa funcionó (registro gxmartin521 +
+  InitiateCheckout + Purchase $5000 + WithdrawRequest $3000, cero errores
+  CAPI). El owner tiene un 2º publicista que también quiere probar.
+- **Cambio:** `_capiDestinations()` ahora recorre `META_PIXEL_ID_2..9` +
+  `META_CAPI_ACCESS_TOKEN_2..9` (+ `META_TEST_EVENT_CODE_2..9` opcional) —
+  cada partner recibe TODOS los eventos en SU pixel con SU test code, sin
+  pisarse. El envío ya era por lista (Promise.all), solo se generalizó la
+  lista. Boot log lista cada partner: `partner2=OK 178672… (test TEST5036) ·
+  partner3=OK …`. Sin las env nuevas, comportamiento idéntico.
+- **Uso (2º publicista):** cargar `META_PIXEL_ID_3` + `META_CAPI_ACCESS_TOKEN_3`
+  (+ `META_TEST_EVENT_CODE_3`) en Render/SSM y reiniciar.
+- **Recordatorio:** al pasar a producción/pauta real, BORRAR los
+  `META_TEST_EVENT_CODE_*` (si quedan, los eventos van marcados de prueba).
+- **Validado:** `node --check` OK (server.js, metaCapiService.js). Aplica al
+  próximo restart (Render/EB).
+
+## Sesión 2026-08-19 (bis)
+
 ### 200. FLUJO SOLAPADO (`ir=creds`, idea del owner): las credenciales se muestran EN LA PWA mientras todo carga por atrás
 - **Idea del owner (correcta):** en vez de mostrar usuario+clave en la landing
   y recién después cargar la PWA, que los datos aparezcan YA en la PWA

@@ -36,8 +36,16 @@ function _capiDestinations() {
   if (process.env.META_PIXEL_ID && process.env.META_CAPI_ACCESS_TOKEN) {
     dests.push({ label: 'propio', pixelId: process.env.META_PIXEL_ID, token: process.env.META_CAPI_ACCESS_TOKEN, testCode: process.env.META_TEST_EVENT_CODE });
   }
-  if (process.env.META_PIXEL_ID_2 && process.env.META_CAPI_ACCESS_TOKEN_2) {
-    dests.push({ label: 'partner', pixelId: process.env.META_PIXEL_ID_2, token: process.env.META_CAPI_ACCESS_TOKEN_2, testCode: process.env.META_TEST_EVENT_CODE_2 });
+  // Pixels de PARTNERS (publicistas de tracking): numerados _2, _3, _4… _9.
+  // Cada uno con su token y su test code OPCIONAL propio → cada publicista ve
+  // los eventos en SU Events Manager con SU código de "Probar eventos", sin
+  // pisarse entre ellos (2 publicistas probando a la vez = _2 y _3).
+  for (let i = 2; i <= 9; i++) {
+    const pid = process.env['META_PIXEL_ID_' + i];
+    const tok = process.env['META_CAPI_ACCESS_TOKEN_' + i];
+    if (pid && tok) {
+      dests.push({ label: 'partner' + i, pixelId: pid, token: tok, testCode: process.env['META_TEST_EVENT_CODE_' + i] });
+    }
   }
   return dests;
 }
