@@ -43,6 +43,40 @@
 
 ## Sesión 2026-08-20
 
+### 203. ASISTENTE en el widget del casino: automatización primero, chat en vivo SOLO como soporte/fallback (ref Bet33)
+- **Pedido del owner (screencast de Bet33):** que el chat sea de automatización
+  y el chat en vivo quede solo para soporte o cuando la automatización falla.
+- **Widget rediseñado (ui.js, SW v110):** al abrir (manual o auto en el flujo
+  de landing) arranca el **ASISTENTE** (bot client-side, `casinoBotGo`):
+  - **Home:** 💰 Depositar · 💸 Retirar · 🎧 Hablar con soporte.
+  - **Depositar:** tarjeta con CBU + [Copiar CBU], Alias + [Copiar Alias],
+    Titular y "mínimo $2.000" (datos de `POST /api/cbu/request`, cacheados
+    client-side por el rate limit de 10s; el endpoint además deja los mensajes
+    en el chat → el agente VE la intención) → "✅ Ya hice la transferencia" →
+    recuadro punteado para subir el comprobante (dispara el `#fileInput` REAL:
+    la imagen entra al chat, la IA la verifica y la auto-carga hgcash acredita
+    — pipeline existente, cero backend nuevo) → "Comprobante recibido, te
+    avisamos al acreditar".
+  - **Retirar:** abre el formulario self-service existente
+    (`VIP.withdraw.openWithdrawModal`) con z-index 100001 (sobre el overlay
+    del casino 99999).
+  - **Soporte / fallback:** "🎧 Hablar con soporte" (o un fallo del fetch de
+    datos) muda el chat REAL adentro del panel como siempre. Barrita inferior:
+    🤖 Asistente (vuelve al bot) · ↗ Casino aparte · 🚪 Salir.
+- **Reestructura interna:** `openCasinoChat`/`closeCasinoChat` (el toggle abre
+  el bot, no el chat), `_casinoChatRestoreNodes` extraído de
+  `_casinoChatUnmount` (devolver el chat sin cerrar el panel), el badge de no
+  leídos ahora solo se calla si el chat vivo está montado (`_casinoChatPh`).
+  Los botones viejos del panel (Quiero Depositar/chips) se reemplazaron por el
+  bot; `casinoQuickAction`/`_casinoChip` quedan sin callers (compat).
+- **Pendiente si el owner quiere:** llevar el mismo asistente a la pantalla
+  principal del chat (fuera del casino) — hoy esa sigue con chat en vivo.
+- **Validado:** `node --check` OK (ui.js, auth.js, SW v110). Solo front (deploy
+  de estáticos). PROBAR: casino → burbuja 🎧 → asistente con 3 botones →
+  Depositar muestra los datos reales con Copiar → Ya transferí → subir foto →
+  "recibido" y el flujo de auto-carga sigue solo; Retirar abre el form sobre el
+  casino; Soporte muestra el chat de siempre y 🤖 Asistente vuelve al bot.
+
 ### 202. FIX ATRIBUCIÓN: la landing ahora captura el `fbclid` del anuncio (antes se PERDÍA)
 - **Contexto (feedback de Martin):** preguntó "qué parámetros atribuye". Al
   revisarlo: la landing leía la cookie `_fbc`, que solo la crea el PIXEL de

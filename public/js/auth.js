@@ -501,8 +501,8 @@ VIP.auth = (function () {
                             const drawer = document.getElementById('casinoChatDrawer');
                             if (VIP.ui._casinoOpen && drawer &&
                                 (drawer.style.display === 'none' || !drawer.style.display) &&
-                                VIP.ui._casinoChatMount) {
-                                VIP.ui._casinoChatMount();
+                                VIP.ui.openCasinoChat) {
+                                VIP.ui.openCasinoChat(); // asistente (bot), no el chat vivo
                             }
                         } catch (e) {}
                     }, 400);

@@ -1037,11 +1037,12 @@ VIP.ui.landingEnterCasino = function() {
   const fresh = url && (Date.now() - (VIP.ui._landingSsoAt || 0)) < 45000;
   VIP.ui._landingSsoUrl = null;
   if (fresh) VIP.ui.enterCasinoWithUrl(url); else VIP.ui.enterCasino();
+  // Panel del ASISTENTE abierto a la derecha apenas el casino está arriba.
   setTimeout(function() {
     try {
       const d = document.getElementById('casinoChatDrawer');
-      if (VIP.ui._casinoOpen && d && (d.style.display === 'none' || !d.style.display) && VIP.ui._casinoChatMount) {
-        VIP.ui._casinoChatMount();
+      if (VIP.ui._casinoOpen && d && (d.style.display === 'none' || !d.style.display) && VIP.ui.openCasinoChat) {
+        VIP.ui.openCasinoChat();
       }
     } catch (e) {}
   }, 500);
@@ -1248,40 +1249,24 @@ VIP.ui._showCasinoFrame = function() {
             'style="background:rgba(255,255,255,0.18);color:#fff;border:none;border-radius:50%;' +
             'width:28px;height:28px;font-size:14px;cursor:pointer;flex:0 0 auto;">✕</button>' +
         '</div>' +
-        // Acciones principales: Depositar (despliega montos) + Retirar (grandes).
-        '<div style="flex:0 0 auto;padding:8px;display:flex;flex-direction:column;gap:6px;' +
-        'background:#100e18;border-bottom:1px solid rgba(212,175,55,0.15);">' +
-          '<div style="display:flex;gap:6px;">' +
-            '<button type="button" onclick="VIP.ui.casinoQuickAction(\'cargar-toggle\')" ' +
-              'style="flex:1;background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;' +
-              'border-radius:10px;padding:11px 8px;font-size:13px;font-weight:800;cursor:pointer;">💰 Quiero Depositar</button>' +
-            '<button type="button" onclick="VIP.ui.casinoQuickAction(\'retirar\')" ' +
-              'style="flex:1;background:rgba(212,175,55,0.15);color:#e3bd48;border:1px solid rgba(212,175,55,0.45);' +
-              'border-radius:10px;padding:11px 8px;font-size:13px;font-weight:800;cursor:pointer;">💸 Solicitar Retiro</button>' +
-          '</div>' +
-          // Sub-fila de montos (se despliega al tocar "Quiero Depositar").
-          '<div id="casinoAmountRow" style="display:none;gap:6px;flex-wrap:wrap;">' +
-            _casinoChip('$2.000', "VIP.ui.casinoQuickAction('cargar','2000')") +
-            _casinoChip('$5.000', "VIP.ui.casinoQuickAction('cargar','5000')") +
-            _casinoChip('$10.000', "VIP.ui.casinoQuickAction('cargar','10000')") +
-            _casinoChip('$20.000', "VIP.ui.casinoQuickAction('cargar','20000')") +
-          '</div>' +
-          // Fila chica: pasos del depósito + hablar.
-          '<div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
-            _casinoChip('📋 Pedir CBU', "VIP.ui.casinoQuickAction('cbu')") +
-            _casinoChip('✅ Ya transferí', "VIP.ui.casinoQuickAction('comprobante')") +
-            _casinoChip('💬 Hablar', "VIP.ui.casinoQuickAction('escribir')") +
-          '</div>' +
-        '</div>' +
-        // Escapes discretos (una barrita fina de links).
-        '<div style="flex:0 0 auto;display:flex;gap:14px;justify-content:center;padding:4px;' +
-        'background:#0b0a12;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+        // ASISTENTE (bot) — modo DEFAULT del widget (owner 2026-08-21, ref
+        // Bet33): flujo guiado de depósito (datos + copiar + comprobante) y
+        // retiro. El chat humano queda como FALLBACK en "Hablar con soporte"
+        // o cuando la automatización falla.
+        '<div id="casinoBotArea" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;' +
+        'padding:10px;display:flex;flex-direction:column;gap:8px;background:#100e18;"></div>' +
+        // Chat EN VIVO (solo soporte): acá se MUDA el chat real al activarlo.
+        '<div id="casinoChatDrawerBody" style="flex:1;display:none;flex-direction:column;min-height:0;"></div>' +
+        // Barrita inferior: volver al asistente / abrir aparte / salir.
+        '<div style="flex:0 0 auto;display:flex;gap:14px;justify-content:center;padding:5px;' +
+        'background:#0b0a12;border-top:1px solid rgba(255,255,255,0.05);">' +
+          '<button type="button" onclick="VIP.ui.casinoBotGo(\'home\')" style="background:none;border:none;' +
+          'color:#25d366;font-size:10.5px;cursor:pointer;font-weight:700;">🤖 Asistente</button>' +
           '<button type="button" onclick="VIP.ui.openCasinoInTab()" style="background:none;border:none;' +
           'color:#8a7a3a;font-size:10.5px;cursor:pointer;text-decoration:underline;">↗ Casino aparte</button>' +
           '<button type="button" onclick="VIP.ui.closeCasinoFrame()" style="background:none;border:none;' +
           'color:#8a8a8a;font-size:10.5px;cursor:pointer;text-decoration:underline;">🚪 Salir del casino</button>' +
         '</div>' +
-        '<div id="casinoChatDrawerBody" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>' +
       '</div>';
     document.body.appendChild(overlay);
 
@@ -1320,8 +1305,11 @@ VIP.ui._showCasinoFrame = function() {
     if (msgs) {
       VIP.ui._casinoChatObserver = new MutationObserver(function(muts) {
         if (!VIP.ui._casinoOpen) return;
+        // Con el asistente (bot) el chat real puede NO estar a la vista aunque
+        // el panel esté abierto — el badge solo se calla si el chat vivo está
+        // montado (modo soporte, _casinoChatPh seteado).
         const drawer = document.getElementById('casinoChatDrawer');
-        if (drawer && drawer.style.display !== 'none') return; // chat a la vista: nada que avisar
+        if (drawer && drawer.style.display !== 'none' && VIP.ui._casinoChatPh) return;
         let added = 0;
         for (let i = 0; i < muts.length; i++) added += muts[i].addedNodes.length;
         if (!added) return;
@@ -1338,12 +1326,36 @@ VIP.ui._showCasinoFrame = function() {
   VIP.ui._casinoChatUnread = 0;
 };
 
-/** Abre/cierra el chat de cargas SOBRE el casino (el juego no se corta). */
+/** Abre/cierra el panel SOBRE el casino (el juego no se corta). Al abrir
+ *  arranca en modo ASISTENTE (bot); el chat vivo solo aparece vía soporte. */
 VIP.ui.toggleCasinoChat = function() {
   const drawer = document.getElementById('casinoChatDrawer');
   if (!drawer) return;
-  if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui._casinoChatMount();
-  else VIP.ui._casinoChatUnmount();
+  if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui.openCasinoChat();
+  else VIP.ui.closeCasinoChat();
+};
+
+/** Abre el panel en modo asistente (o como estaba si el soporte quedó activo). */
+VIP.ui.openCasinoChat = function() {
+  const drawer = document.getElementById('casinoChatDrawer');
+  if (!drawer) return;
+  drawer.style.display = 'flex';
+  VIP.ui._casinoChatUnread = 0;
+  const badge = document.getElementById('casinoChatBadge');
+  if (badge) badge.style.display = 'none';
+  // Primera apertura → home del bot. Si el chat vivo quedó montado (soporte),
+  // se respeta; si no, se muestra el estado del bot tal como quedó.
+  if (!VIP.ui._casinoChatPh && !VIP.ui._botStarted) {
+    VIP.ui._botStarted = true;
+    VIP.ui.casinoBotGo('home');
+  }
+};
+
+VIP.ui.closeCasinoChat = function() {
+  // Si el chat vivo estaba montado, devolver los nodos a la página SIEMPRE.
+  if (VIP.ui._casinoChatPh) VIP.ui._casinoChatRestoreNodes();
+  const drawer = document.getElementById('casinoChatDrawer');
+  if (drawer) drawer.style.display = 'none';
 };
 
 /** Muda el chat REAL (cabecera+mensajes+barra de escribir) adentro del panel.
@@ -1355,6 +1367,10 @@ VIP.ui._casinoChatMount = function() {
   const cc = document.querySelector('.chat-container');
   const cic = document.querySelector('.chat-input-container');
   if (!drawer || !body || !cc || !cic) return;
+  // Modo SOPORTE: se esconde el asistente y se muestra el chat real.
+  const botArea = document.getElementById('casinoBotArea');
+  if (botArea) botArea.style.display = 'none';
+  body.style.display = 'flex';
   // Marcadores invisibles para devolver cada bloque EXACTAMENTE donde estaba.
   const ph1 = document.createElement('div'); ph1.style.display = 'none';
   const ph2 = document.createElement('div'); ph2.style.display = 'none';
@@ -1384,8 +1400,9 @@ VIP.ui._casinoChatMount = function() {
   });
 };
 
-/** Devuelve el chat a su lugar original de la página y esconde el panel. */
-VIP.ui._casinoChatUnmount = function() {
+/** Devuelve el chat real a su lugar de la página (sin tocar el panel) y
+ *  vuelve a dejar visible el asistente. */
+VIP.ui._casinoChatRestoreNodes = function() {
   const s = VIP.ui._casinoChatPh;
   if (s) {
     // Deshacer la compactación ANTES de devolverlo: en la página el chat
@@ -1396,8 +1413,207 @@ VIP.ui._casinoChatUnmount = function() {
   if (s && s.ph1 && s.ph1.parentNode) { s.ph1.parentNode.insertBefore(s.cc, s.ph1); s.ph1.remove(); }
   if (s && s.ph2 && s.ph2.parentNode) { s.ph2.parentNode.insertBefore(s.cic, s.ph2); s.ph2.remove(); }
   VIP.ui._casinoChatPh = null;
+  const body = document.getElementById('casinoChatDrawerBody');
+  if (body) body.style.display = 'none';
+  const botArea = document.getElementById('casinoBotArea');
+  if (botArea) botArea.style.display = 'flex';
+};
+
+/** Compat: devuelve el chat Y esconde el panel (lo usa closeCasinoFrame). */
+VIP.ui._casinoChatUnmount = function() {
+  VIP.ui._casinoChatRestoreNodes();
   const drawer = document.getElementById('casinoChatDrawer');
   if (drawer) drawer.style.display = 'none';
+};
+
+// ============================================================
+// ASISTENTE del casino (owner 2026-08-21, referencia Bet33): flujo GUIADO en
+// vez de chat en vivo. Depósito: datos bancarios con Copiar → "Ya hice la
+// transferencia" → subir comprobante → lo verifica la IA y la auto-carga
+// acredita sola (pipeline existente). Retiro: formulario self-service
+// existente. El chat humano queda SOLO en "Hablar con soporte" o si algo
+// de la automatización falla.
+// ============================================================
+
+/** Burbuja del bot. Devuelve el nodo (para completarlo después). */
+VIP.ui._botMsg = function(html) {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return null;
+  const b = document.createElement('div');
+  b.style.cssText = 'background:#1b1830;border:1px solid rgba(212,175,55,0.18);border-radius:12px;' +
+    'padding:10px 12px;color:#e8e6f0;font-size:13px;line-height:1.5;';
+  b.innerHTML = html;
+  area.appendChild(b);
+  area.scrollTop = area.scrollHeight;
+  return b;
+};
+
+VIP.ui._botBtn = function(label, onclick, primary) {
+  const style = primary
+    ? 'background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;'
+    : 'background:rgba(212,175,55,0.12);color:#e3bd48;border:1px solid rgba(212,175,55,0.35);';
+  return '<button type="button" onclick="' + onclick + '" style="' + style +
+    'border-radius:12px;padding:11px 12px;font-size:13px;font-weight:800;cursor:pointer;flex:1;min-width:0;">' +
+    label + '</button>';
+};
+
+VIP.ui._botRow = function(btnsHtml) {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+  row.innerHTML = btnsHtml;
+  area.appendChild(row);
+  area.scrollTop = area.scrollHeight;
+};
+
+/** Estados del asistente. */
+VIP.ui.casinoBotGo = function(state) {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return;
+  // Si el chat vivo estaba montado (soporte), volver los nodos a la página.
+  if (VIP.ui._casinoChatPh) VIP.ui._casinoChatRestoreNodes();
+  area.style.display = 'flex';
+  const body = document.getElementById('casinoChatDrawerBody');
+  if (body) body.style.display = 'none';
+  VIP.ui._botStarted = true;
+
+  if (state === 'home') {
+    area.innerHTML = '';
+    VIP.ui._botMsg('👋 ¡Hola! Soy el <b>asistente de cargas</b>. ¿Qué necesitás?');
+    VIP.ui._botRow(
+      VIP.ui._botBtn('💰 Depositar', "VIP.ui.casinoBotGo('deposit')", true) +
+      VIP.ui._botBtn('💸 Retirar', 'VIP.ui.casinoBotWithdraw()')
+    );
+    VIP.ui._botRow(VIP.ui._botBtn('🎧 Hablar con soporte', 'VIP.ui.casinoBotSupport()'));
+    return;
+  }
+
+  if (state === 'deposit') {
+    const card = VIP.ui._botMsg('Para depositar, transferí a los siguientes datos:<br>' +
+      '<span style="color:#8a8fa3;">⏳ Cargando datos…</span>');
+    const renderCard = function() {
+        if (!card) return;
+        // Valores por textContent (config del panel → nunca se inyecta HTML).
+        card.innerHTML =
+          'Para depositar, transferí a los siguientes datos:' +
+          '<div style="background:#0d0b16;border:1px dashed rgba(212,175,55,0.45);border-radius:10px;padding:10px;margin-top:8px;display:flex;flex-direction:column;gap:8px;">' +
+            '<div><div style="color:#8a8fa3;font-size:11px;">CBU</div>' +
+              '<div style="display:flex;gap:6px;align-items:center;">' +
+              '<b id="botCbuNumber" style="flex:1;word-break:break-all;font-size:13.5px;"></b>' +
+              '<button type="button" onclick="VIP.ui.casinoBotCopy(\'number\')" style="background:#25d366;color:#04310f;border:none;border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">Copiar CBU</button></div></div>' +
+            '<div><div style="color:#8a8fa3;font-size:11px;">ALIAS</div>' +
+              '<div style="display:flex;gap:6px;align-items:center;">' +
+              '<b id="botCbuAlias" style="flex:1;word-break:break-all;font-size:13.5px;"></b>' +
+              '<button type="button" onclick="VIP.ui.casinoBotCopy(\'alias\')" style="background:#25d366;color:#04310f;border:none;border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:800;cursor:pointer;flex:0 0 auto;">Copiar Alias</button></div></div>' +
+            '<div><div style="color:#8a8fa3;font-size:11px;">TITULAR</div><b id="botCbuTitular" style="font-size:13px;"></b></div>' +
+            '<div style="background:rgba(212,175,55,0.12);border-radius:8px;padding:6px 8px;color:#e3bd48;font-size:12px;font-weight:700;">Depósito mínimo: $2.000</div>' +
+          '</div>';
+        const c = VIP.ui._botCbu;
+        card.querySelector('#botCbuNumber').textContent = c.number || '—';
+        card.querySelector('#botCbuAlias').textContent = c.alias || '—';
+        card.querySelector('#botCbuTitular').textContent = c.titular || c.bank || '—';
+        VIP.ui._botRow(
+          VIP.ui._botBtn('✅ Ya hice la transferencia', "VIP.ui.casinoBotGo('receipt')", true) +
+          VIP.ui._botBtn('↩ Volver', "VIP.ui.casinoBotGo('home')")
+        );
+    };
+    // Cache client-side: el endpoint tiene rate limit de 10s por usuario — un
+    // ida-y-vuelta rápido por el bot no debe rebotar en 429.
+    if (VIP.ui._botCbu && VIP.ui._botCbu.number) { renderCard(); return; }
+    fetch(`${VIP.config.API_URL}/api/cbu/request`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+      .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)); })
+      .then(function(data) {
+        VIP.ui._botCbu = (data && data.cbu) || {};
+        renderCard();
+      })
+      .catch(function() {
+        // La automatización falló → fallback al chat humano (regla del owner).
+        if (card) card.innerHTML = '⚠️ No pudimos traer los datos en este momento. Escribile a soporte y te los pasa al toque.';
+        VIP.ui._botRow(VIP.ui._botBtn('🎧 Hablar con soporte', 'VIP.ui.casinoBotSupport()', true));
+      });
+    return;
+  }
+
+  if (state === 'receipt') {
+    VIP.ui._botMsg('📸 Envianos una <b>foto o captura de pantalla</b> del comprobante de la transferencia.');
+    const box = VIP.ui._botMsg('');
+    if (box) {
+      box.style.cssText += 'border:2px dashed rgba(37,211,102,0.6);background:rgba(37,211,102,0.06);' +
+        'text-align:center;cursor:pointer;color:#9fe8bb;';
+      box.innerHTML = '📎 <b>Tocá acá para seleccionar el comprobante</b><br><span style="font-size:11px;color:#7aa88b;">Imagen o captura</span>';
+      box.onclick = function() { VIP.ui.casinoBotPickReceipt(); };
+    }
+    VIP.ui._botRow(VIP.ui._botBtn('↩ Volver', "VIP.ui.casinoBotGo('deposit')"));
+    return;
+  }
+
+  if (state === 'receipt-sent') {
+    VIP.ui._botMsg('✅ <b>¡Comprobante recibido!</b> Lo estamos verificando para acreditarte las fichas — ' +
+      'suele tardar menos de un minuto. Te avisamos acá mismo cuando esté 🔔');
+    VIP.ui._botRow(
+      VIP.ui._botBtn('🎰 Volver al juego', 'VIP.ui.closeCasinoChat()', true) +
+      VIP.ui._botBtn('🎧 Soporte', 'VIP.ui.casinoBotSupport()')
+    );
+    return;
+  }
+};
+
+/** Copiar CBU/alias al portapapeles (con fallback para navegadores viejos). */
+VIP.ui.casinoBotCopy = function(kind) {
+  const c = VIP.ui._botCbu || {};
+  const val = kind === 'alias' ? c.alias : c.number;
+  if (!val) return;
+  const ok = function() { VIP.ui.showToast('✅ Copiado: ' + val, 'success'); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(val)).then(ok, function() { window.prompt('Copialo manualmente:', val); });
+      return;
+    }
+  } catch (e) {}
+  window.prompt('Copialo manualmente:', val);
+};
+
+/** Abre el selector de archivo del chat (el envío usa el flujo REAL: la imagen
+ *  entra al chat, la IA la verifica y la auto-carga acredita — todo existente). */
+VIP.ui.casinoBotPickReceipt = function() {
+  const fi = document.getElementById('fileInput');
+  if (!fi) { VIP.ui.casinoBotSupport(); return; }
+  VIP.ui._botAwaitingReceipt = true;
+  if (!VIP.ui._botFileHook) {
+    VIP.ui._botFileHook = true;
+    fi.addEventListener('change', function() {
+      if (!VIP.ui._botAwaitingReceipt) return;
+      if (!fi.files || !fi.files.length) return;
+      VIP.ui._botAwaitingReceipt = false;
+      // El envío real lo maneja chat.js con este mismo change; acá solo se
+      // avanza la conversación del bot (pequeño delay para el procesamiento).
+      setTimeout(function() { VIP.ui.casinoBotGo('receipt-sent'); }, 600);
+    });
+  }
+  fi.click();
+};
+
+/** Retiro: el formulario self-service EXISTENTE, levantado sobre el casino. */
+VIP.ui.casinoBotWithdraw = function() {
+  const modal = document.getElementById('withdrawModal');
+  if (modal) modal.style.zIndex = '100001'; // sobre el overlay del casino (99999)
+  if (VIP.withdraw && VIP.withdraw.openWithdrawModal) {
+    VIP.ui._botMsg('💸 Te abrimos el formulario de retiro: completá el monto y tu CBU/alias. ' +
+      'El pago se procesa tras la verificación.');
+    VIP.withdraw.openWithdrawModal();
+  } else {
+    VIP.ui.casinoBotSupport();
+  }
+};
+
+/** FALLBACK humano: muda el chat real adentro del panel (modo soporte). */
+VIP.ui.casinoBotSupport = function() {
+  VIP.ui._casinoChatMount();
 };
 
 /** Cierra el recuadro y vuelve a VIPCARGAS. */

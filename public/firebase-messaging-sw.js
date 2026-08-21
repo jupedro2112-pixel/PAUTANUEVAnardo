@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v109'; // v109: flujo solapado ir=creds — recuadro usuario+clave en la PWA apenas carga; ENTRAR abre el casino al instante (SSO ya listo)
+const CACHE_VERSION = 'v110'; // v110: widget del casino = ASISTENTE guiado (depósito con Copiar CBU + comprobante, retiro self-service); chat en vivo solo como soporte/fallback
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
