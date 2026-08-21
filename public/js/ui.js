@@ -941,6 +941,7 @@ VIP.ui.enterCasino = async function() {
         if (!VIP.ui._casinoOpen) return;
         VIP.ui._casinoFrameStuck();
       }, 15000);
+      VIP.ui._armCasinoEscape();
       return;
     }
 
@@ -972,6 +973,55 @@ VIP.ui.enterCasinoWithUrl = function(url) {
     if (!VIP.ui._casinoOpen) return;
     VIP.ui._casinoFrameStuck();
   }, 15000);
+  VIP.ui._armCasinoEscape();
+};
+
+/**
+ * RED DE SEGURIDAD universal (owner 2026-08-21): a los 12s, MUESTRA un aviso
+ * discreto abajo del casino para abrirlo APARTE. A diferencia del watchdog,
+ * este timer NO se cancela con el `load` del iframe — porque el caso que nos
+ * importa (cookies de terceros bloqueadas en Tor / Safari-iPhone) hace que el
+ * HTML cargue —load dispara— pero la sesión quede girando adentro, algo que
+ * desde afuera no se puede detectar. Para el que le carga bien (Android), el
+ * aviso es una barrita chica abajo que puede cerrar con la ✕.
+ */
+VIP.ui._armCasinoEscape = function() {
+  clearTimeout(VIP.ui._casinoEscapeTimer);
+  VIP.ui._casinoEscapeTimer = setTimeout(function() {
+    if (!VIP.ui._casinoOpen) return;
+    VIP.ui._showCasinoEscapeBar();
+  }, 12000);
+};
+
+VIP.ui._showCasinoEscapeBar = function() {
+  if (document.getElementById('casinoEscapeBar')) return;
+  const overlay = document.getElementById('casinoOverlay');
+  if (!overlay) return;
+  const bar = document.createElement('div');
+  bar.id = 'casinoEscapeBar';
+  bar.style.cssText =
+    'position:absolute;left:12px;right:12px;z-index:8;' +
+    'bottom:calc(12px + env(safe-area-inset-bottom,0px));' +
+    'background:linear-gradient(135deg,#1a0033,#2d0052);border:1px solid #ffd70066;' +
+    'border-radius:14px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,0.6);' +
+    'display:flex;flex-direction:column;gap:8px;max-width:520px;margin:0 auto;';
+  bar.innerHTML =
+    '<button type="button" onclick="VIP.ui._hideCasinoEscapeBar()" ' +
+      'style="position:absolute;top:6px;right:10px;background:none;border:none;color:#aaa;font-size:18px;cursor:pointer;line-height:1;">×</button>' +
+    '<div style="color:#ffd479;font-weight:800;font-size:13.5px;line-height:1.4;">' +
+      '🎰 ¿El juego no termina de abrir?</div>' +
+    '<div style="color:#cbb8e6;font-size:12px;line-height:1.45;">' +
+      'Tu navegador puede estar bloqueando el casino acá adentro. Tocá para abrirlo aparte y va a funcionar normal.<br>' +
+      '<b style="color:#9ad8f7;">💬 Usá ESTA página para cargar o retirar tu saldo.</b></div>' +
+    '<button type="button" onclick="VIP.ui.openCasinoInTab()" ' +
+      'style="background:linear-gradient(135deg,#d4af37,#ffd700);color:#000;border:none;' +
+      'padding:12px;border-radius:12px;font-weight:900;font-size:14px;cursor:pointer;">↗ Abrir el juego aparte</button>';
+  overlay.appendChild(bar);
+};
+
+VIP.ui._hideCasinoEscapeBar = function() {
+  const b = document.getElementById('casinoEscapeBar');
+  if (b) b.remove();
 };
 
 // ============================================================
@@ -1383,6 +1433,8 @@ VIP.ui._showCasinoFrame = function() {
   const status = overlay.querySelector('#casinoFrameStatus');
   if (frame) { frame.src = ''; frame.style.display = 'none'; }
   if (status) { status.style.display = 'flex'; status.textContent = '🎰 Entrando al casino…'; }
+  VIP.ui._hideCasinoEscapeBar();
+  clearTimeout(VIP.ui._casinoEscapeTimer);
 
   overlay.style.display = 'flex';
   // Bloquea el scroll del fondo mientras el casino está abierto.
@@ -2146,6 +2198,8 @@ VIP.ui._hideCasinoDepositToast = function() {
 /** Cierra el recuadro y vuelve a VIPCARGAS. */
 VIP.ui.closeCasinoFrame = function() {
   clearTimeout(VIP.ui._casinoWatchdog);
+  clearTimeout(VIP.ui._casinoEscapeTimer);
+  VIP.ui._hideCasinoEscapeBar();
   // Si el chat estaba mudado al panel del casino, SIEMPRE devolverlo a la
   // página antes de cerrar (si no, la pantalla principal queda sin chat).
   VIP.ui._casinoChatUnmount();

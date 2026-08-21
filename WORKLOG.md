@@ -43,6 +43,21 @@
 
 ## Sesión 2026-08-20
 
+### 216. Red de seguridad: si el casino no abre embebido (cookies de terceros Tor/iPhone) → aviso "abrir aparte" + usar esta página para cargar/retirar
+- **Contexto:** el casino embebido queda cargando infinito en Tor (y en
+  Safari/iPhone por ITP) porque bloquean las cookies de TERCEROS que 1girox
+  necesita para su sesión. Abrir 1girox.com directo (first-party) funciona. No
+  es bug nuestro; es límite del navegador. En Android/Chrome funciona bien.
+- **Fix:** timer INDEPENDIENTE del watchdog (`_armCasinoEscape`, 12s) — NO se
+  cancela con el `load` del iframe (el HTML carga igual aunque la sesión quede
+  trabada adentro, algo indetectable desde afuera). A los 12s muestra una
+  barrita discreta abajo del casino: "🎰 ¿El juego no termina de abrir? …
+  [↗ Abrir el juego aparte]" + **"💬 Usá ESTA página para cargar o retirar tu
+  saldo"**. Cerrable con ✕. Para Android (mayoría) es una barrita chica que
+  ignoran; para el trabado (Tor/iPhone) es la salida — juega aparte y vuelve a
+  esta pestaña para cargar/retirar por el chat.
+- **Validado:** `node --check` OK (ui.js). SW **v123**. Solo front.
+
 ### 215. FIX retiro (backend exigía CBU Y alias los dos) + el CBU del depósito reaparece abajo tras una carga
 - **Retiro no dejaba confirmar** ("Completá titular, CVU/CBU y alias"):
   `/api/withdrawal/request` requería titular **Y** cbu **Y** alias (los 3), pero
