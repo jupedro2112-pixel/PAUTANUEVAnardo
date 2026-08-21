@@ -5647,6 +5647,55 @@ app.post('/api/cbu/request', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/support/hello — bienvenida automática al abrir el SOPORTE del
+// widget del casino (owner 2026-08-21). Editable en COMANDOS:
+// /sys_soporte_bienvenida (vacío = no se envía). Throttle de 6hs por usuario
+// para no spamear el chat del agente si el cliente abre soporte varias veces.
+app.post('/api/support/hello', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const username = req.user.username || 'Usuario';
+    const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    const recent = await Message.findOne({
+      receiverId: userId,
+      'metadata.kind': 'support_hello',
+      timestamp: { $gte: cutoff }
+    }).lean();
+    if (recent) return res.json({ success: true, alreadySent: true });
+
+    const content = await renderSystemCommand(
+      '/sys_soporte_bienvenida',
+      '👋 ¡Bienvenido al SOPORTE de 1Girox!\n\nContanos tu consulta y te damos una solución al toque. 🎧'
+    );
+    if (content) {
+      const msg = await Message.create({
+        id: uuidv4(),
+        senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+        receiverId: userId, receiverRole: 'user',
+        content, type: 'text', timestamp: new Date(), read: false,
+        metadata: { kind: 'support_hello' }
+      });
+      const data = {
+        id: msg.id, senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+        receiverId: userId, receiverRole: 'user', content, timestamp: msg.timestamp, type: 'text'
+      };
+      io.to(`user_${userId}`).emit('new_message', data);
+      io.to(`chat_${userId}`).emit('new_message', data);
+      notifyAdmins('new_message', { message: data, userId, username });
+    }
+    // El chat aparece/sube en el panel: el cliente está pidiendo soporte.
+    await ChatStatus.findOneAndUpdate(
+      { userId },
+      { userId, username, lastMessageAt: new Date() },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (error) {
+    logger.warn(`[support-hello] falló: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 // POST /api/messages/welcome
 // Crea los mensajes de bienvenida del lado del ADMIN/sistema (no del usuario).
 // Antes el cliente los mandaba vía /api/messages/send con su propio token, lo
@@ -9978,6 +10027,12 @@ async function initializeData() {
       description: 'Mensaje automático al cliente cuando un agente RECHAZA su comprobante desde el banner del panel (revisión manual). Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '❌ Revisamos tu comprobante y NO pudimos validarlo. Verificá que la transferencia se haya hecho a la cuenta que te pasamos y por el monto correcto, y reenvianos el comprobante COMPLETO y legible. Si creés que es un error, escribinos.'
+    },
+    {
+      name: '/sys_soporte_bienvenida',
+      description: 'Mensaje automático cuando el cliente abre el SOPORTE del widget del casino (máx. 1 vez cada 6hs por cliente). Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '👋 ¡Bienvenido al SOPORTE de 1Girox!\n\nContanos tu consulta y te damos una solución al toque. 🎧'
     }
   ];
   for (const cmd of systemCmds) {

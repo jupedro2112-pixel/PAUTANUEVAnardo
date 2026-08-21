@@ -43,6 +43,22 @@
 
 ## Sesión 2026-08-20
 
+### 210. Widget: sin líneas blancas + header "SOPORTE 1Girox" en modo soporte + bienvenida automática de soporte
+- **Líneas blancas (captura, modo oscuro):** eran bordes `1px solid` SIN color
+  (caen en currentColor = claro) en la fila de opciones y la barra de mensaje,
+  más el marco dorado del panel. Se eliminaron los tres (queda solo la sombra).
+- **Título por modo:** asistente = "Cargas Automáticas 1Girox"; al entrar a
+  soporte el header pasa a **"SOPORTE 1Girox"** (`#casinoWidgetTitle`, lo
+  setean `_casinoChatMount`/`_casinoChatRestoreNodes`) — para diferenciar.
+- **Al abrir soporte:** (1) scroll extra a los 600ms → SIEMPRE se ve el último
+  mensaje; (2) **bienvenida automática** server-side: `POST /api/support/hello`
+  → mensaje "Bienvenido al SOPORTE… contanos tu consulta" editable en COMANDOS
+  (**`/sys_soporte_bienvenida`**, sembrado; vacío = no se envía), con throttle
+  de 6hs por usuario (metadata.kind support_hello) para no spamear al agente, y
+  upsert del ChatStatus (el chat sube en el panel: está pidiendo soporte).
+- **Validado:** `node --check` OK (server.js, ui.js). SW **v117**. **Back
+  necesita redeploy** (endpoint + seed); front con SW.
+
 ### 209. Modo casino: el boot del cliente YA NO pide status de reembolsos ni fueguito (menos carga + menos cupo girox)
 - **Pregunta del owner:** "¿el menú viejo del lado del usuario está sacado?
   ocupa espacio y relentiza". Respuesta honesta: NO se borró — la pantalla

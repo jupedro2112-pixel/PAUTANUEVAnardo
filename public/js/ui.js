@@ -1272,7 +1272,8 @@ VIP.ui._showCasinoFrame = function() {
       '<div id="casinoChatDrawer" style="display:none;position:absolute;z-index:7;' +
       'right:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px));' +
       'width:min(380px,calc(100vw - 24px));height:min(600px,72vh);' +
-      'flex-direction:column;background:#0d0d1a;border:1px solid rgba(212,175,55,0.4);' +
+      // Sin borde (owner 2026-08-21: "sacá esas líneas blancas") — solo sombra.
+      'flex-direction:column;background:#0d0d1a;border:none;' +
       'border-radius:16px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,0.6);">' +
         // Header verde con "EN LÍNEA" + cerrar.
         '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;flex:0 0 auto;' +
@@ -1280,7 +1281,9 @@ VIP.ui._showCasinoFrame = function() {
           '<div style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
           'display:flex;align-items:center;justify-content:center;font-size:16px;">🎧</div>' +
           '<div style="flex:1;min-width:0;">' +
-            '<div style="color:#fff;font-weight:800;font-size:14px;">Cargas Automáticas 1Girox</div>' +
+            // El título cambia según el modo: asistente ("Cargas Automáticas")
+            // o chat humano ("SOPORTE") — así el cliente diferencia (owner).
+            '<div id="casinoWidgetTitle" style="color:#fff;font-weight:800;font-size:14px;">Cargas Automáticas 1Girox</div>' +
             '<div style="color:#c9f5d8;font-size:11px;display:flex;align-items:center;gap:5px;">' +
               '<span style="width:7px;height:7px;border-radius:50%;background:#7dffa8;box-shadow:0 0 6px #7dffa8;"></span>EN LÍNEA</div>' +
           '</div>' +
@@ -1294,8 +1297,7 @@ VIP.ui._showCasinoFrame = function() {
         '</div>' +
         // FILA FIJA de opciones (siempre a la vista, owner 2026-08-21 ref
         // Bet33): las 3 acciones ancladas bajo el header.
-        '<div class="cwBar" style="flex:0 0 auto;display:flex;gap:6px;padding:8px;' +
-        'border-bottom:1px solid;">' +
+        '<div class="cwBar" style="flex:0 0 auto;display:flex;gap:6px;padding:8px;">' +
           '<button type="button" onclick="VIP.ui.casinoBotGo(\'deposit\')" style="flex:1.2;background:#128c4a;' +
           'color:#fff;border:none;border-radius:9px;padding:10px 6px;font-size:12px;font-weight:800;cursor:pointer;">💳 Quiero Depositar</button>' +
           '<button type="button" onclick="VIP.ui.casinoBotGo(\'withdraw\')" style="flex:1.2;background:#128c4a;' +
@@ -1313,7 +1315,7 @@ VIP.ui._showCasinoFrame = function() {
         // Barra de mensaje estilo WhatsApp: tocarla lleva al chat de soporte
         // real (ahí está el input verdadero con foto y todo).
         '<div id="casinoBotFakeInput" class="cwBar" onclick="VIP.ui.casinoBotSupport()" style="flex:0 0 auto;display:flex;' +
-        'align-items:center;gap:8px;padding:7px 10px;border-top:1px solid;cursor:text;">' +
+        'align-items:center;gap:8px;padding:7px 10px;cursor:text;">' +
           '<span class="cwMut" style="font-size:18px;">📎</span>' +
           '<div class="cwFakeIn" style="flex:1;border-radius:18px;padding:9px 14px;' +
           'font-size:13.5px;">Escribe un mensaje…</div>' +
@@ -1435,11 +1437,14 @@ VIP.ui._casinoChatMount = function() {
   const cic = document.querySelector('.chat-input-container');
   if (!drawer || !body || !cc || !cic) return;
   // Modo SOPORTE: se esconde el asistente (y su barra de mensaje de mentira —
-  // el chat real trae la de verdad) y se muestra el chat real.
+  // el chat real trae la de verdad) y se muestra el chat real. El título del
+  // header pasa a SOPORTE para diferenciarlo de las cargas automáticas.
   const botArea = document.getElementById('casinoBotArea');
   if (botArea) botArea.style.display = 'none';
   const fakeInput = document.getElementById('casinoBotFakeInput');
   if (fakeInput) fakeInput.style.display = 'none';
+  const title = document.getElementById('casinoWidgetTitle');
+  if (title) title.textContent = 'SOPORTE 1Girox';
   body.style.display = 'flex';
   // Marcadores invisibles para devolver cada bloque EXACTAMENTE donde estaba.
   const ph1 = document.createElement('div'); ph1.style.display = 'none';
@@ -1489,6 +1494,8 @@ VIP.ui._casinoChatRestoreNodes = function() {
   if (botArea) botArea.style.display = 'flex';
   const fakeInput = document.getElementById('casinoBotFakeInput');
   if (fakeInput) fakeInput.style.display = 'flex';
+  const title = document.getElementById('casinoWidgetTitle');
+  if (title) title.textContent = 'Cargas Automáticas 1Girox';
 };
 
 /** Compat: devuelve el chat Y esconde el panel (lo usa closeCasinoFrame). */
@@ -1820,6 +1827,24 @@ VIP.ui.casinoBotWithdrawSubmit = async function() {
 /** FALLBACK humano: muda el chat real adentro del panel (modo soporte). */
 VIP.ui.casinoBotSupport = function() {
   VIP.ui._casinoChatMount();
+  // Bienvenida automática del soporte (server-side, editable en COMANDOS como
+  // /sys_soporte_bienvenida, con throttle para no spamear al agente). El
+  // mensaje llega por socket y aparece en el chat recién montado.
+  try {
+    fetch(`${VIP.config.API_URL}/api/support/hello`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    }).catch(function() {});
+  } catch (e) {}
+  // Que SIEMPRE se vea el último mensaje: además del scroll del mount (rAF),
+  // un segundo scroll cuando el historial ya terminó de renderizar.
+  setTimeout(function() {
+    try {
+      const msgs = document.getElementById('chatMessages');
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    } catch (e) {}
+  }, 600);
 };
 
 /** Toggle claro/oscuro del widget = el MISMO modo del chat de soporte
