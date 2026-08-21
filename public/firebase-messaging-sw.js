@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v119'; // v119: la pantalla de credenciales queda FIJA hasta tocar ENTRAR (min 2s) — el casino ya no se abre solo encima
+const CACHE_VERSION = 'v120'; // v120: asistente sin barra de escribir (solo soporte por boton) + creds espera obligatoria 2s y auto-inicio 10s + cartel grande y sonido al acreditar + anti-spam CBU + boton Info
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

@@ -43,6 +43,23 @@
 
 ## Sesión 2026-08-20
 
+### 213. Widget: 5 ajustes de UX (sin barra de escribir, espera obligatoria de creds, cartel+sonido de carga, anti-spam CBU, botón Info)
+- **Sin barra de escribir en el asistente:** derivaba a soporte con un toque
+  de más → eliminada. La ÚNICA vía a soporte es el botón 🎧. En modo soporte
+  el chat real trae su barra verdadera.
+- **Credenciales (landing):** el botón ENTRAR obliga a esperar **2s** (si toca
+  antes: "✋ Esperá Ns — guardá tus datos"); y **auto-inicio a los 10s** si el
+  cliente se queda mirando (solo si el canje ya terminó).
+- **Carga acreditada:** CARTEL GRANDE centrado (✅ ¡Carga acreditada! $X → ¡A
+  JUGAR!) + **sonido** (WebAudio, 2 tonos) SIEMPRE que sube el saldo, sea carga
+  automática hgcash o manual del admin (ambas emiten balance_updated). Se va
+  solo a los 8s o con el botón.
+- **Anti-spam CBU:** spamear "Quiero Depositar" ya NO apila tarjetas — si la
+  tarjeta ya está, se REUSA y se refresca (por si cambió el CBU en el panel).
+- **Botón "ℹ️ ¿Cómo funciona?"** (2ª fila, aparte de Depositar/Retirar/Soporte):
+  explica el flujo automático (depositar/retirar/jugar/soporte).
+- **Validado:** `node --check` OK (ui.js, auth.js). SW **v120**. Solo front.
+
 ### 212. FIX: la pantalla de credenciales queda FIJA hasta tocar ENTRAR (el casino se abría solo encima) + mínimo 2s
 - **Screencast del owner:** la pantalla "¡Tu cuenta está lista!" aparecía y a
   los ~2s el casino se abría SOLO encima, sin tocar nada. Causa: la "entrada

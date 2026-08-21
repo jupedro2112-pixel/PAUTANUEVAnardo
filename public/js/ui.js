@@ -171,11 +171,13 @@ VIP.ui = (function () {
         if (Math.abs(newBalance - previousBalance) > 0.01) {
             localStorage.setItem('lastBalance', newBalance);
             if (newBalance > previousBalance) {
-                showCasinoInvite(newBalance);
-                // Dentro del casino: la confirmación la da el ASISTENTE (la
-                // auto-carga acreditó) — burbuja verde con el saldo nuevo.
-                if (VIP.ui._casinoOpen && VIP.ui.casinoBotDepositConfirmed) {
+                // CARTEL GRANDE + sonido SIEMPRE que se acredite (auto o manual
+                // del admin) — el cliente se da cuenta (owner 2026-08-21). El
+                // cartel de invitación viejo solo si NO está en el casino.
+                if (VIP.ui.casinoBotDepositConfirmed) {
                     try { VIP.ui.casinoBotDepositConfirmed(newBalance); } catch (e) {}
+                } else {
+                    showCasinoInvite(newBalance);
                 }
             } else {
                 showBalanceToast(newBalance);
@@ -1013,16 +1015,27 @@ VIP.ui._showLandingCredsScreen = function(creds) {
   if (creds && creds.username) document.getElementById('landingCredsUser').textContent = creds.username;
   if (creds && creds.password) document.getElementById('landingCredsPass').textContent = creds.password;
   VIP.ui._landingCredsShownAt = Date.now();
+  VIP.ui._landingCredsReadyFlag = false;
   ov.style.display = 'flex';
+  // AUTO-INICIO a los 10s (owner 2026-08-21): si el cliente se queda mirando,
+  // entra solo al casino pasado ese máximo. Solo si el canje ya terminó.
+  clearTimeout(VIP.ui._landingAutoEnterTimer);
+  VIP.ui._landingAutoEnterTimer = setTimeout(function() {
+    if (VIP.state._landingCredsActive && VIP.ui._landingCredsReadyFlag) {
+      VIP.ui.landingEnterCasino();
+    }
+  }, 10000);
 };
 
 /** El canje terminó OK: habilita el botón (y completa el usuario si el
  *  fragmento no vino — la clave en ese caso queda en el mensaje del chat).
  *  El botón se habilita recién a los 2 SEGUNDOS de mostrarse la pantalla
- *  (owner 2026-08-21): tiempo mínimo para que el cliente VEA su usuario. */
+ *  (owner 2026-08-21): tiempo mínimo OBLIGATORIO para que el cliente VEA su
+ *  usuario — si toca antes, se lo avisa y no lo deja. */
 VIP.ui._landingCredsReady = function(username, ssoUrl) {
   VIP.ui._landingSsoUrl = ssoUrl || null;
   VIP.ui._landingSsoAt = Date.now();
+  VIP.ui._landingCredsReadyFlag = true;
   const u = document.getElementById('landingCredsUser');
   if (u && username && u.textContent === '…') u.textContent = username;
   const wait = Math.max(0, 2000 - (Date.now() - (VIP.ui._landingCredsShownAt || 0)));
@@ -1043,6 +1056,17 @@ VIP.ui._hideLandingCreds = function() {
 VIP.ui.landingEnterCasino = function() {
   const btn = document.getElementById('landingCredsEnter');
   if (btn && btn.textContent.indexOf('Preparando') !== -1) return; // canje en curso
+  // ESPERA OBLIGATORIA de 2s: si toca antes, avisar y no dejar entrar todavía.
+  const shown = Date.now() - (VIP.ui._landingCredsShownAt || 0);
+  if (shown < 2000) {
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✋ Esperá ' + Math.ceil((2000 - shown) / 1000) + 's — guardá tus datos';
+      setTimeout(function() { if (btn.textContent.indexOf('Esperá') !== -1) btn.textContent = orig; }, 1200);
+    }
+    return;
+  }
+  clearTimeout(VIP.ui._landingAutoEnterTimer);
   VIP.state._landingCredsActive = false; // el cliente YA tocó ENTRAR
   VIP.ui._hideLandingCreds();
   const url = VIP.ui._landingSsoUrl;
@@ -1314,6 +1338,11 @@ VIP.ui._showCasinoFrame = function() {
           '<button type="button" class="cwSop" onclick="VIP.ui.casinoBotSupport()" style="flex:0.8;' +
           'border-radius:9px;padding:10px 4px;font-size:12px;font-weight:800;cursor:pointer;">🎧 Soporte</button>' +
         '</div>' +
+        // 2ª fila: Información (aparte de las 3 acciones).
+        '<div class="cwBar" style="flex:0 0 auto;display:flex;padding:0 8px 8px;">' +
+          '<button type="button" class="cwSop" onclick="VIP.ui.casinoBotGo(\'info\')" style="flex:1;' +
+          'border-radius:9px;padding:8px 4px;font-size:11.5px;font-weight:800;cursor:pointer;">ℹ️ ¿Cómo funciona?</button>' +
+        '</div>' +
         // ASISTENTE (bot) — modo DEFAULT del widget: flujo guiado de depósito
         // (datos + copiar + comprobante) y retiro EN el panel. Look tipo
         // WhatsApp (claro u oscuro según wa-dark). Chat humano = FALLBACK.
@@ -1321,16 +1350,9 @@ VIP.ui._showCasinoFrame = function() {
         'padding:10px;display:flex;flex-direction:column;gap:8px;"></div>' +
         // Chat EN VIVO (solo soporte): acá se MUDA el chat real al activarlo.
         '<div id="casinoChatDrawerBody" style="flex:1;display:none;flex-direction:column;min-height:0;"></div>' +
-        // Barra de mensaje estilo WhatsApp: tocarla lleva al chat de soporte
-        // real (ahí está el input verdadero con foto y todo).
-        '<div id="casinoBotFakeInput" class="cwBar" onclick="VIP.ui.casinoBotSupport()" style="flex:0 0 auto;display:flex;' +
-        'align-items:center;gap:8px;padding:7px 10px;cursor:text;">' +
-          '<span class="cwMut" style="font-size:18px;">📎</span>' +
-          '<div class="cwFakeIn" style="flex:1;border-radius:18px;padding:9px 14px;' +
-          'font-size:13.5px;">Escribe un mensaje…</div>' +
-          '<span style="width:36px;height:36px;border-radius:50%;background:#128c4a;color:#fff;display:flex;' +
-          'align-items:center;justify-content:center;font-size:15px;flex:0 0 auto;">➤</span>' +
-        '</div>' +
+        // SIN barra de mensaje en el asistente (owner 2026-08-21): derivaba a
+        // soporte con un toque de más — la ÚNICA vía a soporte es el botón 🎧.
+        // En modo soporte el chat real trae su barra de escribir verdadera.
         // Barrita inferior mínima. SIN "Salir del casino" ni "Casino aparte"
         // (owner 2026-08-21) — el abrir-aparte queda solo en el recuadro de
         // error del casino (openCasinoInTab sigue existiendo para eso).
@@ -1598,9 +1620,51 @@ VIP.ui.casinoBotGo = function(state) {
     return;
   }
 
+  if (state === 'info') {
+    area.innerHTML = '';
+    VIP.ui._botMsg(
+      'ℹ️ <b>¿Cómo funciona?</b> Es todo <b>automático</b> 👇' +
+      '<div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">' +
+      '<div class="cwBox" style="border-radius:9px;padding:9px 11px;"><b>💳 Depositar</b><br>' +
+      'Tocá <b>Quiero Depositar</b>, transferí al CBU/alias que te damos y mandá el comprobante. ' +
+      'Se acredita <b>solo en segundos</b> — sin esperar a nadie.</div>' +
+      '<div class="cwBox" style="border-radius:9px;padding:9px 11px;"><b>💸 Retirar</b><br>' +
+      'Tocá <b>Solicitar Retiro</b>, poné el monto y tu CBU/alias. El pago sale <b>automático</b> ' +
+      'a tu cuenta tras la verificación.</div>' +
+      '<div class="cwBox" style="border-radius:9px;padding:9px 11px;"><b>🎰 Jugar</b><br>' +
+      'Ya estás adentro de 1Girox con tu sesión iniciada. Cargá y jugá al instante.</div>' +
+      '<div class="cwBox" style="border-radius:9px;padding:9px 11px;"><b>🎧 Soporte</b><br>' +
+      'Si algo no funciona, tocá <b>Soporte</b> y te atiende una persona.</div>' +
+      '</div>');
+    return;
+  }
+
   if (state === 'deposit') {
-    const card = VIP.ui._botMsg('Para depositar, transferí a los siguientes datos:<br>' +
+    // ANTI-SPAM (owner 2026-08-21): si ya hay una tarjeta de depósito a la
+    // vista, se REUSA (se refresca por si cambió el CBU) en vez de apilar otra.
+    let card = document.getElementById('botDepositCard');
+    if (card) {
+      // Ya está la tarjeta: solo refrescar los datos (por si cambió el CBU) y
+      // llevarla a la vista, sin duplicar botones ni burbujas.
+      area.scrollTop = area.scrollHeight;
+      const doRefresh = function(c) {
+        const n = card.querySelector('#botCbuNumber'); if (n) n.textContent = c.number || '—';
+        const a = card.querySelector('#botCbuAlias'); if (a) a.textContent = c.alias || '—';
+        const t = card.querySelector('#botCbuTitular'); if (t) t.textContent = c.titular || c.bank || '—';
+      };
+      if (VIP.ui._botCbu && VIP.ui._botCbu.number) doRefresh(VIP.ui._botCbu);
+      fetch(`${VIP.config.API_URL}/api/cbu/request`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+        if (d && d.cbu) { VIP.ui._botCbu = d.cbu; doRefresh(d.cbu); }
+      }).catch(function() {});
+      return;
+    }
+    card = VIP.ui._botMsg('Para depositar, transferí a los siguientes datos:<br>' +
       '<span style="color:#8a8fa3;">⏳ Cargando datos…</span>');
+    if (card) card.id = 'botDepositCard';
     const renderCard = function() {
         if (!card) return;
         // Valores por textContent (config del panel → nunca se inyecta HTML).
@@ -1889,22 +1953,76 @@ VIP.ui._syncCasinoThemeBtn = function() {
   if (b) b.textContent = document.body.classList.contains('wa-dark') ? '☀️' : '🌙';
 };
 
-/** La carga automática ACREDITÓ (balance_updated con saldo en alza estando en
- *  el casino): confirmación bien visible en el asistente. */
+/** Sonido de notificación (WebAudio, sin archivo — dos tonos ascendentes). */
+VIP.ui._playChime = function() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!VIP.ui._audioCtx) VIP.ui._audioCtx = new AC();
+    const ctx = VIP.ui._audioCtx;
+    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+    [ [880, 0], [1320, 0.14] ].forEach(function(p) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = p[0];
+      const t = ctx.currentTime + p[1];
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.28, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.36);
+    });
+  } catch (e) {}
+};
+
+/** La carga ACREDITÓ (balance_updated con saldo en alza): CARTEL GRANDE
+ *  centrado + sonido para que el cliente se dé cuenta (owner 2026-08-21),
+ *  y confirmación en el asistente. Sirve para carga automática Y manual del
+ *  admin (ambas emiten balance_updated). */
 VIP.ui.casinoBotDepositConfirmed = function(newBalance) {
   // Cortar la cuenta regresiva del comprobante: la carga LLEGÓ.
   clearInterval(VIP.ui._botCdTimer);
   VIP.ui._botCdTimer = null;
   if (VIP.ui._botCdNode) { VIP.ui._botCdNode.style.display = 'none'; VIP.ui._botCdNode = null; }
+
+  // CARTEL GRANDE sobre el casino + sonido.
+  VIP.ui._playChime();
+  let ov = document.getElementById('casinoDepositToast');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'casinoDepositToast';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100002;display:none;align-items:center;' +
+      'justify-content:center;background:rgba(0,0,0,0.6);';
+    document.body.appendChild(ov);
+  }
+  const amt = (Number(newBalance) || 0).toLocaleString('es-AR');
+  ov.innerHTML =
+    '<div style="width:min(90vw,360px);background:linear-gradient(155deg,#0d3b23,#0a2e1b);' +
+    'border:2px solid #25d366;border-radius:22px;padding:26px 22px;text-align:center;' +
+    'box-shadow:0 18px 60px rgba(37,211,102,0.45);">' +
+      '<div style="font-size:52px;line-height:1;">✅</div>' +
+      '<div style="color:#25d366;font-weight:900;font-size:24px;margin:8px 0 2px;">¡Carga acreditada!</div>' +
+      '<div style="color:#cfe9d8;font-size:14px;">Tu saldo ahora es</div>' +
+      '<div style="color:#fff;font-weight:900;font-size:34px;margin:4px 0 16px;">$' + amt + '</div>' +
+      '<button type="button" onclick="VIP.ui._hideCasinoDepositToast()" ' +
+        'style="width:100%;background:#25d366;color:#04310f;border:none;border-radius:14px;padding:14px;' +
+        'font-size:16px;font-weight:900;cursor:pointer;">🎰 ¡A JUGAR!</button>' +
+    '</div>';
+  ov.style.display = 'flex';
+  clearTimeout(VIP.ui._depositToastTimer);
+  VIP.ui._depositToastTimer = setTimeout(VIP.ui._hideCasinoDepositToast, 8000);
+
+  // Confirmación también en el hilo del asistente (si no está en soporte).
   const drawer = document.getElementById('casinoChatDrawer');
-  if (!drawer) return;
-  if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui.openCasinoChat();
-  // En modo soporte no se interrumpe: el mensaje del sistema ya llega al chat.
-  if (VIP.ui._casinoChatPh) return;
+  if (drawer && (drawer.style.display === 'none' || !drawer.style.display)) VIP.ui.openCasinoChat();
+  if (VIP.ui._casinoChatPh) return; // en modo soporte no se pisa el chat real
   VIP.ui._botStarted = true;
-  VIP.ui._botMsg('💰 <b>¡Carga acreditada!</b> Tu saldo ahora es <b>$' +
-    (Number(newBalance) || 0).toLocaleString('es-AR') + '</b> 🎰');
-  VIP.ui._botRow(VIP.ui._botBtn('🎰 Seguir jugando', 'VIP.ui.closeCasinoChat()', true));
+  VIP.ui._botMsg('💰 <b>¡Carga acreditada!</b> Tu saldo ahora es <b>$' + amt + '</b> 🎰');
+};
+
+VIP.ui._hideCasinoDepositToast = function() {
+  clearTimeout(VIP.ui._depositToastTimer);
+  const ov = document.getElementById('casinoDepositToast');
+  if (ov) ov.style.display = 'none';
 };
 
 /** Cierra el recuadro y vuelve a VIPCARGAS. */
