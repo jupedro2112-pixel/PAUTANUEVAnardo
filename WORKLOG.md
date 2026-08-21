@@ -43,6 +43,22 @@
 
 ## Sesión 2026-08-20
 
+### 212. FIX: la pantalla de credenciales queda FIJA hasta tocar ENTRAR (el casino se abría solo encima) + mínimo 2s
+- **Screencast del owner:** la pantalla "¡Tu cuenta está lista!" aparecía y a
+  los ~2s el casino se abría SOLO encima, sin tocar nada. Causa: la "entrada
+  única" (#205) en verifyToken dispara `enterCasino()` sin saber que la
+  pantalla de credenciales estaba a la vista (verify corre en paralelo al
+  canje del modo creds).
+- **Fix:** flag `VIP.state._landingCredsActive` (se setea en el modo creds de
+  tryAccessLink, se limpia en `landingEnterCasino` o si el canje falla) — la
+  entrada única lo respeta y NO abre el casino mientras esté activo. Además,
+  el botón "🎰 ENTRAR AL CASINO" se habilita recién a los **2 segundos** de
+  mostrarse la pantalla (pedido owner: tiempo mínimo para VER el usuario).
+- **Validado:** `node --check` OK (ui.js, auth.js). SW **v119**. Solo front.
+  PROBAR: landing → nombre → la pantalla con usuario/clave QUEDA quieta; a los
+  2s el botón pasa de "Preparando…" a "ENTRAR AL CASINO"; nada avanza hasta
+  tocarlo.
+
 ### 211. Widget: sin "↗ Casino aparte" en el pie + foto del logo 1G junto a "SOPORTE 1Girox"
 - Pedido owner: (1) el pie del widget queda solo con "🤖 Asistente"
   (`openCasinoInTab` se conserva — lo usa el recuadro de error del casino);

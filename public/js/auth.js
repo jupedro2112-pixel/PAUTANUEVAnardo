@@ -536,7 +536,10 @@ VIP.auth = (function () {
                 // saltea si debe cambiar la clave (ese modal va primero).
                 if (VIP.state.currentUser && VIP.state.currentUser.role === 'user' &&
                     VIP.state.currentUser.mustChangePassword !== true &&
-                    !VIP.ui._casinoOpen) {
+                    !VIP.ui._casinoOpen &&
+                    // Con la pantalla de credenciales a la vista NO se abre
+                    // solo: espera el ENTRAR del cliente (owner 2026-08-21).
+                    !VIP.state._landingCredsActive) {
                     try { if (VIP.ui.enterCasino) VIP.ui.enterCasino(); } catch (e) {}
                     setTimeout(function () {
                         try { if (VIP.ui._casinoOpen && VIP.ui.openCasinoChat) VIP.ui.openCasinoChat(); } catch (e) {}
@@ -596,6 +599,11 @@ VIP.auth = (function () {
                 VIP.state._landingCasinoChat = true;
             } else if (ir === 'creds') {
                 goCreds = true;
+                // Mientras la pantalla de credenciales esté a la vista, la
+                // "entrada única" de verifyToken NO debe abrir el casino solo:
+                // los datos quedan FIJOS hasta que el cliente toque ENTRAR
+                // (owner 2026-08-21). landingEnterCasino() limpia el flag.
+                VIP.state._landingCredsActive = true;
                 const m = (window.location.hash || '').match(/lc=([^&]+)/);
                 if (m) {
                     const parts = decodeURIComponent(m[1]).split(':');
@@ -619,6 +627,7 @@ VIP.auth = (function () {
             try { document.documentElement.classList.remove('casino-boot'); } catch (e) {}
             if (goCasino) { try { VIP.ui.closeCasinoFrame(); } catch (e) {} }
             if (goCreds) { try { VIP.ui._hideLandingCreds(); } catch (e) {} }
+            VIP.state._landingCredsActive = false;
         };
 
         try {

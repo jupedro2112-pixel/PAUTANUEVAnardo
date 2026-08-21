@@ -1012,18 +1012,24 @@ VIP.ui._showLandingCredsScreen = function(creds) {
   }
   if (creds && creds.username) document.getElementById('landingCredsUser').textContent = creds.username;
   if (creds && creds.password) document.getElementById('landingCredsPass').textContent = creds.password;
+  VIP.ui._landingCredsShownAt = Date.now();
   ov.style.display = 'flex';
 };
 
 /** El canje terminó OK: habilita el botón (y completa el usuario si el
- *  fragmento no vino — la clave en ese caso queda en el mensaje del chat). */
+ *  fragmento no vino — la clave en ese caso queda en el mensaje del chat).
+ *  El botón se habilita recién a los 2 SEGUNDOS de mostrarse la pantalla
+ *  (owner 2026-08-21): tiempo mínimo para que el cliente VEA su usuario. */
 VIP.ui._landingCredsReady = function(username, ssoUrl) {
   VIP.ui._landingSsoUrl = ssoUrl || null;
   VIP.ui._landingSsoAt = Date.now();
   const u = document.getElementById('landingCredsUser');
   if (u && username && u.textContent === '…') u.textContent = username;
-  const btn = document.getElementById('landingCredsEnter');
-  if (btn) btn.textContent = '🎰 ENTRAR AL CASINO';
+  const wait = Math.max(0, 2000 - (Date.now() - (VIP.ui._landingCredsShownAt || 0)));
+  setTimeout(function() {
+    const btn = document.getElementById('landingCredsEnter');
+    if (btn) btn.textContent = '🎰 ENTRAR AL CASINO';
+  }, wait);
 };
 
 VIP.ui._hideLandingCreds = function() {
@@ -1037,6 +1043,7 @@ VIP.ui._hideLandingCreds = function() {
 VIP.ui.landingEnterCasino = function() {
   const btn = document.getElementById('landingCredsEnter');
   if (btn && btn.textContent.indexOf('Preparando') !== -1) return; // canje en curso
+  VIP.state._landingCredsActive = false; // el cliente YA tocó ENTRAR
   VIP.ui._hideLandingCreds();
   const url = VIP.ui._landingSsoUrl;
   const fresh = url && (Date.now() - (VIP.ui._landingSsoAt || 0)) < 45000;
