@@ -43,6 +43,32 @@
 
 ## Sesión 2026-08-20
 
+### 205. ENTRADA ÚNICA al casino + confirmación de auto-carga en el bot + aviso de comprobante ilegible
+- **Pedidos del owner (3):**
+  1. **La forma de ingresar es SIEMPRE 1girox con el asistente a la derecha**
+     — no solo la landing: también el login manual y la sesión guardada
+     (recarga). En auth.js, tras `showChatScreen` (verify) y tras el login OK,
+     si `role==='user'` y no debe cambiar clave → `enterCasino()` +
+     `openCasinoChat()`. La pantalla vieja del chat queda solo detrás
+     (soporte / cambio de clave obligatorio).
+  2. **La auto-carga confirma EN EL ASISTENTE:** al llegar `balance_updated`
+     con saldo en alza estando en el casino, burbuja verde "💰 ¡Carga
+     acreditada! Tu saldo ahora es $X" (`casinoBotDepositConfirmed`; abre el
+     panel si estaba cerrado; en modo soporte no interrumpe — el mensaje del
+     sistema ya llega al chat).
+  3. **Comprobante ilegible → aviso AL CLIENTE** (antes era silencioso): si la
+     IA dice "no es comprobante" (borroso/recortado/otra cosa), mensaje de
+     sistema pidiendo reenviarlo con los datos visibles. Editable desde
+     COMANDOS: **`/sys_comprobante_ilegible`** (sembrado; vacío = no se
+     envía). Helper nuevo `_emitClientSystemNote` (system message al cliente +
+     salas + admins). El caso "error técnico de la IA" sigue silencioso a
+     propósito (reenviar no ayudaría).
+- **Validado:** `node --check` OK (server.js, ui.js, auth.js, SW v112). **Back
+  necesita redeploy** (aviso + seed del comando); front con SW v112. PROBAR:
+  (1) login manual o recarga con sesión → cae directo en el casino con el
+  asistente; (2) mandar una foto cualquiera (no comprobante) → llega el aviso
+  de reenvío; (3) auto-carga real → burbuja "¡Carga acreditada!" en el bot.
+
 ### 204. Widget: "Carga rápido 1GIROX" + SIN salida a la pantalla vieja de la PWA
 - Pedido owner: (1) sacar la opción de volver al chat viejo (la pantalla con
   reembolsos y demás) → se eliminó "🚪 Salir del casino" de la barrita del

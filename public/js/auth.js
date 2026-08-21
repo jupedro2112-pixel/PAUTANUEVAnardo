@@ -407,6 +407,14 @@ VIP.auth = (function () {
                 } else {
                     // Primer ingreso sin teléfono verificado: ofrecer el SMS.
                     maybeOfferSmsVerification(data.user);
+                    // ENTRADA ÚNICA (owner 2026-08-21): también el login manual
+                    // cae directo en el casino con el asistente a la derecha.
+                    if (data.user.role === 'user' && !VIP.ui._casinoOpen) {
+                        try { if (VIP.ui.enterCasino) VIP.ui.enterCasino(); } catch (e) {}
+                        setTimeout(function () {
+                            try { if (VIP.ui._casinoOpen && VIP.ui.openCasinoChat) VIP.ui.openCasinoChat(); } catch (e) {}
+                        }, 500);
+                    }
                 }
 
                 VIP.notifications.requestNotificationPermission();
@@ -506,6 +514,20 @@ VIP.auth = (function () {
                             }
                         } catch (e) {}
                     }, 400);
+                }
+
+                // ENTRADA ÚNICA (owner 2026-08-21): TODO ingreso de un cliente
+                // cae en el casino con el asistente a la derecha — venga de la
+                // landing, de un login viejo o de recargar la página. La
+                // pantalla vieja del chat queda solo detrás (soporte). Se
+                // saltea si debe cambiar la clave (ese modal va primero).
+                if (VIP.state.currentUser && VIP.state.currentUser.role === 'user' &&
+                    VIP.state.currentUser.mustChangePassword !== true &&
+                    !VIP.ui._casinoOpen) {
+                    try { if (VIP.ui.enterCasino) VIP.ui.enterCasino(); } catch (e) {}
+                    setTimeout(function () {
+                        try { if (VIP.ui._casinoOpen && VIP.ui.openCasinoChat) VIP.ui.openCasinoChat(); } catch (e) {}
+                    }, 500);
                 }
 
                 // Server-side enforcement: if the user must change their

@@ -1550,6 +1550,35 @@ async function _emitAdminOnlyChatNote(userId, username, content) {
   }
 }
 
+// Mensaje de SISTEMA visible para el CLIENTE (y los admins) en su chat.
+// Lo usa el aviso de "comprobante ilegible" del asistente automatizado.
+async function _emitClientSystemNote(userId, username, content) {
+  try {
+    const msg = await Message.create({
+      id: uuidv4(),
+      senderId: 'system',
+      senderUsername: 'Sistema',
+      senderRole: 'admin',
+      receiverId: userId,
+      receiverRole: 'user',
+      content,
+      type: 'system',
+      timestamp: new Date(),
+      read: false
+    });
+    const data = {
+      id: msg.id, senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
+      receiverId: userId, receiverRole: 'user', content, timestamp: msg.timestamp,
+      type: 'system'
+    };
+    io.to(`user_${userId}`).emit('new_message', data);
+    io.to(`chat_${userId}`).emit('new_message', data);
+    notifyAdmins('new_message', { message: data, userId, username });
+  } catch (e) {
+    logger.warn(`[comprobante] no se pudo emitir aviso al cliente: ${e.message}`);
+  }
+}
+
 // Analiza una imagen enviada por un cliente: detecta si es comprobante, lo
 // registra (colección Comprobante) y avisa SÓLO a los admins si es duplicado o
 // no. Pensado para correr fire-and-forget: NUNCA frena la entrega del mensaje.
@@ -1571,7 +1600,10 @@ async function analyzeComprobanteFromMessage({ userId, username, content, messag
       return;
     }
 
-    // No es comprobante (captura de error, foto cualquiera): registrar liviano, sin avisar.
+    // No es comprobante (foto borrosa, recortada, o cualquier otra imagen):
+    // registrar liviano Y AVISARLE AL CLIENTE que lo reenvíe legible (owner
+    // 2026-08-21 — antes era silencioso y el cliente quedaba esperando).
+    // Editable desde COMANDOS: /sys_comprobante_ilegible (vacío = no se envía).
     if (!result.isComprobante) {
       try {
         await Comprobante.create({
@@ -1580,6 +1612,13 @@ async function analyzeComprobanteFromMessage({ userId, username, content, messag
           status: 'not_comprobante', rawText: result.rawText || null,
           model: result.model, createdAt: new Date()
         });
+      } catch (_) {}
+      try {
+        const aviso = await renderSystemCommand(
+          '/sys_comprobante_ilegible',
+          '⚠️ No pudimos reconocer tu comprobante. Enviá la foto o captura COMPLETA, donde se vean bien: el monto, la fecha, el N° de operación y la cuenta a la que transferiste. 📸 Sacala derecha y con buena luz. Si el problema sigue, escribinos y te ayudamos.'
+        );
+        if (aviso) await _emitClientSystemNote(userId, username, aviso);
       } catch (_) {}
       return;
     }
@@ -9927,6 +9966,12 @@ async function initializeData() {
       description: 'Mensaje automático cuando el cliente canjea el código de bienvenida y el bono es MONTO SORPRESA (se acredita solo). Variables: {username}, ${amount}. Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '🎉 ¡Código de bienvenida canjeado, {username}!\n\n💰 Tu BONO SORPRESA de ${amount} ya está ACREDITADO en tu cuenta. ¡A jugarlo! 🎰\n\n⚠️ Es por única vez.',
+    },
+    {
+      name: '/sys_comprobante_ilegible',
+      description: 'Mensaje automático al cliente cuando manda una imagen que la IA NO reconoce como comprobante (borrosa, recortada, otra cosa). Le pide reenviarlo legible. Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '⚠️ No pudimos reconocer tu comprobante. Enviá la foto o captura COMPLETA, donde se vean bien: el monto, la fecha, el N° de operación y la cuenta a la que transferiste. 📸 Sacala derecha y con buena luz. Si el problema sigue, escribinos y te ayudamos.'
     }
   ];
   for (const cmd of systemCmds) {

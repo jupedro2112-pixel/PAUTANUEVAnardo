@@ -172,6 +172,11 @@ VIP.ui = (function () {
             localStorage.setItem('lastBalance', newBalance);
             if (newBalance > previousBalance) {
                 showCasinoInvite(newBalance);
+                // Dentro del casino: la confirmación la da el ASISTENTE (la
+                // auto-carga acreditó) — burbuja verde con el saldo nuevo.
+                if (VIP.ui._casinoOpen && VIP.ui.casinoBotDepositConfirmed) {
+                    try { VIP.ui.casinoBotDepositConfirmed(newBalance); } catch (e) {}
+                }
             } else {
                 showBalanceToast(newBalance);
             }
@@ -1615,6 +1620,20 @@ VIP.ui.casinoBotWithdraw = function() {
 /** FALLBACK humano: muda el chat real adentro del panel (modo soporte). */
 VIP.ui.casinoBotSupport = function() {
   VIP.ui._casinoChatMount();
+};
+
+/** La carga automática ACREDITÓ (balance_updated con saldo en alza estando en
+ *  el casino): confirmación bien visible en el asistente. */
+VIP.ui.casinoBotDepositConfirmed = function(newBalance) {
+  const drawer = document.getElementById('casinoChatDrawer');
+  if (!drawer) return;
+  if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui.openCasinoChat();
+  // En modo soporte no se interrumpe: el mensaje del sistema ya llega al chat.
+  if (VIP.ui._casinoChatPh) return;
+  VIP.ui._botStarted = true;
+  VIP.ui._botMsg('💰 <b>¡Carga acreditada!</b> Tu saldo ahora es <b>$' +
+    (Number(newBalance) || 0).toLocaleString('es-AR') + '</b> 🎰');
+  VIP.ui._botRow(VIP.ui._botBtn('🎰 Seguir jugando', 'VIP.ui.closeCasinoChat()', true));
 };
 
 /** Cierra el recuadro y vuelve a VIPCARGAS. */

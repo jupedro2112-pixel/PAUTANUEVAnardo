@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v111'; // v111: widget 'Carga rápido 1GIROX' + sin 'Salir del casino' (no se vuelve a la pantalla vieja)
+const CACHE_VERSION = 'v112'; // v112: entrada UNICA = casino + asistente para todos; confirmacion de carga automatica en el bot; aviso de comprobante ilegible
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
