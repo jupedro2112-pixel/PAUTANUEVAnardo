@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v115'; // v115: widget con modo claro/oscuro (toggle en header) sincronizado con el chat de soporte (wa-dark)
+const CACHE_VERSION = 'v116'; // v116: modo casino sin status de reembolsos-fueguito en el boot (menos carga y menos cupo girox)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

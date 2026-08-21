@@ -485,8 +485,21 @@ VIP.auth = (function () {
 
                 VIP.ui.showChatScreen();
                 VIP.socket.startMessagePolling();
-                VIP.refunds.loadRefundStatus();
-                VIP.fire.loadFireStatus();
+                // MODO CASINO (owner 2026-08-21): los clientes entran SIEMPRE
+                // al casino — el dashboard viejo (reembolsos/fueguito) queda
+                // tapado, así que NO se piden sus status en el arranque. Ahorra
+                // tiempo de entrada y, sobre todo, CUPO de la API girox (el
+                // status de reembolso son 2 consultas de netwin por apertura —
+                // era de lo que más saturaba, ver #191). Para staff o cuentas
+                // con cambio de clave pendiente (ven la pantalla vieja), se
+                // cargan como siempre.
+                const _casinoFirst = VIP.state.currentUser &&
+                    VIP.state.currentUser.role === 'user' &&
+                    VIP.state.currentUser.mustChangePassword !== true;
+                if (!_casinoFirst) {
+                    VIP.refunds.loadRefundStatus();
+                    VIP.fire.loadFireStatus();
+                }
 
                 // Entrada por la landing (`ir=casino`): el casino normalmente YA
                 // está abierto (tryAccessLink lo dispara apenas llega el token,
@@ -744,8 +757,16 @@ VIP.auth = (function () {
 
         VIP.ui.showChatScreen();
         VIP.socket.startMessagePolling();
-        VIP.refunds.loadRefundStatus();
-        VIP.fire.loadFireStatus();
+        // MODO CASINO: sin status de reembolsos/fueguito para clientes (el
+        // dashboard viejo queda tapado por el casino) — misma regla y mismo
+        // porqué que en verifyToken (#209: menos boot + menos cupo girox).
+        const _casinoFirstIS = VIP.state.currentUser &&
+            VIP.state.currentUser.role === 'user' &&
+            VIP.state.currentUser.mustChangePassword !== true;
+        if (!_casinoFirstIS) {
+            VIP.refunds.loadRefundStatus();
+            VIP.fire.loadFireStatus();
+        }
         VIP.ui.loadCanalInformativoUrl();
         refreshVerifyPhoneBanner();
         if (VIP.appTest && VIP.appTest.maybeShowAppCheck) VIP.appTest.maybeShowAppCheck();

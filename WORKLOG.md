@@ -43,6 +43,23 @@
 
 ## Sesión 2026-08-20
 
+### 209. Modo casino: el boot del cliente YA NO pide status de reembolsos ni fueguito (menos carga + menos cupo girox)
+- **Pregunta del owner:** "¿el menú viejo del lado del usuario está sacado?
+  ocupa espacio y relentiza". Respuesta honesta: NO se borró — la pantalla
+  vieja sigue cargando detrás del casino y NO conviene borrarla entera: el
+  chat de soporte, el `#fileInput` del comprobante y el `withdrawModal` (OTP
+  del primer retiro) VIVEN en ese DOM y el widget los reusa.
+- **Lo que SÍ se sacó (el costo real):** en los dos caminos de arranque
+  (verifyToken + initializeSession), los clientes (`role user` sin cambio de
+  clave pendiente) ya NO disparan `loadRefundStatus()` (= 2 consultas de
+  NETWIN a girox por apertura — de lo que más cupo quemaba, #191) ni
+  `loadFireStatus()`. Alimentaban el dashboard que ahora queda tapado por el
+  casino. Staff y cuentas con cambio de clave (que sí ven la pantalla vieja)
+  los cargan como siempre. El panel ADMIN no se tocó (pedido del owner).
+- **Pendiente si algún día se quiere más:** aligerar el DOM viejo de
+  index.html (refactor grande, poco beneficio: el SW cachea los assets).
+- **Validado:** `node --check` OK (auth.js). SW **v116**. Solo front.
+
 ### 208. Widget: modo CLARO/OSCURO con toggle en el header, sincronizado con el chat de soporte
 - **Pedido owner (captura: asistente claro pero soporte oscuro = inconsistente):**
   toggle de tema en el widget y que asistente y soporte SIEMPRE coincidan.
