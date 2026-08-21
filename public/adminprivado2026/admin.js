@@ -2858,8 +2858,14 @@ async function loadUserInfo(userId) {
         // Pago/retiro pendiente (verificar y pagar automático).
         loadPayoutBanner(user.id);
 
-        // Comprobante pendiente de decisión manual (Aceptar/Rechazar).
-        loadComprobanteBanner(user.id);
+        // (2026-08-21) El banner "COMPROBANTE A REVISAR" (Aceptar/Rechazar) se
+        // DESACTIVÓ: en el flujo real (hgcash modo sombra) cada comprobante ya
+        // deja la nota de match "cargá vos" en TIEMPO REAL y el agente carga
+        // con Depositar → el banner se solapaba, no era en vivo (se cargaba
+        // solo al abrir el chat) y quedaba colgado/viejo tras cargar. Se
+        // esconde por las dudas quede uno viejo en el DOM.
+        var _compBanner = document.getElementById('chatComprobanteBanner');
+        if (_compBanner) _compBanner.style.display = 'none';
     } catch (error) {
         console.error('Error loading user info:', error);
     }
@@ -2871,6 +2877,13 @@ async function loadUserInfo(userId) {
 // transferencia al banco SIN API), el agente lo resuelve a mano desde acá.
 // ============================================================
 async function loadComprobanteBanner(userId) {
+    // DESACTIVADO (2026-08-21): el banner de Aceptar/Rechazar se solapaba con
+    // el flujo de hgcash modo sombra + Depositar, no era en vivo y quedaba
+    // viejo. Se deja la función como no-op (solo esconde) por si algo la llama.
+    const _el = document.getElementById('chatComprobanteBanner');
+    if (_el) _el.style.display = 'none';
+    return;
+    /* eslint-disable no-unreachable */
     const el = document.getElementById('chatComprobanteBanner');
     if (!el) return;
     try {

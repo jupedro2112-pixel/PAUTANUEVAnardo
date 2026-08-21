@@ -43,6 +43,21 @@
 
 ## Sesión 2026-08-20
 
+### 219. Sacado el banner "COMPROBANTE A REVISAR" (Aceptar/Rechazar) — se solapaba, no era en vivo y quedaba viejo
+- **Reclamo owner:** el cartel no salía siempre, salía DESPUÉS de resolver el
+  comprobante y quedaba viejo. Pidió "que sea rápido sí o sí o sacarlo".
+- **Causa:** el banner (#206) se cargaba SOLO al abrir el chat (no en vivo), y
+  en el flujo real (hgcash modo sombra) cada comprobante ya deja la nota de
+  match "cargá vos" en tiempo real → el agente carga con **Depositar**. El
+  banner hacía lo mismo por otro camino y, como no se cargaba por él, quedaba
+  colgado sin limpiarse. Redundante + buggy.
+- **Fix:** se desactivó el banner (no se carga más; `loadComprobanteBanner` es
+  no-op que solo esconde). El flujo queda: comprobante + nota de match hgcash
+  en vivo + botón Depositar (como venía). Los endpoints backend
+  (`comprobante-pendiente`, `comprobantes/:id/resolve`) quedan sin uso por si
+  se retoma. Solo front (panel, recargar).
+- **Validado:** `node --check` OK (admin.js).
+
 ### 218. Meta CAPI: slots de partner con placeholder `off` (crear el SSM vacío y activarlo después cambiando solo el valor)
 - **Pedido owner:** dejar cargados los SSM de publicistas que todavía no dieron
   sus datos, para después solo editar el valor. SSM no permite valor vacío.
