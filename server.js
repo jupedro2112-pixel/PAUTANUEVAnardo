@@ -20004,17 +20004,22 @@ if (process.env.VERCEL) {
       `cache jugador=${process.env.GIROX_PLAYER_CACHE_MS || '8000 (default)'}ms`
     );
     // Pixels del Meta CAPI configurados (propio + partners _2.._9 opcionales).
+    // Un slot con valor `off`/`-`/`pendiente` se muestra como placeholder.
     {
+      const _capiOn = (v) => { const s = String(v || '').trim().toLowerCase(); return s && !['off', '-', 'pendiente', 'placeholder'].includes(s); };
       const _partnerBits = [];
       for (let i = 2; i <= 9; i++) {
         const pid = process.env['META_PIXEL_ID_' + i];
-        if (pid && process.env['META_CAPI_ACCESS_TOKEN_' + i]) {
+        const tok = process.env['META_CAPI_ACCESS_TOKEN_' + i];
+        if (_capiOn(pid) && _capiOn(tok)) {
           const tc = process.env['META_TEST_EVENT_CODE_' + i];
-          _partnerBits.push(`partner${i}=OK ${String(pid).slice(0, 6)}…${tc ? ` (test ${tc})` : ''}`);
+          _partnerBits.push(`partner${i}=OK ${String(pid).slice(0, 6)}…${_capiOn(tc) ? ` (test ${tc})` : ''}`);
+        } else if (pid || tok) {
+          _partnerBits.push(`partner${i}=placeholder`);
         }
       }
       console.log(
-        `[MetaCAPI] pixels: propio=${process.env.META_PIXEL_ID ? 'OK' : 'no'} · ` +
+        `[MetaCAPI] pixels: propio=${_capiOn(process.env.META_PIXEL_ID) && _capiOn(process.env.META_CAPI_ACCESS_TOKEN) ? 'OK' : 'no'} · ` +
         (_partnerBits.length ? _partnerBits.join(' · ') : 'partners: ninguno')
       );
     }

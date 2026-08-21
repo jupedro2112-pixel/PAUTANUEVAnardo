@@ -29,21 +29,31 @@ try { logger = require('../utils/logger') || console; } catch (e) { /* fallback 
 const GRAPH_API_VERSION = 'v22.0';
 let _missingConfigLogged = false;
 
+// Un valor "vacío/apagado": SSM no permite guardar '' → se puede dejar el
+// parámetro creado con `off` (o '-') como placeholder y activarlo después
+// cambiando solo el valor. Mismo criterio que HGCASH_FANOUT_URL=off.
+function _capiActive(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return s && s !== 'off' && s !== '-' && s !== 'pendiente' && s !== 'placeholder';
+}
+
 // Destinos del CAPI: el pixel propio + un 2º OPCIONAL (partner). Se lee en cada
 // envío (las env de SSM cargan en el bootstrap async, después del require).
 function _capiDestinations() {
   const dests = [];
-  if (process.env.META_PIXEL_ID && process.env.META_CAPI_ACCESS_TOKEN) {
+  if (_capiActive(process.env.META_PIXEL_ID) && _capiActive(process.env.META_CAPI_ACCESS_TOKEN)) {
     dests.push({ label: 'propio', pixelId: process.env.META_PIXEL_ID, token: process.env.META_CAPI_ACCESS_TOKEN, testCode: process.env.META_TEST_EVENT_CODE });
   }
   // Pixels de PARTNERS (publicistas de tracking): numerados _2, _3, _4… _9.
   // Cada uno con su token y su test code OPCIONAL propio → cada publicista ve
   // los eventos en SU Events Manager con SU código de "Probar eventos", sin
   // pisarse entre ellos (2 publicistas probando a la vez = _2 y _3).
+  // Un slot con valor `off`/`-`/`pendiente` se SALTEA (placeholder para llenar
+  // después) → sin requests fallidos ni ruido en los logs.
   for (let i = 2; i <= 9; i++) {
     const pid = process.env['META_PIXEL_ID_' + i];
     const tok = process.env['META_CAPI_ACCESS_TOKEN_' + i];
-    if (pid && tok) {
+    if (_capiActive(pid) && _capiActive(tok)) {
       dests.push({ label: 'partner' + i, pixelId: pid, token: tok, testCode: process.env['META_TEST_EVENT_CODE_' + i] });
     }
   }

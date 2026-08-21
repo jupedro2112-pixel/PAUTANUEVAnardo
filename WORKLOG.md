@@ -43,6 +43,19 @@
 
 ## Sesión 2026-08-20
 
+### 218. Meta CAPI: slots de partner con placeholder `off` (crear el SSM vacío y activarlo después cambiando solo el valor)
+- **Pedido owner:** dejar cargados los SSM de publicistas que todavía no dieron
+  sus datos, para después solo editar el valor. SSM no permite valor vacío.
+- **Fix:** `_capiActive()` — un slot cuyo pixel o token valga `off`/`-`/
+  `pendiente`/`placeholder` se SALTEA (no dispara requests fallidos ni ensucia
+  logs). Para activarlo después: cambiar el valor por el real y reiniciar. El
+  boot log muestra `partnerN=placeholder` para esos. Aplica al pixel propio y a
+  los partners _2.._9.
+- **Uso:** crear `META_PIXEL_ID_3=off` + `META_CAPI_ACCESS_TOKEN_3=off` (y _4)
+  ahora; cuando el publicista mande sus datos, editar los dos valores + restart.
+- **Validado:** `node --check` OK (server.js, metaCapiService.js). Aplica al
+  próximo restart.
+
 ### 217. FIX: el aviso "abrir aparte" se cancela cuando el casino CARGA (si abre bien, sin cartel)
 - **Reclamo owner (captura en Chrome):** el casino cargó perfecto (usuario
   logueado) pero el aviso "abrir aparte" salió igual → mareaba. Causa: el
