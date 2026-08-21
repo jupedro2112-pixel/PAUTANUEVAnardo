@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v113'; // v113: countdown 15s tras enviar comprobante + cartel de reenvio si la auto-carga no llego
+const CACHE_VERSION = 'v114'; // v114: widget look WhatsApp claro + 'Cargas Automaticas 1Girox' + opciones fijas arriba + retiro EN el panel + siempre abierto
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

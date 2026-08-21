@@ -43,6 +43,32 @@
 
 ## Sesión 2026-08-20
 
+### 207. Widget v2 look WhatsApp/Bet33: "Cargas Automáticas 1Girox", opciones fijas, retiro EN el panel, siempre abierto
+- **Pedidos del owner (capturas de Bet33):**
+  1. **Look claro tipo WhatsApp:** área del bot #ece5dd, burbujas BLANCAS con
+     hora (estilo WA), datos del depósito en cajas grises claras con botones
+     verdes "Copiar CBU"/"Copiar Alias", aviso amarillo del mínimo, y una
+     barra de mensaje de mentira abajo (📎 + input + ➤) que al tocarla lleva
+     al chat de soporte real.
+  2. **Header:** "Carga rápido 1GIROX" → **"Cargas Automáticas 1Girox"**.
+  3. **Opciones SIEMPRE a la vista:** fila FIJA bajo el header con
+     [💳 Quiero Depositar] [💲 Solicitar Retiro] [🎧 Soporte] (como Bet33) —
+     al volver de cualquier flujo siguen ahí; "home" quedó solo como saludo.
+  4. **Panel SIEMPRE abierto** al entrar al casino (`_showCasinoFrame` llama
+     `openCasinoChat()`; la ✕ lo cierra si molesta).
+  5. **Retiro DENTRO del panel** (calco de la captura): "← Volver al chat /
+     Solicitar Retiro / Disponible para retirar $X (de `/api/balance/live`
+     → available, respeta rollover) / Monto / CBU-CVU o alias / Titular /
+     [Confirmar Retiro]". Va por `/api/withdrawal/request` con los guards de
+     siempre (mín $4.999 validado en el form también). Si responde
+     `PHONE_VERIFICATION_REQUIRED` (primer retiro) → se deriva al
+     `withdrawModal` completo (OTP integrado) con z-index sobre el casino.
+- **Validado:** `node --check` OK (ui.js, SW v114). Solo front. PROBAR: entrar
+  al casino → panel abierto solo con el saludo y las 3 opciones fijas;
+  Depositar → tarjeta clara con Copiar; Retirar → form en el panel, confirmar
+  con saldo → solicitud creada (banner en el panel admin como siempre); tocar
+  la barra de "Escribe un mensaje…" → chat de soporte real.
+
 ### 206. Countdown de 15s tras el comprobante + banner Aceptar/Rechazar de comprobantes en el panel
 - **Pedidos del owner (2):**
   1. **Cliente (ui.js, SW v113):** al enviar el comprobante, el asistente
