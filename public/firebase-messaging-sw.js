@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v123'; // v123: red de seguridad — si el casino no abre en 12s (cookies bloqueadas Tor/iPhone) aviso para abrir aparte + usar esta pagina para cargar/retirar
+const CACHE_VERSION = 'v124'; // v124: el aviso 'abrir aparte' se cancela cuando el casino carga (si abre bien, sin cartel)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

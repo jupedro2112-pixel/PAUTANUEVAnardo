@@ -930,17 +930,9 @@ VIP.ui.enterCasino = async function() {
       const frame = document.getElementById('casinoFrame');
       if (frame) frame.src = data.redirectUrl;
 
-      // VIGILANTE: el `load` del iframe dispara aunque la app de adentro se quede
-      // colgada. El caso típico es el BLOQUEO DE COOKIES DE TERCEROS: el casino
-      // carga, intenta leer su sesión, el navegador se la niega por estar embebido
-      // en otro dominio, y queda girando para siempre. Desde afuera no se puede
-      // detectar (es otro origen, no podemos mirar adentro), así que se usa un
-      // tiempo límite y se le ofrece al jugador la salida.
-      clearTimeout(VIP.ui._casinoWatchdog);
-      VIP.ui._casinoWatchdog = setTimeout(function() {
-        if (!VIP.ui._casinoOpen) return;
-        VIP.ui._casinoFrameStuck();
-      }, 15000);
+      // Red de seguridad: si el iframe NO carga en 12s (conexión al casino
+      // bloqueada), se ofrece abrirlo aparte. Si carga bien, el `load` la
+      // cancela → sin cartel (owner 2026-08-21).
       VIP.ui._armCasinoEscape();
       return;
     }
@@ -966,13 +958,7 @@ VIP.ui.enterCasinoWithUrl = function(url) {
   VIP.ui._showCasinoFrame();
   const frame = document.getElementById('casinoFrame');
   if (frame) frame.src = url;
-  // Mismo vigilante que enterCasino: si el casino no termina de cargar
-  // (cookies de terceros bloqueadas), se ofrece abrirlo aparte.
-  clearTimeout(VIP.ui._casinoWatchdog);
-  VIP.ui._casinoWatchdog = setTimeout(function() {
-    if (!VIP.ui._casinoOpen) return;
-    VIP.ui._casinoFrameStuck();
-  }, 15000);
+  // Red de seguridad: aviso "abrir aparte" solo si el iframe no carga en 12s.
   VIP.ui._armCasinoEscape();
 };
 
@@ -986,14 +972,20 @@ VIP.ui.enterCasinoWithUrl = function(url) {
  * aviso es una barrita chica abajo que puede cerrar con la ✕.
  */
 VIP.ui._armCasinoEscape = function() {
+  VIP.ui._casinoFrameLoaded = false; // se pone true en el `load` del iframe
   clearTimeout(VIP.ui._casinoEscapeTimer);
   VIP.ui._casinoEscapeTimer = setTimeout(function() {
     if (!VIP.ui._casinoOpen) return;
+    // Si el casino YA cargó, no se muestra NADA (aunque adentro esté trabado
+    // por cookies, el propio casino muestra su estado). El aviso es solo para
+    // cuando el iframe ni siquiera cargó.
+    if (VIP.ui._casinoFrameLoaded) return;
     VIP.ui._showCasinoEscapeBar();
   }, 12000);
 };
 
 VIP.ui._showCasinoEscapeBar = function() {
+  if (VIP.ui._casinoFrameLoaded) return; // cargó bien → sin cartel
   if (document.getElementById('casinoEscapeBar')) return;
   const overlay = document.getElementById('casinoOverlay');
   if (!overlay) return;
@@ -1420,11 +1412,15 @@ VIP.ui._showCasinoFrame = function() {
       const status = document.getElementById('casinoFrameStatus');
       if (status) status.style.display = 'none';
       frame.style.display = 'block';
-      // Si el HTML del casino llegó, se cancela el vigilante: el aviso "¿no
-      // termina de cargar?" aparecía ENCIMA del casino ya funcionando (reclamo
-      // owner 2026-08-15). Para el caso raro de app colgada por cookies
-      // bloqueadas, el escape "↗ Abrir aparte" sigue SIEMPRE en la barra.
+      // El casino cargó → se cancelan TODOS los avisos (watchdog + escape) y se
+      // esconde la barrita si ya estaba (owner 2026-08-21: "si abre que quede
+      // abierto sin ningún cartel para no marear"). El aviso "abrir aparte"
+      // queda SOLO para el caso en que el iframe nunca carga (conexión al
+      // casino bloqueada) — no para el que le abre bien.
+      VIP.ui._casinoFrameLoaded = true;
       clearTimeout(VIP.ui._casinoWatchdog);
+      clearTimeout(VIP.ui._casinoEscapeTimer);
+      VIP.ui._hideCasinoEscapeBar();
     });
   }
 

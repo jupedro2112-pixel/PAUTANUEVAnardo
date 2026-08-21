@@ -43,6 +43,17 @@
 
 ## Sesión 2026-08-20
 
+### 217. FIX: el aviso "abrir aparte" se cancela cuando el casino CARGA (si abre bien, sin cartel)
+- **Reclamo owner (captura en Chrome):** el casino cargó perfecto (usuario
+  logueado) pero el aviso "abrir aparte" salió igual → mareaba. Causa: el
+  timer del #216 era por tiempo fijo, no miraba si había cargado.
+- **Fix:** flag `_casinoFrameLoaded` que se pone true en el `load` del iframe →
+  ahí se cancela el timer y se esconde la barrita. El aviso a los 12s solo se
+  muestra si el iframe **NUNCA cargó** (conexión al casino bloqueada). Al que
+  le abre bien (Android/Chrome) NO le aparece nada. Se sacó además el watchdog
+  redundante `_casinoFrameStuck` (quedaban dos avisos).
+- **Validado:** `node --check` OK (ui.js). SW **v124**. Solo front.
+
 ### 216. Red de seguridad: si el casino no abre embebido (cookies de terceros Tor/iPhone) → aviso "abrir aparte" + usar esta página para cargar/retirar
 - **Contexto:** el casino embebido queda cargando infinito en Tor (y en
   Safari/iPhone por ITP) porque bloquean las cookies de TERCEROS que 1girox
