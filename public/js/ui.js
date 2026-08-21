@@ -1278,8 +1278,10 @@ VIP.ui._showCasinoFrame = function() {
         // Header verde con "EN LÍNEA" + cerrar.
         '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;flex:0 0 auto;' +
         'background:linear-gradient(135deg,#128c4a,#0f7a3d);">' +
-          '<div style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
-          'display:flex;align-items:center;justify-content:center;font-size:16px;">🎧</div>' +
+          // En modo soporte este círculo muestra la FOTO del logo (misma que
+          // la cabecera del chat, configurable desde el panel); en asistente, 🎧.
+          '<div id="casinoWidgetIcon" style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
+          'display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden;">🎧</div>' +
           '<div style="flex:1;min-width:0;">' +
             // El título cambia según el modo: asistente ("Cargas Automáticas")
             // o chat humano ("SOPORTE") — así el cliente diferencia (owner).
@@ -1322,12 +1324,12 @@ VIP.ui._showCasinoFrame = function() {
           '<span style="width:36px;height:36px;border-radius:50%;background:#128c4a;color:#fff;display:flex;' +
           'align-items:center;justify-content:center;font-size:15px;flex:0 0 auto;">➤</span>' +
         '</div>' +
-        // Barrita inferior mínima. SIN "Salir del casino" (owner 2026-08-21).
+        // Barrita inferior mínima. SIN "Salir del casino" ni "Casino aparte"
+        // (owner 2026-08-21) — el abrir-aparte queda solo en el recuadro de
+        // error del casino (openCasinoInTab sigue existiendo para eso).
         '<div class="cwFoot" style="flex:0 0 auto;display:flex;gap:14px;justify-content:center;padding:4px;">' +
           '<button type="button" class="cwGrn" onclick="VIP.ui.casinoBotGo(\'home\')" style="background:none;border:none;' +
           'font-size:10.5px;cursor:pointer;font-weight:700;">🤖 Asistente</button>' +
-          '<button type="button" class="cwMut" onclick="VIP.ui.openCasinoInTab()" style="background:none;border:none;' +
-          'font-size:10.5px;cursor:pointer;text-decoration:underline;">↗ Casino aparte</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -1445,6 +1447,18 @@ VIP.ui._casinoChatMount = function() {
   if (fakeInput) fakeInput.style.display = 'none';
   const title = document.getElementById('casinoWidgetTitle');
   if (title) title.textContent = 'SOPORTE 1Girox';
+  // Foto del logo 1G al lado del nombre (la misma del avatar del chat, que
+  // chat.js pisa con el logo cargado en el panel; fallback al default 1G).
+  const icon = document.getElementById('casinoWidgetIcon');
+  if (icon) {
+    let logoSrc = '/images/soporte-1girox.png';
+    try {
+      const av = document.getElementById('chatTopbarAvatar');
+      if (av && av.src) logoSrc = av.src;
+    } catch (e) {}
+    icon.innerHTML = '<img src="' + logoSrc + '" alt="Soporte 1Girox" ' +
+      'style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block;">';
+  }
   body.style.display = 'flex';
   // Marcadores invisibles para devolver cada bloque EXACTAMENTE donde estaba.
   const ph1 = document.createElement('div'); ph1.style.display = 'none';
@@ -1496,6 +1510,8 @@ VIP.ui._casinoChatRestoreNodes = function() {
   if (fakeInput) fakeInput.style.display = 'flex';
   const title = document.getElementById('casinoWidgetTitle');
   if (title) title.textContent = 'Cargas Automáticas 1Girox';
+  const icon = document.getElementById('casinoWidgetIcon');
+  if (icon) icon.innerHTML = '🎧';
 };
 
 /** Compat: devuelve el chat Y esconde el panel (lo usa closeCasinoFrame). */

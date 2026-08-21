@@ -43,6 +43,14 @@
 
 ## Sesión 2026-08-20
 
+### 211. Widget: sin "↗ Casino aparte" en el pie + foto del logo 1G junto a "SOPORTE 1Girox"
+- Pedido owner: (1) el pie del widget queda solo con "🤖 Asistente"
+  (`openCasinoInTab` se conserva — lo usa el recuadro de error del casino);
+  (2) en modo soporte, el círculo del header muestra la FOTO del logo
+  (`#casinoWidgetIcon` → mismo src que `#chatTopbarAvatar`, o sea el logo
+  configurable del panel, fallback `/images/soporte-1girox.png`); al volver
+  al asistente vuelve el 🎧. SW **v118**. Solo front.
+
 ### 210. Widget: sin líneas blancas + header "SOPORTE 1Girox" en modo soporte + bienvenida automática de soporte
 - **Líneas blancas (captura, modo oscuro):** eran bordes `1px solid` SIN color
   (caen en currentColor = claro) en la fila de opciones y la barra de mensaje,

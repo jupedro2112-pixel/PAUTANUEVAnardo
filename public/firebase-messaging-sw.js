@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v117'; // v117: sin lineas blancas en el widget + header SOPORTE 1Girox en modo soporte + bienvenida automatica de soporte
+const CACHE_VERSION = 'v118'; // v118: sin 'Casino aparte' en el pie + foto 1G junto a SOPORTE 1Girox en modo soporte
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
