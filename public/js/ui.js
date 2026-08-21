@@ -1647,28 +1647,41 @@ VIP.ui.casinoBotGo = function(state) {
   }
 
   if (state === 'deposit') {
-    // ANTI-SPAM (owner 2026-08-21): si ya hay una tarjeta de depósito a la
-    // vista, se REUSA (se refresca por si cambió el CBU) en vez de apilar otra.
     let card = document.getElementById('botDepositCard');
-    if (card) {
-      // Ya está la tarjeta: solo refrescar los datos (por si cambió el CBU) y
-      // llevarla a la vista, sin duplicar botones ni burbujas.
+    // THROTTLE anti-spam: doble-tap en <2s no hace nada (evita apilar).
+    if (card && (Date.now() - (VIP.ui._botDepositAt || 0) < 2000)) {
       area.scrollTop = area.scrollHeight;
-      const doRefresh = function(c) {
-        const n = card.querySelector('#botCbuNumber'); if (n) n.textContent = c.number || '—';
-        const a = card.querySelector('#botCbuAlias'); if (a) a.textContent = c.alias || '—';
-        const t = card.querySelector('#botCbuTitular'); if (t) t.textContent = c.titular || c.bank || '—';
-      };
-      if (VIP.ui._botCbu && VIP.ui._botCbu.number) doRefresh(VIP.ui._botCbu);
-      fetch(`${VIP.config.API_URL}/api/cbu/request`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
-        if (d && d.cbu) { VIP.ui._botCbu = d.cbu; doRefresh(d.cbu); }
-      }).catch(function() {});
       return;
     }
+    const doRefresh = function(c, node) {
+      const n = node.querySelector('#botCbuNumber'); if (n) n.textContent = c.number || '—';
+      const a = node.querySelector('#botCbuAlias'); if (a) a.textContent = c.alias || '—';
+      const t = node.querySelector('#botCbuTitular'); if (t) t.textContent = c.titular || c.bank || '—';
+    };
+    // Si la tarjeta ya existe Y sigue siendo lo ÚLTIMO del chat → solo refrescar.
+    // Si hubo mensajes después (ej. "carga acreditada"), la tarjeta vieja quedó
+    // arriba → se BORRA y se crea una NUEVA abajo (owner 2026-08-21: que el CBU
+    // vuelva a aparecer abajo tras una carga).
+    if (card) {
+      const isLast = area.lastElementChild === card ||
+        (area.lastElementChild && area.lastElementChild.previousElementSibling === card);
+      if (isLast) {
+        VIP.ui._botDepositAt = Date.now();
+        area.scrollTop = area.scrollHeight;
+        if (VIP.ui._botCbu && VIP.ui._botCbu.number) doRefresh(VIP.ui._botCbu, card);
+        fetch(`${VIP.config.API_URL}/api/cbu/request`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+          if (d && d.cbu) { VIP.ui._botCbu = d.cbu; doRefresh(d.cbu, card); }
+        }).catch(function() {});
+        return;
+      }
+      // Quedó arriba → sacarle el id a la vieja para no chocar y crear una nueva.
+      card.id = '';
+    }
+    VIP.ui._botDepositAt = Date.now();
     card = VIP.ui._botMsg('Para depositar, transferí a los siguientes datos:<br>' +
       '<span style="color:#8a8fa3;">⏳ Cargando datos…</span>');
     if (card) card.id = 'botDepositCard';

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v121'; // v121: ruleta de bienvenida (premios % o saldo, probabilidades y rollover configurables desde el panel)
+const CACHE_VERSION = 'v122'; // v122: FIX retiro (backend aceptaba solo titular+cbu+alias los 3, ahora titular + cbu O alias) + deposito reaparece el CBU abajo tras una carga
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

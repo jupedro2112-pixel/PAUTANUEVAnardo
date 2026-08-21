@@ -43,6 +43,21 @@
 
 ## Sesión 2026-08-20
 
+### 215. FIX retiro (backend exigía CBU Y alias los dos) + el CBU del depósito reaparece abajo tras una carga
+- **Retiro no dejaba confirmar** ("Completá titular, CVU/CBU y alias"):
+  `/api/withdrawal/request` requería titular **Y** cbu **Y** alias (los 3), pero
+  el widget nuevo tiene UN solo campo "CBU o CVU (o alias)" y manda uno u otro.
+  **Fix:** ahora exige titular + **al menos uno** de cbu/alias (el pago resuelve
+  el CBU desde el alias con hgcash, como siempre). El PendingPayout guarda el
+  que vino; el otro queda vacío (cosmético).
+- **Depósito: el CBU no reaparecía** cuando la última burbuja era "carga
+  acreditada" (el anti-spam reusaba la tarjeta vieja que había quedado
+  arriba). **Fix:** si la tarjeta de depósito sigue siendo lo último, se
+  refresca ahí; si quedó arriba (hubo mensajes después), se crea una NUEVA
+  abajo con el CBU. Doble-tap en <2s sigue sin apilar (throttle).
+- **Validado:** `node --check` OK (server.js, ui.js). SW **v122**. **Back
+  necesita redeploy** (fix del retiro); front con SW.
+
 ### 214. RULETA DE BIENVENIDA: premios % o saldo, probabilidades y rollover configurables desde el panel
 - **Pedido del owner:** ruleta que gire 1 vez, premios modificables (con qué
   probabilidad sale cada uno), % → se aplica AUTO en la próxima carga y queda

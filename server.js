@@ -10298,8 +10298,11 @@ app.post('/api/withdrawal/request', authMiddleware, async (req, res) => {
     const titularT = (typeof titular === 'string' ? titular : '').trim();
     const cbuT = (typeof cbu === 'string' ? cbu : '').trim();
     const aliasT = (typeof alias === 'string' ? alias : '').trim();
-    if (!titularT || !cbuT || !aliasT) {
-      return res.status(400).json({ error: 'Completá titular, CVU/CBU y alias' });
+    // Titular SIEMPRE, y AL MENOS UNO de CBU/CVU o alias (el widget nuevo tiene
+    // un solo campo "CBU o CVU o alias" — owner 2026-08-21). El pago resuelve
+    // el CBU real desde el alias si vino alias (hgcash /alias-lookup).
+    if (!titularT || (!cbuT && !aliasT)) {
+      return res.status(400).json({ error: 'Completá el titular y tu CBU/CVU o alias.' });
     }
 
     const user = await User.findOne({ id: req.user.userId });
