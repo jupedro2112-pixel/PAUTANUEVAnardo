@@ -1617,6 +1617,13 @@ VIP.ui.casinoBotGo = function(state) {
     // el saludo. Volver de cualquier flujo = las opciones siguen a la vista.
     VIP.ui._botMsg('👋 ¡Hola! Soy el <b>asistente de cargas automáticas</b>.<br>' +
       'Elegí una opción acá arriba: <b>depositar</b>, <b>retirar</b> o hablar con <b>soporte</b>.');
+    // Ofrecer la RULETA DE BIENVENIDA si está habilitada y no la giró (1 vez).
+    VIP.ui._maybeOfferWelcomeRoulette();
+    return;
+  }
+
+  if (state === 'roulette') {
+    VIP.ui._renderRoulette();
     return;
   }
 
@@ -1932,6 +1939,104 @@ VIP.ui.casinoBotSupport = function() {
       if (msgs) msgs.scrollTop = msgs.scrollHeight;
     } catch (e) {}
   }, 600);
+};
+
+// ============================================================
+// RULETA DE BIENVENIDA (2026-08-21) — se gira una vez; el premio lo decide el
+// SERVER (spin), el cliente solo ve la animación caer en el segmento premiado.
+// ============================================================
+VIP.ui._maybeOfferWelcomeRoulette = function() {
+  if (VIP.ui._wrOffered) return; // una vez por sesión de widget
+  fetch(`${VIP.config.API_URL}/api/welcome-roulette/status`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    if (!d || !d.canSpin) return;
+    VIP.ui._wrOffered = true;
+    VIP.ui._wrSegments = (d.segments || []).map(function(s) { return s.label; });
+    const b = VIP.ui._botMsg('🎁 <b>¡Tenés una RULETA DE BIENVENIDA!</b><br>Girá y ganá tu premio 🎡');
+    VIP.ui._botRow(VIP.ui._botBtn('🎡 ¡GIRAR LA RULETA!', 'VIP.ui.casinoBotGo(\'roulette\')', true));
+  }).catch(function() {});
+};
+
+/** Dibuja la ruleta (segmentos) y el botón GIRAR. */
+VIP.ui._renderRoulette = function() {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return;
+  area.innerHTML = '';
+  const segs = VIP.ui._wrSegments || [];
+  const n = Math.max(1, segs.length);
+  // Ruleta por conic-gradient (colores alternados) + etiquetas alrededor.
+  const colors = ['#128c4a', '#0f7a3d', '#1aa356', '#0c6234'];
+  let stops = '';
+  for (let i = 0; i < n; i++) {
+    const a0 = (360 / n) * i, a1 = (360 / n) * (i + 1);
+    stops += colors[i % colors.length] + ' ' + a0 + 'deg ' + a1 + 'deg' + (i < n - 1 ? ',' : '');
+  }
+  let labels = '';
+  for (let i = 0; i < n; i++) {
+    const ang = (360 / n) * i + (360 / n) / 2;
+    labels += '<div style="position:absolute;left:50%;top:50%;transform-origin:0 0;' +
+      'transform:rotate(' + ang + 'deg) translate(78px,-8px);font-size:9px;font-weight:800;color:#fff;' +
+      'white-space:nowrap;">' + _wrEsc(segs[i] || '') + '</div>';
+  }
+  const wrap = VIP.ui._botMsg(
+    '<div style="text-align:center;">' +
+      '<div style="position:relative;width:200px;height:200px;margin:6px auto 12px;">' +
+        '<div style="position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:3;' +
+          'width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;' +
+          'border-top:18px solid #ffd700;"></div>' +
+        '<div id="wrWheel" style="width:200px;height:200px;border-radius:50%;position:relative;' +
+          'background:conic-gradient(' + stops + ');box-shadow:0 6px 22px rgba(0,0,0,0.5),inset 0 0 0 4px #ffd70055;' +
+          'transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' + labels + '</div>' +
+      '</div>' +
+      '<button type="button" id="wrSpinBtn" onclick="VIP.ui.casinoRouletteSpin()" ' +
+        'style="width:100%;background:#ffd700;color:#3a2c00;border:none;border-radius:14px;padding:14px;' +
+        'font-size:16px;font-weight:900;cursor:pointer;">🎡 GIRAR</button>' +
+    '</div>');
+  if (wrap) { wrap.className = 'cwB'; }
+};
+
+function _wrEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+/** Pide el spin al server, anima la rueda hasta el segmento premiado y muestra
+ *  el resultado. El premio SIEMPRE lo decide el server (prizeIndex). */
+VIP.ui.casinoRouletteSpin = function() {
+  const btn = document.getElementById('wrSpinBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Girando…'; }
+  fetch(`${VIP.config.API_URL}/api/welcome-roulette/spin`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      if (!res.ok || !res.d || !res.d.success) {
+        if (btn) { btn.disabled = false; btn.textContent = '🎡 GIRAR'; }
+        VIP.ui.showToast((res.d && res.d.error) || 'No se pudo girar. Probá de nuevo.', 'error');
+        return;
+      }
+      const n = Math.max(1, (VIP.ui._wrSegments || []).length);
+      const idx = Math.max(0, Math.min(n - 1, res.d.prizeIndex || 0));
+      const wheel = document.getElementById('wrWheel');
+      // Rotar para que el CENTRO del segmento premiado quede bajo el puntero
+      // (arriba). +5 vueltas para el efecto. El puntero está arriba (0deg).
+      const segMid = (360 / n) * idx + (360 / n) / 2;
+      const target = 360 * 5 + (360 - segMid);
+      if (wheel) wheel.style.transform = 'rotate(' + target + 'deg)';
+      setTimeout(function() {
+        const p = res.d.prize || {};
+        VIP.ui._playChime();
+        if (p.type === 'cash' && p.credited) {
+          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>💰 Ya está ACREDITADO en tu saldo. ¡A jugar! 🎰');
+        } else {
+          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>Se te aplica en tu <b>PRÓXIMA CARGA</b> — cargá y lo sumamos automáticamente. 💪');
+        }
+        VIP.ui._botRow(VIP.ui._botBtn('💳 Cargar ahora', "VIP.ui.casinoBotGo('deposit')", true));
+      }, 4400);
+    })
+    .catch(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '🎡 GIRAR'; }
+      VIP.ui.showToast('Error de conexión. Probá de nuevo.', 'error');
+    });
 };
 
 /** Toggle claro/oscuro del widget = el MISMO modo del chat de soporte

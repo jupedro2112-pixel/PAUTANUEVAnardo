@@ -5805,6 +5805,8 @@ async function loadCBUConfig() {
     loadCommunityConfig();
     // Cargar la config del código de bienvenida (admin general y depositor)
     loadWelcomeCodeConfig();
+    // Cargar la config de la ruleta de bienvenida (solo admin general)
+    loadWelcomeRoulette();
     // Cargar la config del banco automático (hgcash)
     loadHgcashConfig();
     // Cargar los porcentajes de reembolso (solo admin general)
@@ -6486,6 +6488,93 @@ async function saveCommunityConfig() {
         showToast('Error al guardar comunidad', 'error');
     }
 }
+
+// ====== Ruleta de bienvenida (solo admin general) ======
+async function loadWelcomeRoulette() {
+    const form = document.getElementById('welcomeRouletteForm');
+    const header = document.getElementById('welcomeRouletteHeader');
+    try {
+        const r = await authFetch('/api/admin/welcome-roulette');
+        if (!r.ok) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; return; }
+        const cfg = await r.json();
+        if (form) form.style.display = '';
+        if (header) header.style.display = '';
+        const en = document.getElementById('wrEnabled');
+        if (en) en.checked = cfg.enabled === true;
+        wrRenderPrizes(cfg.prizes || []);
+    } catch (e) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; }
+}
+function wrRenderPrizes(prizes) {
+    const list = document.getElementById('wrPrizesList');
+    if (!list) return;
+    list.innerHTML = '';
+    (prizes || []).forEach(function(p) { wrAddPrize(p); });
+    wrUpdateOdds();
+}
+function wrAddPrize(p) {
+    p = p || { label: '', type: 'percent', value: '', weight: '', rolloverX: 0 };
+    const list = document.getElementById('wrPrizesList');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'wr-prize-row';
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,0.04);padding:8px;border-radius:8px;margin-bottom:6px;';
+    row.innerHTML =
+        '<input class="wrP-label" placeholder="Etiqueta (ej. 100% EXTRA)" value="' + _centEsc(p.label || '') + '" style="flex:2;min-width:120px;">' +
+        '<select class="wrP-type" style="flex:1;min-width:90px;">' +
+          '<option value="percent"' + (p.type !== 'cash' ? ' selected' : '') + '>% Extra</option>' +
+          '<option value="cash"' + (p.type === 'cash' ? ' selected' : '') + '>Saldo $</option>' +
+        '</select>' +
+        '<input class="wrP-value" type="number" min="1" placeholder="valor" value="' + (p.value || '') + '" title="% o monto $" style="width:80px;">' +
+        '<input class="wrP-weight" type="number" min="1" placeholder="peso" value="' + (p.weight || '') + '" title="probabilidad relativa" style="width:70px;" oninput="wrUpdateOdds()">' +
+        '<input class="wrP-roll" type="number" min="0" max="50" placeholder="rollX" value="' + (p.rolloverX || 0) + '" title="rollover del saldo (solo Saldo $)" style="width:66px;">' +
+        '<button type="button" class="btn btn-danger" onclick="this.parentNode.remove();wrUpdateOdds();" style="padding:4px 9px;">✕</button>';
+    list.appendChild(row);
+    wrUpdateOdds();
+}
+function wrUpdateOdds() {
+    const rows = document.querySelectorAll('#wrPrizesList .wr-prize-row');
+    let total = 0;
+    rows.forEach(function(r) { total += Number(r.querySelector('.wrP-weight').value) || 0; });
+    const hint = document.getElementById('wrOddsHint');
+    if (!hint) return;
+    if (!total) { hint.textContent = ''; return; }
+    const parts = [];
+    rows.forEach(function(r) {
+        const w = Number(r.querySelector('.wrP-weight').value) || 0;
+        const lbl = r.querySelector('.wrP-label').value || '(sin nombre)';
+        if (w > 0) parts.push(lbl + ': ' + Math.round(w / total * 100) + '%');
+    });
+    hint.textContent = 'Probabilidades → ' + parts.join(' · ');
+}
+async function saveWelcomeRoulette() {
+    const rows = document.querySelectorAll('#wrPrizesList .wr-prize-row');
+    const prizes = [];
+    let bad = false;
+    rows.forEach(function(r, i) {
+        const label = r.querySelector('.wrP-label').value.trim();
+        const type = r.querySelector('.wrP-type').value;
+        const value = Number(r.querySelector('.wrP-value').value) || 0;
+        const weight = Number(r.querySelector('.wrP-weight').value) || 0;
+        const rolloverX = Number(r.querySelector('.wrP-roll').value) || 0;
+        if (value <= 0 || weight <= 0) bad = true;
+        prizes.push({ id: 'p' + i, label: label, type: type, value: value, weight: weight, rolloverX: rolloverX });
+    });
+    if (!prizes.length) { showToast('Agregá al menos un premio', 'error'); return; }
+    if (bad) { showToast('Cada premio necesita valor y peso mayores a 0', 'error'); return; }
+    try {
+        const r = await authFetch('/api/admin/welcome-roulette', {
+            method: 'POST',
+            body: JSON.stringify({ enabled: document.getElementById('wrEnabled').checked, prizes: prizes })
+        });
+        const j = await r.json();
+        if (!r.ok) { showToast(j.error || 'No se pudo guardar', 'error'); return; }
+        showToast('Ruleta guardada', 'success');
+        wrUpdateOdds();
+    } catch (e) { showToast('Error de conexión', 'error'); }
+}
+window.wrAddPrize = wrAddPrize;
+window.wrUpdateOdds = wrUpdateOdds;
+window.saveWelcomeRoulette = saveWelcomeRoulette;
 
 // ====== Código de bienvenida de la Comunidad (bono sorpresa) ======
 // Código: solo admin general. Monto: admin general y depositor. Para los demás

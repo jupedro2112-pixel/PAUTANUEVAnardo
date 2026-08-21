@@ -652,6 +652,28 @@ document.addEventListener('change', function (ev) {
                                 <span class="icon icon-save"></span> Guardar Comunidad
                             </button>
                         </div>
+                        <!-- Ruleta de bienvenida (solo admin general) -->
+                        <div class="panel-subheader" style="margin-top: 24px;" id="welcomeRouletteHeader">
+                            <h3>🎡 Ruleta de bienvenida</h3>
+                        </div>
+                        <div class="cbu-form" id="welcomeRouletteForm">
+                            <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
+                                El cliente gira <b>una sola vez</b> al entrar y gana un premio. Cada premio tiene una
+                                <b>probabilidad (peso)</b>: a mayor peso, más seguido sale. Tipos:
+                                <b>% EXTRA</b> = se suma automático en su próxima carga y queda marcado como usado;
+                                <b>SALDO $</b> = se acredita al instante (con o sin rollover). Todo modificable acá.
+                            </p>
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="wrEnabled" style="width:auto;"> Ruleta ACTIVADA
+                                </label>
+                            </div>
+                            <div id="wrPrizesList"></div>
+                            <button type="button" class="btn btn-secondary" onclick="wrAddPrize()" style="margin:6px 0;">➕ Agregar premio</button>
+                            <button type="button" class="btn btn-primary" onclick="saveWelcomeRoulette()" style="margin:6px 0;">💾 Guardar ruleta</button>
+                            <div id="wrOddsHint" style="color:#8fb; font-size:11px; margin-top:6px;"></div>
+                        </div>
+
                         <!-- Código de bienvenida de la Comunidad (bono sorpresa) -->
                         <div class="panel-subheader" style="margin-top: 24px;" id="welcomeCodeHeader">
                             <h3>🎁 Código de bienvenida (Comunidad Telegram)</h3>

@@ -8038,15 +8038,48 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
     // plataforma puede rechazar la operación COMPLETA → el agente ve el error
     // y reintenta con montos válidos (antes la carga entraba y el bono moría
     // en silencio contable).
-    const bonusRequested = parseFloat(bonus) > 0;
+    // RULETA DE BIENVENIDA (%): si el cliente tiene un premio de PORCENTAJE
+    // pendiente y el agente NO pasó un bonus a mano, se aplica AUTOMÁTICO sobre
+    // esta carga (owner 2026-08-21) y se marca 'used' abajo (solo si entró).
+    // Reserva atómica pending→(marca temporal) para no aplicarlo dos veces si
+    // hay dos cargas casi simultáneas.
+    let _roulPct = 0, _roulClaimed = false;
+    if (!(parseFloat(bonus) > 0)) {
+      try {
+        const _ru = await User.findOne({ id: user.id, welcomeRouletteStatus: 'pending', welcomeRoulettePrizeType: 'percent' })
+          .select('welcomeRoulettePrizeValue').lean();
+        if (_ru && _ru.welcomeRoulettePrizeValue > 0) {
+          // Reserva: marca 'used' YA (con quién/cuándo); si la carga falla se revierte.
+          const _claim = await User.findOneAndUpdate(
+            { id: user.id, welcomeRouletteStatus: 'pending', welcomeRoulettePrizeType: 'percent' },
+            { $set: { welcomeRouletteStatus: 'used', welcomeRouletteUsedAt: new Date(), welcomeRouletteUsedBy: req.user.username || 'auto' } },
+            { new: false }
+          ).lean();
+          if (_claim) { _roulPct = _ru.welcomeRoulettePrizeValue; _roulClaimed = true; }
+        }
+      } catch (e) { logger.warn(`[welcome-roulette] auto-aplicar % falló: ${e.message}`); }
+    }
+    const _autoBonus = _roulPct > 0 ? Math.round(parseFloat(amount) * _roulPct / 100) : 0;
+    const _effectiveBonus = _autoBonus > 0 ? _autoBonus : parseFloat(bonus);
+
+    const bonusRequested = _effectiveBonus > 0;
     const _depTxId = uuidv4();
     // bonusMultiplier OBLIGATORIO cuando va bonus_amount (lo exige la API).
     const result = await girox.depositToUser(
       user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`,
       bonusRequested
-        ? { bonusAmount: parseFloat(bonus), bonusMultiplier: await getGiroxBonusMultiplier() }
+        ? { bonusAmount: _effectiveBonus, bonusMultiplier: await getGiroxBonusMultiplier() }
         : null
     );
+
+    // Si la carga con el bono de la ruleta NO entró, revertir el 'used' para
+    // que el premio siga disponible en la próxima carga.
+    if (_roulClaimed && (!result.success || result.bonusFailed)) {
+      await User.updateOne(
+        { id: user.id, welcomeRouletteStatus: 'used', welcomeRouletteUsedBy: req.user.username || 'auto' },
+        { $set: { welcomeRouletteStatus: 'pending', welcomeRouletteUsedAt: null, welcomeRouletteUsedBy: null } }
+      ).catch(() => {});
+    }
 
     if (result.success) {
       // SLA: atender al cliente con una carga cuenta como respuesta (resuelve el reloj).
@@ -10726,6 +10759,186 @@ async function getWelcomeCodeRolloverX() {
   } catch (_) {}
   return 2;
 }
+
+// ============================================================
+// RULETA DE BIENVENIDA (2026-08-21) — se gira UNA vez por cuenta.
+// Premios configurables desde el panel (Config['welcomeRoulette']):
+//   { enabled, prizes:[{ id, label, type:'percent'|'cash', value, weight,
+//     rolloverX }] }
+//   - percent → % extra en la PRÓXIMA CARGA (lo aplica el agente / la carga
+//     con bonus lo consume y marca 'used').
+//   - cash → saldo acreditado AUTOMÁTICO al girar (con/sin rollover).
+//   weight = peso relativo (probabilidad de que salga; a mayor peso, más sale).
+// ============================================================
+const WELCOME_ROULETTE_DEFAULT = {
+  enabled: false,
+  prizes: [
+    { id: 'p100', label: '100% EXTRA', type: 'percent', value: 100, weight: 60, rolloverX: 0 },
+    { id: 'p50',  label: '50% EXTRA',  type: 'percent', value: 50,  weight: 25, rolloverX: 0 },
+    { id: 'c2000', label: '$2.000 GRATIS', type: 'cash', value: 2000, weight: 10, rolloverX: 5 },
+    { id: 'c5000', label: '$5.000 GRATIS', type: 'cash', value: 5000, weight: 5,  rolloverX: 5 }
+  ]
+};
+
+async function getWelcomeRouletteConfig() {
+  try {
+    const raw = await getConfig('welcomeRoulette', null);
+    if (raw && Array.isArray(raw.prizes) && raw.prizes.length) {
+      const prizes = raw.prizes
+        .map((p, i) => ({
+          id: String(p.id || ('p' + i)),
+          label: String(p.label || '').slice(0, 40) || 'Premio',
+          type: p.type === 'cash' ? 'cash' : 'percent',
+          value: Math.max(0, Math.round(Number(p.value) || 0)),
+          weight: Math.max(0, Number(p.weight) || 0),
+          rolloverX: Math.min(50, Math.max(0, Math.round(Number(p.rolloverX) || 0)))
+        }))
+        .filter(p => p.value > 0 && p.weight > 0);
+      if (prizes.length) return { enabled: raw.enabled === true, prizes };
+    }
+  } catch (_) {}
+  return WELCOME_ROULETTE_DEFAULT;
+}
+
+// Selección PONDERADA server-side (nunca confiar en el cliente para el premio).
+function _pickWeightedPrize(prizes) {
+  const total = prizes.reduce((s, p) => s + p.weight, 0);
+  if (total <= 0) return prizes[0];
+  let r = Math.random() * total;
+  for (const p of prizes) { r -= p.weight; if (r <= 0) return p; }
+  return prizes[prizes.length - 1];
+}
+
+// GET config (admin general y depositor lo leen; el cliente NO — el status va aparte).
+app.get('/api/admin/welcome-roulette', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const cfg = await getWelcomeRouletteConfig();
+    res.json(cfg);
+  } catch (e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// POST config (solo admin general).
+app.post('/api/admin/welcome-roulette', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin general' });
+    const body = req.body || {};
+    if (!Array.isArray(body.prizes) || !body.prizes.length) {
+      return res.status(400).json({ error: 'Cargá al menos un premio.' });
+    }
+    if (body.prizes.length > 12) return res.status(400).json({ error: 'Máximo 12 premios.' });
+    const prizes = [];
+    for (const p of body.prizes) {
+      const type = p.type === 'cash' ? 'cash' : 'percent';
+      const value = Math.round(Number(p.value) || 0);
+      const weight = Number(p.weight) || 0;
+      const rolloverX = Math.round(Number(p.rolloverX) || 0);
+      if (value <= 0) return res.status(400).json({ error: 'Cada premio necesita un valor mayor a 0.' });
+      if (weight <= 0) return res.status(400).json({ error: 'Cada premio necesita una probabilidad (peso) mayor a 0.' });
+      if (type === 'percent' && value > 500) return res.status(400).json({ error: 'El % no puede superar 500.' });
+      if (type === 'cash' && value > 1000000) return res.status(400).json({ error: 'El monto en $ es demasiado alto.' });
+      if (rolloverX < 0 || rolloverX > 50) return res.status(400).json({ error: 'El rollover va de 0 a 50.' });
+      prizes.push({
+        id: String(p.id || ('p' + prizes.length)).slice(0, 20),
+        label: String(p.label || '').slice(0, 40) || (type === 'cash' ? '$' + value : value + '%'),
+        type, value, weight, rolloverX: type === 'cash' ? rolloverX : 0
+      });
+    }
+    await Config.set('welcomeRoulette', { enabled: body.enabled === true, prizes }, req.user.username);
+    res.json({ success: true, enabled: body.enabled === true, prizes });
+  } catch (e) {
+    logger.warn(`[welcome-roulette] guardar config falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// STATUS del cliente: ¿puede girar? ¿ya giró? (NO revela los premios de más).
+app.get('/api/welcome-roulette/status', authMiddleware, async (req, res) => {
+  try {
+    const cfg = await getWelcomeRouletteConfig();
+    const user = await User.findOne({ id: req.user.userId })
+      .select('welcomeRouletteStatus welcomeRoulettePrizeLabel welcomeRoulettePrizeType').lean();
+    const already = user && user.welcomeRouletteStatus && user.welcomeRouletteStatus !== 'none';
+    res.json({
+      enabled: cfg.enabled === true,
+      canSpin: cfg.enabled === true && !already,
+      alreadySpun: !!already,
+      prizeLabel: (user && user.welcomeRoulettePrizeLabel) || null,
+      // Etiquetas de los segmentos para dibujar la ruleta (sin pesos).
+      segments: cfg.prizes.map(p => ({ label: p.label }))
+    });
+  } catch (e) {
+    logger.warn(`[welcome-roulette] status falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// SPIN: reserva atómica (una vez por cuenta), premio ponderado server-side,
+// y acreditación (cash automático / percent queda pendiente para la carga).
+app.post('/api/welcome-roulette/spin', authMiddleware, authLimiter, async (req, res) => {
+  try {
+    const cfg = await getWelcomeRouletteConfig();
+    if (cfg.enabled !== true) return res.status(400).json({ error: 'La ruleta no está disponible.' });
+
+    const prize = _pickWeightedPrize(cfg.prizes);
+    if (!prize) return res.status(500).json({ error: 'No hay premios configurados.' });
+
+    // Reserva atómica: solo gana quien pasa de 'none' → congela el premio.
+    const user = await User.findOneAndUpdate(
+      { id: req.user.userId, role: 'user', welcomeRouletteStatus: 'none' },
+      { $set: {
+        welcomeRouletteStatus: 'pending',
+        welcomeRoulettePrizeType: prize.type,
+        welcomeRoulettePrizeValue: prize.value,
+        welcomeRoulettePrizeLabel: prize.label,
+        welcomeRouletteRolloverX: prize.type === 'cash' ? prize.rolloverX : 0,
+        welcomeRouletteSpunAt: new Date()
+      } },
+      { new: true }
+    ).select('id username').lean();
+
+    if (!user) {
+      return res.status(400).json({ error: 'Ya giraste tu ruleta de bienvenida. Es una sola vez.', code: 'ALREADY_SPUN' });
+    }
+
+    // Índice del segmento premiado (para que la animación caiga ahí).
+    const prizeIndex = cfg.prizes.findIndex(p => p.id === prize.id);
+
+    // ---- CASH: acreditación AUTOMÁTICA (como el welcome code cash) ----
+    if (prize.type === 'cash') {
+      const credit = await girox.creditUserBalance(
+        user.username, prize.value, `vip-wroul-${user.id}`,
+        { multiplier: prize.rolloverX, description: 'Ruleta de bienvenida — premio en saldo' }
+      );
+      if (!credit.success) {
+        await User.updateOne(
+          { id: user.id, welcomeRouletteStatus: 'pending' },
+          { $set: { welcomeRouletteStatus: 'none', welcomeRoulettePrizeType: null, welcomeRoulettePrizeValue: 0, welcomeRoulettePrizeLabel: null, welcomeRouletteSpunAt: null } }
+        ).catch(() => {});
+        logger.warn(`[welcome-roulette] crédito cash falló para ${user.username}: ${credit.error || 's/detalle'}`);
+        return res.status(502).json({ error: 'No pudimos acreditar tu premio ahora. Probá de nuevo en un momento.' });
+      }
+      try { await girox.claimPendingBonus(user.username); } catch (_) {}
+      await User.updateOne({ id: user.id, welcomeRouletteStatus: 'pending' }, { $set: { welcomeRouletteStatus: 'credited' } }).catch(() => {});
+      await Transaction.create({
+        id: uuidv4(), type: 'bonus', userId: user.id, username: user.username,
+        amount: prize.value, description: 'Ruleta de bienvenida — premio en saldo',
+        transactionId: (credit.data && (credit.data.transfer_id || credit.data.transferId)) || null,
+        metadata: { source: 'welcome_roulette' }, timestamp: new Date()
+      }).catch(() => {});
+      await _emitAdminOnlyChatNote(user.id, user.username,
+        `🎡 Ruleta de bienvenida: ganó ${prize.label} (saldo acreditado automático${prize.rolloverX ? `, rollover x${prize.rolloverX}` : ''}).`);
+      return res.json({ success: true, prizeIndex, prize: { label: prize.label, type: 'cash', value: prize.value, credited: true } });
+    }
+
+    // ---- PERCENT: queda PENDIENTE, se aplica en la próxima carga ----
+    await _emitAdminOnlyChatNote(user.id, user.username,
+      `🎡 Ruleta de bienvenida: ganó ${prize.label} para la PRÓXIMA CARGA. Aplicaselo al cargar (o la carga con bonus lo consume).`);
+    res.json({ success: true, prizeIndex, prize: { label: prize.label, type: 'percent', value: prize.value, credited: false } });
+  } catch (e) {
+    logger.warn(`[welcome-roulette] spin falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
 
 app.post('/api/community-code/claim', authMiddleware, authLimiter, async (req, res) => {
   try {

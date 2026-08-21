@@ -43,6 +43,44 @@
 
 ## Sesión 2026-08-20
 
+### 214. RULETA DE BIENVENIDA: premios % o saldo, probabilidades y rollover configurables desde el panel
+- **Pedido del owner:** ruleta que gire 1 vez, premios modificables (con qué
+  probabilidad sale cada uno), % → se aplica AUTO en la próxima carga y queda
+  usado; saldo → se acredita solo (con/sin rollover). Todo desde el panel.
+- **Modelo (User):** `welcomeRouletteStatus` (none|pending|used|credited) +
+  prizeType/Value/Label/RolloverX/SpunAt/UsedAt/UsedBy. Reserva atómica
+  none→pending al girar (1 vez por cuenta, a prueba de carreras).
+- **Config (Config['welcomeRoulette'], solo admin general):** `{enabled,
+  prizes:[{id,label,type:'percent'|'cash',value,weight,rolloverX}]}`. `weight`
+  = probabilidad relativa. Default apagado.
+- **Backend:**
+  - `GET/POST /api/admin/welcome-roulette` (config; POST solo admin general,
+    valida value/weight/rollover, ≤12 premios).
+  - `GET /api/welcome-roulette/status` (cliente: canSpin/alreadySpun + labels
+    de los segmentos, SIN pesos).
+  - `POST /api/welcome-roulette/spin`: premio elegido PONDERADO **server-side**
+    (`_pickWeightedPrize`, nunca confiar en el cliente); reserva atómica;
+    **cash** → `creditUserBalance` con rollover + auto-claim + Transaction
+    (source welcome_roulette) → status 'credited'; **percent** → queda
+    'pending'. Devuelve `prizeIndex` para que la animación caiga en el premio.
+  - **Consumo del % en la carga (`/api/admin/deposit`):** si el cliente tiene
+    un % pendiente y el agente NO pasó bonus a mano, se aplica AUTOMÁTICO
+    (bonus = monto × %/100) con reserva atómica pending→used; si la carga o el
+    bono fallan, se REVIERTE a pending (no se pierde el premio).
+- **Cliente (widget, ui.js):** al abrir el asistente, si `canSpin` → burbuja
+  "¡Tenés una RULETA!"; estado 'roulette' dibuja la rueda (conic-gradient +
+  etiquetas), GIRAR pide el spin, anima 5 vueltas hasta el `prizeIndex` del
+  server y muestra el premio (+ sonido). El server manda el resultado, el
+  cliente solo lo muestra.
+- **Panel (admin.js + index.html):** card "🎡 Ruleta de bienvenida" (solo admin
+  general): activar + tabla de premios (etiqueta/tipo/valor/peso/rollover) con
+  agregar/quitar y un hint que calcula las probabilidades en vivo.
+- **Validado:** `node --check` OK (server.js, User.js, ui.js, admin.js, SW
+  v121). **Back necesita redeploy**; panel recargar. PROBAR: configurar 2-3
+  premios y activar → entrar como cliente → girar → % cae pendiente y se aplica
+  en la próxima carga (marca usado); saldo se acredita solo; segundo giro
+  rechazado ("una sola vez").
+
 ### 213. Widget: 5 ajustes de UX (sin barra de escribir, espera obligatoria de creds, cartel+sonido de carga, anti-spam CBU, botón Info)
 - **Sin barra de escribir en el asistente:** derivaba a soporte con un toque
   de más → eliminada. La ÚNICA vía a soporte es el botón 🎧. En modo soporte

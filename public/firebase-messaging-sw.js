@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v120'; // v120: asistente sin barra de escribir (solo soporte por boton) + creds espera obligatoria 2s y auto-inicio 10s + cartel grande y sonido al acreditar + anti-spam CBU + boton Info
+const CACHE_VERSION = 'v121'; // v121: ruleta de bienvenida (premios % o saldo, probabilidades y rollover configurables desde el panel)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

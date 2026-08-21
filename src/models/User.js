@@ -577,6 +577,28 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
+  // ============================================
+  // RULETA DE BIENVENIDA (2026-08-21)
+  // ============================================
+  // Se gira UNA sola vez por cuenta. El premio puede ser:
+  //   - 'percent' → % extra en la PRÓXIMA CARGA (lo aplica el agente / la carga
+  //                 con bonus lo consume y marca 'used' para no repetirse).
+  //   - 'cash'    → saldo acreditado AUTOMÁTICO al girar (con/ sin rollover),
+  //                 status pasa a 'credited'. reference vip-wroul-{userId}.
+  welcomeRouletteStatus: {
+    type: String,
+    enum: ['none', 'pending', 'used', 'credited'],
+    default: 'none',
+    index: true
+  },
+  welcomeRoulettePrizeType: { type: String, enum: ['percent', 'cash', null], default: null },
+  welcomeRoulettePrizeValue: { type: Number, default: 0 },      // % (percent) o monto ARS (cash)
+  welcomeRoulettePrizeLabel: { type: String, default: null },   // texto mostrado del premio
+  welcomeRouletteRolloverX: { type: Number, default: 0 },       // rollover del cash (congelado)
+  welcomeRouletteSpunAt: { type: Date, default: null },
+  welcomeRouletteUsedAt: { type: Date, default: null },
+  welcomeRouletteUsedBy: { type: String, default: null },
+
   // Plan de notificaciones elegido en la encuesta inicial (app instalada).
   // Define el volumen de notificaciones push que el usuario quiere recibir.
   // null = todavía no respondió la encuesta.
