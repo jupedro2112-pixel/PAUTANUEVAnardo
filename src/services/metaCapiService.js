@@ -176,9 +176,20 @@ function parseCookies(cookieHeader) {
 //   userInfo        — datos del usuario (se hashea internamente)
 //   customData      — { value, currency, content_name, ... } pasado tal cual a Meta
 //   options         — { eventId, eventSourceUrl, actionSource, testEventCode, req }
+// Qué eventos recibe un PIXEL DE PARTNER (publicista). Decisión del owner
+// (2026-08-21): solo el ALTA y la PRIMERA carga (FTD) — nada de retiros ni
+// cargas siguientes. El pixel PROPIO sí recibe todo (para optimización propia).
+// El Purchase de la primera carga se marca con opts.firstDeposit=true desde el
+// call site (la carga sabe si es el primer depósito del cliente).
+function _partnerAllows(eventName, opts) {
+  if (eventName === 'CompleteRegistration') return true;
+  if (eventName === 'Purchase' && opts && opts.firstDeposit === true) return true;
+  return false;
+}
+
 async function sendEvent(eventName, userInfo, customData, options) {
-  const dests = _capiDestinations();
-  if (!dests.length) {
+  const allDests = _capiDestinations();
+  if (!allDests.length) {
     if (!_missingConfigLogged) {
       _missingConfigLogged = true;
       logger.warn('[MetaCAPI] META_PIXEL_ID o META_CAPI_ACCESS_TOKEN no configurados — eventos server-side deshabilitados');
@@ -191,6 +202,15 @@ async function sendEvent(eventName, userInfo, customData, options) {
   }
 
   const opts = options || {};
+
+  // Filtro por destino: el pixel propio recibe TODO; los de partner solo alta +
+  // primera carga. Si un evento no va para ningún destino, no se manda nada.
+  const dests = allDests.filter((d) =>
+    d.label === 'propio' ? true : _partnerAllows(eventName, opts)
+  );
+  if (!dests.length) {
+    return { sent: false, reason: 'filtered_for_all_destinations' };
+  }
   const req = opts.req || null;
   const requestCtx = extractRequestContext(req);
 

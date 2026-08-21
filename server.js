@@ -514,6 +514,26 @@ const refunds = require('./models/refunds');
 const metaCapi = require('./src/services/metaCapiService');
 const fbAdsWebhook = require('./src/services/fbAdsWebhookService');
 
+// ¿Es la PRIMERA carga real del cliente (FTD)? Se llama DESPUÉS de crear el
+// Transaction del depósito, así que la primera carga = exactamente 1 depósito
+// real. Excluye devoluciones de retiro (payout_refund), que no son cargas
+// genuinas. Lo usa el filtro del CAPI: los pixels de partner solo reciben el
+// Purchase de la primera carga (owner 2026-08-21). Ante error → false (no
+// marcar FTD de más). No cuenta los 'bonus'/regalos (esos son type distinto).
+async function _isFirstDeposit(userId) {
+  try {
+    const n = await Transaction.countDocuments({
+      userId: String(userId),
+      type: 'deposit',
+      'metadata.source': { $ne: 'payout_refund' }
+    });
+    return n === 1;
+  } catch (e) {
+    logger.warn(`[capi] _isFirstDeposit falló: ${e.message}`);
+    return false;
+  }
+}
+
 // Valida y normaliza un valor de cookie _fbc / _fbp de Meta antes de
 // persistirlo o reenviarlo a Conversions API. El formato real es
 // `fb.<subdomainIndex>.<creationTimeMs>.<payload>` (ej: fb.1.1747531860000.IwAR0...).
@@ -8438,7 +8458,11 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       // Meta CAPI — Purchase (la conversión más valiosa: depósito confirmado por admin).
       // Sólo server-side: este endpoint lo invocan admins, el navegador del jugador
       // que recibe el depósito no participa, así que no hay browser pixel para deduplicar.
+      // firstDeposit: el Transaction del depósito YA se creó arriba, así que si el
+      // cliente tiene 1 sola carga real, esta es la PRIMERA (FTD) → los pixels de
+      // partner solo reciben el Purchase cuando es la primera (owner 2026-08-21).
       const depositAdminOrderId = result.data?.transfer_id || result.data?.transferId || null;
+      const _isFTD = await _isFirstDeposit(user.id);
       metaCapi.track(
         'Purchase',
         { email: user.email, phone: user.phone, externalId: user.id, fbc: user.metaFbc, fbp: user.metaFbp },
@@ -8450,7 +8474,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
           content_category: metaCapi.valueCategory(parseFloat(amount)),
           order_id: depositAdminOrderId
         },
-        { req }
+        { req, firstDeposit: _isFTD }
       );
 
       // Webhook a fb-ads: conversión Purchase para aprendizaje por anuncio.
@@ -10138,6 +10162,7 @@ app.post('/api/movements/deposit', authMiddleware, depositorMiddleware, async (r
       try {
         const u = await User.findOne({ id: req.user.userId }).lean();
         const selfServiceOrderId = result.data?.transfer_id || result.data?.transferId || null;
+        const _isFTD = await _isFirstDeposit(req.user.userId);
         metaCapi.track(
           'Purchase',
           { email: u && u.email, phone: u && u.phone, externalId: req.user.userId, fbc: u && u.metaFbc, fbp: u && u.metaFbp },
@@ -10149,7 +10174,7 @@ app.post('/api/movements/deposit', authMiddleware, depositorMiddleware, async (r
             content_category: metaCapi.valueCategory(parseFloat(amount)),
             order_id: selfServiceOrderId
           },
-          { eventId: req.body && req.body.metaEventId, req }
+          { eventId: req.body && req.body.metaEventId, req, firstDeposit: _isFTD }
         );
         // Webhook a fb-ads: conversión Purchase para aprendizaje por anuncio.
         fbAdsWebhook.notify('Purchase', u, { value: parseFloat(amount), currency: 'ARS' });

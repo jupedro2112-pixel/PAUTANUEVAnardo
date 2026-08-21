@@ -43,6 +43,25 @@
 
 ## Sesión 2026-08-20
 
+### 221. CAPI a publicistas: SOLO registro + PRIMERA carga (FTD) — sin retiros ni cargas siguientes
+- **Pedido owner:** a los pixels de PUBLICISTA que les llegue solo el alta y la
+  primera carga de cada cliente; los retiros y las cargas siguientes NO. Igual
+  para los 3 publicistas.
+- **Fix (metaCapiService `sendEvent`):** filtro POR DESTINO. El pixel `propio`
+  recibe TODO (optimización propia); los `partner*` solo reciben
+  `CompleteRegistration` y `Purchase` **cuando es la primera carga**
+  (`opts.firstDeposit===true`). Los demás eventos (Login, Lead,
+  InitiateCheckout, WithdrawRequest, RefundClaim y las cargas 2ª+) NO se envían
+  a los partners. Si un evento no va a ningún destino, no se manda nada.
+- **FTD (server.js):** helper `_isFirstDeposit(userId)` = `countDocuments`
+  Transaction type deposit (excluye payout_refund) === 1 (se llama DESPUÉS de
+  crear el Transaction del depósito). Se pasa `firstDeposit` en el track del
+  Purchase en los DOS caminos (carga admin + self-service).
+- **Validado:** `node --check` OK (server.js, metaCapiService.js). **Back
+  necesita redeploy.** PROBAR: registro → llega al partner; 1ª carga → llega
+  Purchase; 2ª carga → NO llega al partner; retiro → NO llega. (El pixel propio,
+  si se configura, sigue recibiendo todo.)
+
 ### 220. FIX: el bloque "envianos el comprobante" salía duplicado (al tocar "Ya hice la transferencia" 2 veces)
 - El estado 'receipt' del asistente APPENDEA sin limpiar → tocar "Ya hice la
   transferencia" más de una vez apilaba el bloque (foto + "tocá acá" + volver).
