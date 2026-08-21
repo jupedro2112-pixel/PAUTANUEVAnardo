@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v110'; // v110: widget del casino = ASISTENTE guiado (depósito con Copiar CBU + comprobante, retiro self-service); chat en vivo solo como soporte/fallback
+const CACHE_VERSION = 'v111'; // v111: widget 'Carga rápido 1GIROX' + sin 'Salir del casino' (no se vuelve a la pantalla vieja)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

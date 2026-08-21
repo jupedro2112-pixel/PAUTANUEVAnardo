@@ -1241,7 +1241,7 @@ VIP.ui._showCasinoFrame = function() {
           '<div style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
           'display:flex;align-items:center;justify-content:center;font-size:16px;">🎧</div>' +
           '<div style="flex:1;min-width:0;">' +
-            '<div style="color:#fff;font-weight:800;font-size:14px;">Soporte 1GIROX</div>' +
+            '<div style="color:#fff;font-weight:800;font-size:14px;">Carga rápido 1GIROX</div>' +
             '<div style="color:#c9f5d8;font-size:11px;display:flex;align-items:center;gap:5px;">' +
               '<span style="width:7px;height:7px;border-radius:50%;background:#7dffa8;box-shadow:0 0 6px #7dffa8;"></span>EN LÍNEA</div>' +
           '</div>' +
@@ -1257,15 +1257,16 @@ VIP.ui._showCasinoFrame = function() {
         'padding:10px;display:flex;flex-direction:column;gap:8px;background:#100e18;"></div>' +
         // Chat EN VIVO (solo soporte): acá se MUDA el chat real al activarlo.
         '<div id="casinoChatDrawerBody" style="flex:1;display:none;flex-direction:column;min-height:0;"></div>' +
-        // Barrita inferior: volver al asistente / abrir aparte / salir.
+        // Barrita inferior: volver al asistente / abrir aparte. SIN "Salir del
+        // casino" (owner 2026-08-21): el cliente no vuelve más a la pantalla
+        // vieja de la PWA (reembolsos y demás) — el casino ES la experiencia.
+        // Si el casino no carga, el recuadro de error conserva su salida.
         '<div style="flex:0 0 auto;display:flex;gap:14px;justify-content:center;padding:5px;' +
         'background:#0b0a12;border-top:1px solid rgba(255,255,255,0.05);">' +
           '<button type="button" onclick="VIP.ui.casinoBotGo(\'home\')" style="background:none;border:none;' +
           'color:#25d366;font-size:10.5px;cursor:pointer;font-weight:700;">🤖 Asistente</button>' +
           '<button type="button" onclick="VIP.ui.openCasinoInTab()" style="background:none;border:none;' +
           'color:#8a7a3a;font-size:10.5px;cursor:pointer;text-decoration:underline;">↗ Casino aparte</button>' +
-          '<button type="button" onclick="VIP.ui.closeCasinoFrame()" style="background:none;border:none;' +
-          'color:#8a8a8a;font-size:10.5px;cursor:pointer;text-decoration:underline;">🚪 Salir del casino</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(overlay);

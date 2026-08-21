@@ -43,6 +43,14 @@
 
 ## Sesión 2026-08-20
 
+### 204. Widget: "Carga rápido 1GIROX" + SIN salida a la pantalla vieja de la PWA
+- Pedido owner: (1) sacar la opción de volver al chat viejo (la pantalla con
+  reembolsos y demás) → se eliminó "🚪 Salir del casino" de la barrita del
+  widget; el casino ES la experiencia (el recuadro de error del casino
+  conserva su salida, y recargar la página sigue llevando a la PWA normal).
+  (2) El header del widget pasa de "Soporte 1GIROX" a **"Carga rápido
+  1GIROX"**. SW **v111**. Solo front.
+
 ### 203. ASISTENTE en el widget del casino: automatización primero, chat en vivo SOLO como soporte/fallback (ref Bet33)
 - **Pedido del owner (screencast de Bet33):** que el chat sea de automatización
   y el chat en vivo quede solo para soporte o cuando la automatización falla.
