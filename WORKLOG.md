@@ -43,6 +43,19 @@
 
 ## Sesión 2026-08-20
 
+### 208. Widget: modo CLARO/OSCURO con toggle en el header, sincronizado con el chat de soporte
+- **Pedido owner (captura: asistente claro pero soporte oscuro = inconsistente):**
+  toggle de tema en el widget y que asistente y soporte SIEMPRE coincidan.
+- **Cómo:** los colores del bot pasaron de inline a CLASES (`cw*`) en un
+  `<style id="casinoWidgetTheme">` con dos paletas colgadas de **`body.wa-dark`**
+  — la MISMA clase que ya gobierna el modo oscuro del chat (#108). Botón
+  🌙/☀️ nuevo en el header del widget (`casinoToggleTheme`): togglea wa-dark +
+  persiste en localStorage `waDark` + sincroniza el switch de Configuración →
+  un solo modo para bot, chat de soporte y toda la PWA. Default actual: oscuro
+  (el default histórico de wa-dark); un toque y queda claro para siempre en
+  ese dispositivo. Burbujas/cajas/inputs/barras ya montadas cambian EN VIVO
+  (CSS, sin re-render). SW **v115**. Solo front.
+
 ### 207. Widget v2 look WhatsApp/Bet33: "Cargas Automáticas 1Girox", opciones fijas, retiro EN el panel, siempre abierto
 - **Pedidos del owner (capturas de Bet33):**
   1. **Look claro tipo WhatsApp:** área del bot #ece5dd, burbujas BLANCAS con

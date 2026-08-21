@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v114'; // v114: widget look WhatsApp claro + 'Cargas Automaticas 1Girox' + opciones fijas arriba + retiro EN el panel + siempre abierto
+const CACHE_VERSION = 'v115'; // v115: widget con modo claro/oscuro (toggle en header) sincronizado con el chat de soporte (wa-dark)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
