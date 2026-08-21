@@ -1785,9 +1785,14 @@ VIP.ui.casinoBotGo = function(state) {
   }
 
   if (state === 'receipt') {
+    // Guard anti-duplicado (owner 2026-08-21: salía 2 veces al tocar "Ya hice
+    // la transferencia" más de una vez). Si el bloque ya está, no se repite.
+    const existing = document.getElementById('botReceiptBlock');
+    if (existing) { area.scrollTop = area.scrollHeight; return; }
     VIP.ui._botMsg('📸 Envianos una <b>foto o captura de pantalla</b> del comprobante de la transferencia.');
     const box = VIP.ui._botMsg('');
     if (box) {
+      box.id = 'botReceiptBlock';
       box.className = 'cwB cwUp';
       box.style.cssText += 'text-align:center;cursor:pointer;';
       box.innerHTML = '📎 <b>Tocá acá para seleccionar el comprobante</b><br><span style="font-size:11px;opacity:0.75;">Imagen o captura</span>';

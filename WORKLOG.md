@@ -43,6 +43,12 @@
 
 ## Sesión 2026-08-20
 
+### 220. FIX: el bloque "envianos el comprobante" salía duplicado (al tocar "Ya hice la transferencia" 2 veces)
+- El estado 'receipt' del asistente APPENDEA sin limpiar → tocar "Ya hice la
+  transferencia" más de una vez apilaba el bloque (foto + "tocá acá" + volver).
+  **Fix:** guard por id `#botReceiptBlock` — si ya está, no lo repite (scrollea
+  a él). SW **v125**. Solo front.
+
 ### 219. Sacado el banner "COMPROBANTE A REVISAR" (Aceptar/Rechazar) — se solapaba, no era en vivo y quedaba viejo
 - **Reclamo owner:** el cartel no salía siempre, salía DESPUÉS de resolver el
   comprobante y quedaba viejo. Pidió "que sea rápido sí o sí o sacarlo".
