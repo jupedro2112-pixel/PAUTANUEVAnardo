@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v112'; // v112: entrada UNICA = casino + asistente para todos; confirmacion de carga automatica en el bot; aviso de comprobante ilegible
+const CACHE_VERSION = 'v113'; // v113: countdown 15s tras enviar comprobante + cartel de reenvio si la auto-carga no llego
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

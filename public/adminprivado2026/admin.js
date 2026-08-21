@@ -2857,10 +2857,106 @@ async function loadUserInfo(userId) {
 
         // Pago/retiro pendiente (verificar y pagar automático).
         loadPayoutBanner(user.id);
+
+        // Comprobante pendiente de decisión manual (Aceptar/Rechazar).
+        loadComprobanteBanner(user.id);
     } catch (error) {
         console.error('Error loading user info:', error);
     }
 }
+
+// ============================================================
+// COMPROBANTES — banner Aceptar/Rechazar (2026-08-21)
+// Cuando la carga automática NO tomó el comprobante (hgcash caído o
+// transferencia al banco SIN API), el agente lo resuelve a mano desde acá.
+// ============================================================
+async function loadComprobanteBanner(userId) {
+    const el = document.getElementById('chatComprobanteBanner');
+    if (!el) return;
+    try {
+        const r = await authFetch('/api/admin/users/' + encodeURIComponent(userId) + '/comprobante-pendiente');
+        if (!r.ok) { el.style.display = 'none'; return; }
+        const j = await r.json();
+        const c = j.pending;
+        if (!c) { el.style.display = 'none'; el.innerHTML = ''; return; }
+        const monto = c.amount ? '$' + Number(c.amount).toLocaleString('es-AR') : 'monto no leído';
+        const op = c.operationNumber ? 'op. N°' + escapeHtml(String(c.operationNumber)) : 's/N° operación';
+        const fecha = c.paymentDate ? escapeHtml(String(c.paymentDate)) : '';
+        el.style.display = '';
+        el.style.padding = '9px 14px';
+        el.style.borderBottom = '1px solid rgba(0,0,0,0.30)';
+        el.style.background = 'linear-gradient(90deg,#0e6e5c,#0a4f42)';
+        el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;font-size:12.5px;">' +
+            '<span style="font-size:18px;">🧾</span>' +
+            '<div style="flex:1;min-width:170px;"><strong>COMPROBANTE A REVISAR: ' + monto + '</strong>' +
+            '<div style="font-size:11px;opacity:0.92;">' + op + (fecha ? ' · ' + fecha : '') + '</div>' +
+            '<div style="font-size:10.5px;opacity:0.8;">La carga automática no lo tomó (hgcash caído u otro banco). Verificá la plata en el banco antes de aceptar.</div></div>' +
+            '<button onclick="comprobanteAccept(\'' + escapeHtml(c.id) + '\',' + (Number(c.amount) || 0) + ')" ' +
+            'style="background:#0f8a2f;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-weight:800;font-size:12px;cursor:pointer;">✅ Aceptar y cargar</button>' +
+            '<button onclick="comprobanteReject(\'' + escapeHtml(c.id) + '\')" ' +
+            'style="background:#a02020;color:#fff;border:none;border-radius:7px;padding:7px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">❌ Rechazar</button>' +
+            '</div>';
+    } catch (e) {
+        el.style.display = 'none';
+    }
+}
+
+async function comprobanteAccept(compId, amount) {
+    if (!selectedUserId) { showToast('Selecciona un usuario primero', 'error'); return; }
+    let monto = prompt('Monto a CARGAR (leído del comprobante — verificalo contra el banco):', amount || '');
+    if (monto === null) return;
+    monto = parseFloat(String(monto).replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(monto) || monto <= 0) { showToast('Monto inválido', 'error'); return; }
+    if (!confirm('¿Cargar $' + monto.toLocaleString('es-AR') + ' a este cliente? (comprobante verificado a mano)')) return;
+    try {
+        // 1) Claim atómico: si otro agente ya lo resolvió, se corta acá.
+        const r1 = await authFetch('/api/admin/comprobantes/' + encodeURIComponent(compId) + '/resolve', {
+            method: 'POST', body: JSON.stringify({ action: 'accept' })
+        });
+        if (!r1.ok) {
+            const j1 = await r1.json().catch(() => ({}));
+            showToast(j1.error || 'Ese comprobante ya fue resuelto.', 'error');
+            loadComprobanteBanner(selectedUserId);
+            return;
+        }
+        // 2) La carga REAL va por el endpoint de siempre (todos sus guards).
+        const r2 = await authFetch('/api/admin/deposit', {
+            method: 'POST',
+            body: JSON.stringify({ userId: selectedUserId, amount: monto, description: 'Carga manual (comprobante aceptado)' })
+        });
+        const j2 = await r2.json().catch(() => ({}));
+        if (!r2.ok) {
+            // La carga falló → liberar el comprobante para poder reintentar.
+            await authFetch('/api/admin/comprobantes/' + encodeURIComponent(compId) + '/resolve', {
+                method: 'POST', body: JSON.stringify({ action: 'reopen' })
+            }).catch(() => {});
+            showToast(j2.error || 'La carga falló — el comprobante quedó pendiente para reintentar.', 'error');
+        } else {
+            showToast('✅ Carga de $' + monto.toLocaleString('es-AR') + ' realizada (comprobante aceptado)', 'success');
+        }
+    } catch (e) {
+        showToast('Error de conexión', 'error');
+    }
+    loadComprobanteBanner(selectedUserId);
+}
+
+async function comprobanteReject(compId) {
+    if (!selectedUserId) return;
+    if (!confirm('¿RECHAZAR este comprobante? Se le avisa al cliente que no pudo validarse y que lo reenvíe.')) return;
+    try {
+        const r = await authFetch('/api/admin/comprobantes/' + encodeURIComponent(compId) + '/resolve', {
+            method: 'POST', body: JSON.stringify({ action: 'reject' })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) showToast(j.error || 'Ese comprobante ya fue resuelto.', 'error');
+        else showToast('Comprobante rechazado — se le avisó al cliente.', 'success');
+    } catch (e) {
+        showToast('Error de conexión', 'error');
+    }
+    loadComprobanteBanner(selectedUserId);
+}
+window.comprobanteAccept = comprobanteAccept;
+window.comprobanteReject = comprobanteReject;
 
 async function loadPayoutBanner(userId) {
     const el = document.getElementById('chatPayoutBanner');

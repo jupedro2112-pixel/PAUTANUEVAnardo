@@ -9972,6 +9972,12 @@ async function initializeData() {
       description: 'Mensaje automático al cliente cuando manda una imagen que la IA NO reconoce como comprobante (borrosa, recortada, otra cosa). Le pide reenviarlo legible. Si lo dejás vacío, no se envía.',
       type: 'message',
       response: '⚠️ No pudimos reconocer tu comprobante. Enviá la foto o captura COMPLETA, donde se vean bien: el monto, la fecha, el N° de operación y la cuenta a la que transferiste. 📸 Sacala derecha y con buena luz. Si el problema sigue, escribinos y te ayudamos.'
+    },
+    {
+      name: '/sys_comprobante_rechazado',
+      description: 'Mensaje automático al cliente cuando un agente RECHAZA su comprobante desde el banner del panel (revisión manual). Si lo dejás vacío, no se envía.',
+      type: 'message',
+      response: '❌ Revisamos tu comprobante y NO pudimos validarlo. Verificá que la transferencia se haya hecho a la cuenta que te pasamos y por el monto correcto, y reenvianos el comprobante COMPLETO y legible. Si creés que es un error, escribinos.'
     }
   ];
   for (const cmd of systemCmds) {
@@ -15330,6 +15336,87 @@ app.get('/api/admin/hgcash/balance', authMiddleware, adminMiddleware, async (req
     res.json({ enabled: true, accounts });
   } catch (error) {
     logger.warn(`[hgcash] balance endpoint falló: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ============================================
+// COMPROBANTES — resolución MANUAL del agente (Aceptar/Rechazar, 2026-08-21)
+// ============================================
+// Para cuando la carga automática NO tomó el comprobante (hgcash caído, o la
+// transferencia fue al banco SIN API): el panel muestra un banner con los
+// datos leídos por la IA y el agente ACEPTA (después dispara la carga por
+// /api/admin/deposit, con todos sus guards) o RECHAZA (avisa al cliente).
+
+// Último comprobante del usuario pendiente de decisión (48hs para atrás).
+app.get('/api/admin/users/:userId/comprobante-pendiente', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId);
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const comp = await Comprobante.findOne({
+      userId,
+      isComprobante: true,
+      status: { $in: ['unique', 'no_key'] },
+      resolution: null,
+      autoCharged: { $ne: true },
+      // Los que la auto-carga ya tomó (o está tomando) no necesitan al agente.
+      bankMatchStatus: { $nin: ['auto_charged', 'manual_charged', 'claiming'] },
+      createdAt: { $gte: since }
+    }).sort({ createdAt: -1 }).lean();
+    if (!comp) return res.json({ pending: null });
+    res.json({
+      pending: {
+        id: comp.id,
+        amount: comp.amount || null,
+        operationNumber: comp.operationNumber || null,
+        bank: comp.bank || null,
+        paymentDate: comp.paymentDate || null,
+        bankMatchStatus: comp.bankMatchStatus || 'none',
+        createdAt: comp.createdAt
+      }
+    });
+  } catch (error) {
+    logger.warn(`[comprobante] pendiente falló: ${error.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Aceptar / Rechazar / Reabrir (claim atómico: dos agentes a la vez → uno gana).
+app.post('/api/admin/comprobantes/:id/resolve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const action = String((req.body && req.body.action) || '');
+    if (!['accept', 'reject', 'reopen'].includes(action)) {
+      return res.status(400).json({ error: 'Acción inválida' });
+    }
+    if (action === 'reopen') {
+      // La carga falló DESPUÉS de aceptar: se libera para reintentar.
+      const r = await Comprobante.findOneAndUpdate(
+        { id, resolution: 'accepted' },
+        { $set: { resolution: null, resolvedBy: null, resolvedAt: null } },
+        { new: true }
+      ).lean();
+      return res.json({ success: !!r });
+    }
+    const target = action === 'accept' ? 'accepted' : 'rejected';
+    const comp = await Comprobante.findOneAndUpdate(
+      { id, resolution: null },
+      { $set: { resolution: target, resolvedBy: req.user.username || null, resolvedAt: new Date() } },
+      { new: true }
+    ).lean();
+    if (!comp) return res.status(409).json({ error: 'Ese comprobante ya fue resuelto por otro agente.' });
+    if (target === 'rejected') {
+      const aviso = await renderSystemCommand(
+        '/sys_comprobante_rechazado',
+        '❌ Revisamos tu comprobante y NO pudimos validarlo. Verificá que la transferencia se haya hecho a la cuenta que te pasamos y por el monto correcto, y reenvianos el comprobante COMPLETO y legible. Si creés que es un error, escribinos.'
+      );
+      if (aviso) await _emitClientSystemNote(comp.userId, comp.username, aviso);
+      await _emitAdminOnlyChatNote(comp.userId, comp.username,
+        `🧾 Comprobante RECHAZADO a mano por ${req.user.username || 'un agente'}.`);
+    }
+    res.json({ success: true, resolution: target });
+  } catch (error) {
+    logger.warn(`[comprobante] resolve falló: ${error.message}`);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });

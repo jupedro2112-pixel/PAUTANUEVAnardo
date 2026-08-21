@@ -67,6 +67,13 @@ const comprobanteSchema = new mongoose.Schema({
   matchedMovementId: { type: String, default: null }, // movementId de BankMovement matcheado
   autoCharged: { type: Boolean, default: false },
 
+  // Resolución MANUAL del agente (banner Aceptar/Rechazar del panel, 2026-08-21):
+  // para cuando la carga automática no tomó el comprobante (hgcash caído o
+  // transferencia al banco SIN API). null = pendiente de decisión.
+  resolution: { type: String, enum: [null, 'accepted', 'rejected'], default: null, index: true },
+  resolvedBy: { type: String, default: null },   // username del agente
+  resolvedAt: { type: Date, default: null },
+
   // Meta
   model: { type: String, default: null },        // modelo de IA que lo analizó
   errorReason: { type: String, default: null },  // si status==='error'

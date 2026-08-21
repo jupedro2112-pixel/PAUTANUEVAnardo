@@ -1559,12 +1559,34 @@ VIP.ui.casinoBotGo = function(state) {
   }
 
   if (state === 'receipt-sent') {
-    VIP.ui._botMsg('✅ <b>¡Comprobante recibido!</b> Lo estamos verificando para acreditarte las fichas — ' +
-      'suele tardar menos de un minuto. Te avisamos acá mismo cuando esté 🔔');
-    VIP.ui._botRow(
-      VIP.ui._botBtn('🎰 Volver al juego', 'VIP.ui.closeCasinoChat()', true) +
-      VIP.ui._botBtn('🎧 Soporte', 'VIP.ui.casinoBotSupport()')
-    );
+    VIP.ui._botMsg('✅ <b>¡Comprobante recibido!</b> Lo estamos verificando para acreditarte las fichas.');
+    // CUENTA REGRESIVA de 15s (owner 2026-08-21): si la carga automática no
+    // acreditó en ese tiempo, cartel pidiendo el comprobante legible. La
+    // confirmación real (balance_updated → casinoBotDepositConfirmed) CORTA
+    // el reloj y muestra el "¡Carga acreditada!".
+    clearInterval(VIP.ui._botCdTimer);
+    const cd = VIP.ui._botMsg('⏳ Acreditación automática en curso… <b id="botCdNum" style="color:#25d366;">15</b>s');
+    VIP.ui._botCdNode = cd;
+    let left = 15;
+    VIP.ui._botCdTimer = setInterval(function() {
+      left--;
+      const n = document.getElementById('botCdNum');
+      if (n) n.textContent = String(Math.max(0, left));
+      if (left <= 0) {
+        clearInterval(VIP.ui._botCdTimer);
+        VIP.ui._botCdTimer = null;
+        if (cd) cd.style.display = 'none';
+        VIP.ui._botMsg('⚠️ <b>Todavía no pudimos acreditar tu carga automáticamente.</b><br>' +
+          'Verificá que el comprobante esté COMPLETO y legible (monto, fecha, N° de operación y cuenta destino) ' +
+          'y reenvialo. 📸<br><span style="color:#8a8fa3;font-size:12px;">Si ya se ve bien, quedate tranquilo: ' +
+          'un agente lo está revisando y te acreditamos enseguida.</span>');
+        VIP.ui._botRow(
+          VIP.ui._botBtn('📸 Reenviar comprobante', "VIP.ui.casinoBotGo('receipt')", true) +
+          VIP.ui._botBtn('🎧 Hablar con soporte', 'VIP.ui.casinoBotSupport()')
+        );
+      }
+    }, 1000);
+    VIP.ui._botRow(VIP.ui._botBtn('🎰 Volver al juego', 'VIP.ui.closeCasinoChat()'));
     return;
   }
 };
@@ -1625,6 +1647,10 @@ VIP.ui.casinoBotSupport = function() {
 /** La carga automática ACREDITÓ (balance_updated con saldo en alza estando en
  *  el casino): confirmación bien visible en el asistente. */
 VIP.ui.casinoBotDepositConfirmed = function(newBalance) {
+  // Cortar la cuenta regresiva del comprobante: la carga LLEGÓ.
+  clearInterval(VIP.ui._botCdTimer);
+  VIP.ui._botCdTimer = null;
+  if (VIP.ui._botCdNode) { VIP.ui._botCdNode.style.display = 'none'; VIP.ui._botCdNode = null; }
   const drawer = document.getElementById('casinoChatDrawer');
   if (!drawer) return;
   if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui.openCasinoChat();

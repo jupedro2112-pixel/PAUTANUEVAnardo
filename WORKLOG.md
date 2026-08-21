@@ -43,6 +43,35 @@
 
 ## Sesión 2026-08-20
 
+### 206. Countdown de 15s tras el comprobante + banner Aceptar/Rechazar de comprobantes en el panel
+- **Pedidos del owner (2):**
+  1. **Cliente (ui.js, SW v113):** al enviar el comprobante, el asistente
+     muestra "⏳ Acreditación automática en curso… 15s" (cuenta regresiva). Si
+     `balance_updated` llega antes (hgcash acreditó) → se corta el reloj y sale
+     "💰 ¡Carga acreditada!". Si a los 15s no llegó → cartel "verificá que el
+     comprobante esté COMPLETO y legible… y reenvialo" + botones Reenviar /
+     Soporte (con nota tranquilizadora: un agente lo revisa igual).
+  2. **Panel (admin.js + index.html): banner "🧾 COMPROBANTE A REVISAR"** con
+     los datos leídos por la IA (monto/op/fecha) y botones **✅ Aceptar y
+     cargar** / **❌ Rechazar** — para cuando hgcash está fallando o la
+     transferencia fue al banco SIN API.
+     - Aceptar: claim atómico (`resolution` null→accepted; dos agentes → uno
+       gana) → prompt de monto (default el leído) → la carga va por
+       `/api/admin/deposit` de SIEMPRE (todos sus guards + consume el
+       movimiento hgcash si existiera). Si la carga falla → `reopen` (el
+       comprobante vuelve a pendiente).
+     - Rechazar: claim + aviso al cliente (**`/sys_comprobante_rechazado`**,
+       editable, sembrado) + nota admin-only con quién lo rechazó.
+- **Backend:** campos nuevos en Comprobante (`resolution/resolvedBy/resolvedAt`),
+  `GET /api/admin/users/:userId/comprobante-pendiente` (últimas 48hs, excluye
+  auto_charged/manual_charged/claiming) y `POST /api/admin/comprobantes/:id/resolve`
+  (accept|reject|reopen). Sin migración (campos default null).
+- **Validado:** `node --check` OK (server.js, ui.js, admin.js, Comprobante.js,
+  SW v113). **Back necesita redeploy**; panel recargar. PROBAR: mandar
+  comprobante sin movimiento hgcash → countdown 15s → cartel de reenvío; en el
+  panel aparece el banner → Aceptar → prompt con el monto → carga OK y banner
+  desaparece; Rechazar → el cliente recibe el aviso editable.
+
 ### 205. ENTRADA ÚNICA al casino + confirmación de auto-carga en el bot + aviso de comprobante ilegible
 - **Pedidos del owner (3):**
   1. **La forma de ingresar es SIEMPRE 1girox con el asistente a la derecha**
