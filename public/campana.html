@@ -77,6 +77,8 @@
         card('a', '👀', d.clicks, 'Entraron (clics al link)') +
         card('b', '📝', d.registros, 'Registros (cuentas creadas)') +
         card('c', '💰', d.primerasCargas, 'Primeras cargas (FTD)') +
+        cardMoney('a', '💵', d.totalCargasMonto, 'Total cargado (para tu ROI)') +
+        card('b', '🔢', d.totalCargasCantidad, 'Cantidad de cargas') +
       '</div>';
     // Marcar el tab activo + cablear.
     var tabs = content.querySelectorAll('.tab');
@@ -90,6 +92,10 @@
   function card(cls, icon, val, label) {
     return '<div class="card"><div class="ic ' + cls + '">' + icon + '</div>' +
       '<div><div class="cval">' + fmt(val) + '</div><div class="clbl">' + esc(label) + '</div></div></div>';
+  }
+  function cardMoney(cls, icon, val, label) {
+    return '<div class="card"><div class="ic ' + cls + '">' + icon + '</div>' +
+      '<div><div class="cval">$' + fmt(val) + '</div><div class="clbl">' + esc(label) + '</div></div></div>';
   }
 
   function load() {

@@ -10520,6 +10520,7 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
     const campUserIds = await User.find({ acquisitionCampaign: code, role: 'user' }).select('id').lean();
     const ids = campUserIds.map((u) => u.id);
     let primerasCargas = 0;
+    let totalCargasMonto = 0, totalCargasCantidad = 0;
     if (ids.length) {
       const agg = await Transaction.aggregate([
         { $match: { userId: { $in: ids }, type: 'deposit', 'metadata.source': { $ne: 'payout_refund' } } },
@@ -10528,6 +10529,18 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
         { $count: 'n' }
       ]);
       primerasCargas = (agg[0] && agg[0].n) || 0;
+
+      // TOTAL de cargas (monto + cantidad) para que el publicista calcule su ROI
+      // (owner 2026-08-22). BRUTO: no se muestra neto ni retiros (eso es margen
+      // propio). Excluye devoluciones de retiro (payout_refund).
+      const _tMatch = { userId: { $in: ids }, type: 'deposit', 'metadata.source': { $ne: 'payout_refund' } };
+      if (since) _tMatch.timestamp = { $gte: since };
+      const totAgg = await Transaction.aggregate([
+        { $match: _tMatch },
+        { $group: { _id: null, monto: { $sum: '$amount' }, n: { $sum: 1 } } }
+      ]);
+      totalCargasMonto = (totAgg[0] && totAgg[0].monto) || 0;
+      totalCargasCantidad = (totAgg[0] && totAgg[0].n) || 0;
     }
 
     const data = {
@@ -10537,6 +10550,8 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
       clicks,
       registros,
       primerasCargas,
+      totalCargasMonto,
+      totalCargasCantidad,
       updatedAt: new Date()
     };
     _campStatsCache.set(cacheKey, { at: Date.now(), data });

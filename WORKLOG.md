@@ -43,6 +43,17 @@
 
 ## Sesión 2026-08-20
 
+### 231. Stats del publicista: + total cargado (monto) y cantidad de cargas (para su ROI), SIN neto
+- **Pedido de OneKey:** ver el total de cargas para calcular su ROI en la
+  presentación. Decisión: mostrar BRUTO (monto + cantidad), NO el neto ni los
+  retiros (eso es margen propio).
+- **`GET /api/campaign-stats`** ahora suma `totalCargasMonto` y
+  `totalCargasCantidad` (deposits de los usuarios de la campaña, excluye
+  payout_refund, con el filtro de fecha). Página `/campana`: 2 tarjetas nuevas
+  "💵 Total cargado (para tu ROI)" y "🔢 Cantidad de cargas".
+- **Validado:** `node --check` OK (server.js) + parseo campana.html. **Back
+  necesita redeploy**; la página se sirve desde el back.
+
 ### 230. Bono de PRIMERA CARGA (100% a TODOS, una sola vez, sin errores)
 - **Pedido owner:** que la PRIMERA carga de todos reciba 100% de bono
   automático, solo la primera, sin fallar.
