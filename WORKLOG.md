@@ -43,6 +43,20 @@
 
 ## Sesión 2026-08-20
 
+### 222. "¿Cómo funciona?" abre desde arriba + aviso claro cuando responde SOPORTE
+- **(1) "¿Cómo funciona?":** abría mostrando el final del bloque (porque
+  `_botMsg` scrollea al fondo). Ahora `area.scrollTop = 0` tras renderizar →
+  se ve desde arriba.
+- **(2) Aviso de Soporte (owner 2026-08-22):** cuando el cliente habla a
+  soporte, cierra, y soporte responde, oía el sonido pero no sabía de dónde
+  venía. Ahora el observer del chat cuenta SOLO los mensajes ENTRANTES (clase
+  `.message.usuario`; los propios son `.agente`) y, si no está viendo el chat
+  de soporte, muestra: **badge rojo en el botón "🎧 Soporte"** + **toast
+  "💬 Soporte te respondió — tocá 🎧 Soporte"** (throttle 4s). El badge se
+  limpia al entrar a soporte (`casinoBotSupport`). Antes el badge de la
+  burbuja contaba cualquier nodo (incluidos los propios).
+- **Validado:** `node --check` OK (ui.js). SW **v126**. Solo front.
+
 ### 221. CAPI a publicistas: SOLO registro + PRIMERA carga (FTD) — sin retiros ni cargas siguientes
 - **Pedido owner:** a los pixels de PUBLICISTA que les llegue solo el alta y la
   primera carga de cada cliente; los retiros y las cargas siguientes NO. Igual

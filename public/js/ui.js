@@ -1377,8 +1377,11 @@ VIP.ui._showCasinoFrame = function() {
           'color:#fff;border:none;border-radius:9px;padding:10px 6px;font-size:12px;font-weight:800;cursor:pointer;">💳 Quiero Depositar</button>' +
           '<button type="button" onclick="VIP.ui.casinoBotGo(\'withdraw\')" style="flex:1.2;background:#128c4a;' +
           'color:#fff;border:none;border-radius:9px;padding:10px 6px;font-size:12px;font-weight:800;cursor:pointer;">💲 Solicitar Retiro</button>' +
-          '<button type="button" class="cwSop" onclick="VIP.ui.casinoBotSupport()" style="flex:0.8;' +
-          'border-radius:9px;padding:10px 4px;font-size:12px;font-weight:800;cursor:pointer;">🎧 Soporte</button>' +
+          '<button type="button" id="casinoSoporteBtn" class="cwSop" onclick="VIP.ui.casinoBotSupport()" style="flex:0.8;' +
+          'position:relative;border-radius:9px;padding:10px 4px;font-size:12px;font-weight:800;cursor:pointer;">🎧 Soporte' +
+          '<span id="casinoSoporteBadge" style="display:none;position:absolute;top:-6px;right:-6px;' +
+          'background:#e53935;color:#fff;border-radius:11px;min-width:18px;height:18px;line-height:18px;' +
+          'font-size:11px;font-weight:800;padding:0 4px;text-align:center;">0</span></button>' +
         '</div>' +
         // 2ª fila: Información (aparte de las 3 acciones).
         '<div class="cwBar" style="flex:0 0 auto;display:flex;padding:0 8px 8px;">' +
@@ -1450,16 +1453,30 @@ VIP.ui._showCasinoFrame = function() {
         // el panel esté abierto — el badge solo se calla si el chat vivo está
         // montado (modo soporte, _casinoChatPh seteado).
         const drawer = document.getElementById('casinoChatDrawer');
-        if (drawer && drawer.style.display !== 'none' && VIP.ui._casinoChatPh) return;
-        let added = 0;
-        for (let i = 0; i < muts.length; i++) added += muts[i].addedNodes.length;
-        if (!added) return;
-        VIP.ui._casinoChatUnread = (VIP.ui._casinoChatUnread || 0) + added;
+        const supportOnView = drawer && drawer.style.display !== 'none' && VIP.ui._casinoChatPh;
+        if (supportOnView) return;
+        // Contar SOLO los mensajes ENTRANTES (de soporte). Los del propio
+        // usuario tienen clase `.message.agente`; los de soporte, `.usuario`.
+        let incoming = 0;
+        for (let i = 0; i < muts.length; i++) {
+          for (let j = 0; j < muts[i].addedNodes.length; j++) {
+            const node = muts[i].addedNodes[j];
+            if (node && node.querySelector) {
+              const m = node.querySelector('.message.usuario') || (node.classList && node.classList.contains('usuario') ? node : null);
+              if (m) incoming++;
+            }
+          }
+        }
+        if (!incoming) return;
+        // Badge genérico en la burbuja + badge y aviso de SOPORTE (owner
+        // 2026-08-22): que el usuario sepa que el sonido vino de Soporte.
+        VIP.ui._casinoChatUnread = (VIP.ui._casinoChatUnread || 0) + incoming;
         const badge = document.getElementById('casinoChatBadge');
         if (badge) {
           badge.textContent = VIP.ui._casinoChatUnread > 9 ? '9+' : String(VIP.ui._casinoChatUnread);
           badge.style.display = 'inline-block';
         }
+        VIP.ui._notifySupportReply(incoming);
       });
       VIP.ui._casinoChatObserver.observe(msgs, { childList: true });
     }
@@ -1691,6 +1708,9 @@ VIP.ui.casinoBotGo = function(state) {
       '<div class="cwBox" style="border-radius:9px;padding:9px 11px;"><b>🎧 Soporte</b><br>' +
       'Si algo no funciona, tocá <b>Soporte</b> y te atiende una persona.</div>' +
       '</div>');
+    // Que se vea desde ARRIBA (owner 2026-08-22): _botMsg baja al fondo, y como
+    // es un solo bloque largo quedaba mostrando el final. Se sube al inicio.
+    area.scrollTop = 0;
     return;
   }
 
@@ -1984,8 +2004,34 @@ VIP.ui.casinoBotWithdrawSubmit = async function() {
   }
 };
 
+/** Aviso claro de que respondió SOPORTE (owner 2026-08-22): badge rojo en el
+ *  botón "🎧 Soporte" + toast, para que el usuario sepa que el sonido vino de
+ *  soporte y dónde tocar. Solo cuando NO está viendo el chat de soporte. */
+VIP.ui._supportUnread = 0;
+VIP.ui._notifySupportReply = function(n) {
+  VIP.ui._supportUnread = (VIP.ui._supportUnread || 0) + (n || 1);
+  const badge = document.getElementById('casinoSoporteBadge');
+  if (badge) {
+    badge.textContent = VIP.ui._supportUnread > 9 ? '9+' : String(VIP.ui._supportUnread);
+    badge.style.display = 'inline-block';
+  }
+  // Toast (throttle 4s para no repetir con cada mensaje de una ráfaga).
+  const now = Date.now();
+  if (now - (VIP.ui._supportToastAt || 0) > 4000) {
+    VIP.ui._supportToastAt = now;
+    if (VIP.ui.showToast) VIP.ui.showToast('💬 Soporte te respondió — tocá 🎧 Soporte', 'info');
+  }
+};
+
+VIP.ui._clearSupportUnread = function() {
+  VIP.ui._supportUnread = 0;
+  const badge = document.getElementById('casinoSoporteBadge');
+  if (badge) badge.style.display = 'none';
+};
+
 /** FALLBACK humano: muda el chat real adentro del panel (modo soporte). */
 VIP.ui.casinoBotSupport = function() {
+  VIP.ui._clearSupportUnread(); // el usuario entra a ver soporte → sin pendientes
   VIP.ui._casinoChatMount();
   // Bienvenida automática del soporte (server-side, editable en COMANDOS como
   // /sys_soporte_bienvenida, con throttle para no spamear al agente). El

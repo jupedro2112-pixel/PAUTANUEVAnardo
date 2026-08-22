@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v125'; // v125: fix duplicado del bloque de comprobante (salia 2 veces al tocar 'ya hice la transferencia' dos veces)
+const CACHE_VERSION = 'v126'; // v126: '¿Como funciona?' abre desde arriba + aviso claro cuando responde Soporte (badge en boton + toast)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
