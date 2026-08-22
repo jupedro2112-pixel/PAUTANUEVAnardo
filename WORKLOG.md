@@ -43,6 +43,23 @@
 
 ## Sesión 2026-08-20
 
+### 226. "Tus últimos retiros" en la sección Retiro (estado + motivo del rechazo + hablar con soporte)
+- **Reclamo owner:** el motivo del rechazo llegaba al chat y la bienvenida de
+  soporte lo TAPABA. Pidió mostrar en Retiro los últimos retiros
+  (pendientes/hechos/rechazados) con el motivo ahí mismo, y un botón para ir a
+  soporte si cree que hay un error.
+- **Backend:** `GET /api/withdrawal/mine` (últimos 6 payouts: monto/estado/
+  fecha/rejectReason). El rechazo YA NO manda mensaje al chat — emite socket
+  `payout_rejected` + push; el motivo se ve en la sección Retiro.
+- **Widget (ui.js):** el estado 'withdraw' del asistente ahora muestra arriba
+  "📋 Tus últimos retiros" con un chip de estado (⏳ Pendiente / ✅ Pagado /
+  ❌ Rechazado / etc.); los rechazados muestran el **motivo** + botón
+  **"¿Creés que es un error? Hablá con soporte 🎧"** (→ abre soporte con su
+  bienvenida). `socket.js` escucha `payout_rejected` → toast + si el casino
+  está abierto, lleva directo a la vista de retiros.
+- **Validado:** `node --check` OK (server.js, ui.js, socket.js). SW **v129**.
+  **Back necesita redeploy.**
+
 ### 225. Retiro: SIN SMS obligatorio (temporal) + rechazo con MOTIVO que le llega al cliente
 - **Pedidos owner (2026-08-22):**
   1. **Sacar el SMS obligatorio del retiro** (temporal). El check

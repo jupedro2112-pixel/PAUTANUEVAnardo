@@ -10315,6 +10315,28 @@ app.get('/api/withdrawal/account', authMiddleware, async (req, res) => {
 // Verifica el saldo real en JugaYGana, ejecuta el retiro, guarda los datos
 // bancarios (opcional) y manda un mensaje automático al chat para que el agente
 // procese la transferencia bancaria.
+// MIS RETIROS — el cliente ve sus últimos retiros (estado + motivo si fue
+// rechazado) dentro de la sección de Retiro del widget (owner 2026-08-22).
+app.get('/api/withdrawal/mine', authMiddleware, async (req, res) => {
+  try {
+    const list = await PendingPayout.find({ userId: req.user.userId })
+      .sort({ createdAt: -1 }).limit(6)
+      .select('amount status createdAt rejectReason paidVia').lean();
+    res.json({
+      payouts: (list || []).map((p) => ({
+        amount: p.amount,
+        status: p.status,
+        createdAt: p.createdAt,
+        rejectReason: p.rejectReason || null,
+        paidVia: p.paidVia || null
+      }))
+    });
+  } catch (e) {
+    logger.warn(`[withdrawal/mine] falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 app.post('/api/withdrawal/request', authMiddleware, async (req, res) => {
   let withdrawLockAcquired = false;
   try {
@@ -16053,27 +16075,16 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
       const _reason = String((req.body && req.body.reason) || '').trim().slice(0, 300);
       await PendingPayout.updateOne({ id }, { $set: { rejectReason: _reason || null } }).catch(() => {});
       const _wAmt = Number(payout.amount).toLocaleString('es-AR');
-      const _msg = _reason
-        ? `❌ Tu retiro de $${_wAmt} fue RECHAZADO.\n\nMotivo: ${_reason}\n\nSi tenés dudas, escribinos por soporte.`
-        : `❌ Tu retiro de $${_wAmt} fue RECHAZADO. Escribinos por soporte para más información.`;
-      // Mensaje VISIBLE que ALERTA al cliente (no va como 'system'/auto: usa
-      // sender 'Retiros' para que dispare el aviso de mensaje nuevo en el
-      // widget y el cliente se entere del rechazo). + push si está offline.
-      const _rejMsg = await Message.create({
-        id: uuidv4(), senderId: 'retiros', senderUsername: 'Retiros 1Girox', senderRole: 'admin',
-        receiverId: payout.userId, receiverRole: 'user', content: _msg,
-        type: 'text', timestamp: new Date(), read: false
+      // El motivo se muestra dentro de la sección RETIRO del widget (GET
+      // /api/withdrawal/mine) — NO se manda al chat para que no quede tapado
+      // por la bienvenida de soporte (owner 2026-08-22). Se avisa por socket
+      // (el widget refresca "mis retiros") y por push si está offline.
+      io.to(`user_${payout.userId}`).emit('payout_rejected', {
+        amount: payout.amount, reason: _reason || null
       });
-      const _rejData = {
-        id: _rejMsg.id, senderId: 'retiros', senderUsername: 'Retiros 1Girox', senderRole: 'admin',
-        receiverId: payout.userId, receiverRole: 'user', content: _msg, timestamp: _rejMsg.timestamp, type: 'text'
-      };
-      io.to(`user_${payout.userId}`).emit('new_message', _rejData);
-      io.to(`chat_${payout.userId}`).emit('new_message', _rejData);
-      notifyAdmins('new_message', { message: _rejData, userId: payout.userId, username: payout.username });
       try {
         const _u = await User.findOne({ id: payout.userId }).select('id username fcmToken fcmTokens').lean();
-        if (_u) await sendPushIfOffline(_u, 'Retiro rechazado', 'Tocá para ver el motivo', { tag: 'chat-message' }, { forcePush: true });
+        if (_u) await sendPushIfOffline(_u, 'Retiro rechazado', 'Tocá para ver el motivo en Retiros', { tag: 'payout' }, { forcePush: true });
       } catch (_) {}
     } catch (_) {}
 

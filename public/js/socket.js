@@ -191,6 +191,20 @@ VIP.socket = (function () {
             }
         });
 
+        // Retiro RECHAZADO por el agente: el motivo se muestra en la sección
+        // Retiro del widget (no en el chat). Se avisa con un toast y, si el
+        // panel del casino está abierto, se refresca "mis retiros".
+        VIP.state.socket.on('payout_rejected', function (data) {
+            try {
+                var monto = data && data.amount ? '$' + Number(data.amount).toLocaleString('es-AR') : 'tu retiro';
+                if (VIP.ui && VIP.ui.showToast) VIP.ui.showToast('❌ ' + monto + ' rechazado — mirá el motivo en "Solicitar Retiro"', 'error');
+                if (VIP.ui && VIP.ui._casinoOpen && VIP.ui.casinoBotGo) {
+                    // Llevar directo a la vista de retiros con el motivo visible.
+                    VIP.ui.casinoBotGo('withdraw');
+                }
+            } catch (e) { /* nunca romper el socket */ }
+        });
+
         VIP.state.socket.on('messages_read_by_admin', function () {
             document.querySelectorAll('#chatMessages .msg-ticks').forEach(function (el) {
                 el.classList.add('msg-read');

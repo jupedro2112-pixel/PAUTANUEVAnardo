@@ -1869,6 +1869,9 @@ VIP.ui.casinoBotGo = function(state) {
       const el = document.getElementById('botWdAvail');
       if (el) el.textContent = '—';
     });
+    // "Tus últimos retiros" (owner 2026-08-22): estado de los últimos retiros;
+    // si uno salió RECHAZADO, muestra el motivo acá mismo + "Hablar con soporte".
+    VIP.ui._renderMyWithdrawals();
     return;
   }
 
@@ -1943,6 +1946,53 @@ VIP.ui.casinoBotPickReceipt = function() {
 /** Retiro: form adentro del panel (estado 'withdraw' del bot). */
 VIP.ui.casinoBotWithdraw = function() {
   VIP.ui.casinoBotGo('withdraw');
+};
+
+/** "Tus últimos retiros" dentro de la sección de Retiro: estado de cada uno y,
+ *  si salió RECHAZADO, el motivo + botón "Hablar con soporte" (owner
+ *  2026-08-22). Reemplaza al mensaje de rechazo en el chat (que quedaba tapado
+ *  por la bienvenida de soporte). */
+VIP.ui._renderMyWithdrawals = function() {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return;
+  fetch(`${VIP.config.API_URL}/api/withdrawal/mine`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    const list = (d && d.payouts) || [];
+    if (!list.length) return;
+    // Si el estado 'withdraw' ya cambió (el usuario navegó), no pintar.
+    if (!document.getElementById('botWdSubmit')) return;
+    const STATUS = {
+      pending_review: { t: '⏳ Pendiente', c: '#e3bd48' },
+      paying:         { t: '⏳ Procesando', c: '#e3bd48' },
+      paid:           { t: '✅ Pagado', c: '#25d366' },
+      failed:         { t: '⚠️ Con problema', c: '#e0a05a' },
+      cancelled:      { t: '❌ Rechazado', c: '#e05a5a' }
+    };
+    let html = '<div class="cwVal" style="font-size:14px;font-weight:800;margin-bottom:8px;">📋 Tus últimos retiros</div>';
+    list.forEach(function(p) {
+      const st = STATUS[p.status] || { t: p.status, c: '#8a939b' };
+      const monto = '$' + (Number(p.amount) || 0).toLocaleString('es-AR');
+      let fecha = '';
+      try { fecha = new Date(p.createdAt).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }); } catch (e) {}
+      html += '<div class="cwBox" style="border-radius:9px;padding:9px 11px;margin-bottom:6px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+          '<b class="cwVal" style="font-size:14px;">' + monto + '</b>' +
+          '<span style="color:' + st.c + ';font-size:12px;font-weight:800;">' + st.t + '</span></div>' +
+        (fecha ? '<div class="cwMut" style="font-size:10.5px;">' + fecha + '</div>' : '');
+      if (p.status === 'cancelled') {
+        html += '<div style="margin-top:6px;background:rgba(224,90,90,0.12);border-radius:8px;padding:7px 9px;">' +
+          '<div style="color:#e05a5a;font-size:11.5px;font-weight:700;">Motivo del rechazo:</div>' +
+          '<div class="cwVal" style="font-size:12.5px;">' + _wrEsc(p.rejectReason || 'No especificado. Consultá con soporte.') + '</div>' +
+          '<button type="button" onclick="VIP.ui.casinoBotSupport()" style="margin-top:7px;width:100%;' +
+          'background:#128c4a;color:#fff;border:none;border-radius:9px;padding:9px;font-size:12.5px;font-weight:800;cursor:pointer;">' +
+          '¿Creés que es un error? Hablá con soporte 🎧</button></div>';
+      }
+      html += '</div>';
+    });
+    const box = VIP.ui._botMsg(html);
+    if (box) area.scrollTop = area.scrollHeight;
+  }).catch(function() {});
 };
 
 /** Envía la solicitud de retiro del form del panel. */
