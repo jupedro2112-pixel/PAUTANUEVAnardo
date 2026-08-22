@@ -43,6 +43,30 @@
 
 ## Sesión 2026-08-20
 
+### 229. Acceso de SOLO LECTURA para el publicista: ve solo SU campaña (entraron/registros/FTD), sin tocar plata
+- **Pedido owner:** dar al publicista un acceso que muestre SOLO su campaña
+  (cuántos entraron, registros, primeras cargas) sin ningún riesgo de poder
+  cargar/retirar/ver otras campañas.
+- **Diseño (aislado, cero riesgo):** página aparte `public/campana.html` (ruta
+  `/campana?c=CODE&t=TOKEN`), NO entra al panel admin. Pega a un endpoint
+  público validado por token que devuelve SOLO números agregados de esa
+  campaña. Sin login de admin, sin acceso a chats/cargas/retiros/otras
+  campañas. Peor caso si se filtra el token: ver números de esa campaña.
+- **Backend:**
+  - `Campaign.statsToken` (select:false).
+  - `POST /api/admin/campaigns/:code/stats-token` (admin general) → genera/
+    regenera el token y devuelve la URL para pasarle al publicista.
+  - `GET /api/campaign-stats/:code?token=&days=` (público con token): entraron
+    (CampaignClick), registros (User.acquisitionCampaign), primeras cargas
+    (FTD: primer depósito real por usuario, agregación) — filtro hoy/7/30/total,
+    cache 60s. Ruta `/campana` registrada ANTES del vanity `/:code`.
+- **Panel:** botón "🔗 Link publicista" en cada campaña (admin general) → genera
+  el link, lo copia y lo muestra. Regenerar invalida el anterior.
+- **Validado:** `node --check` OK (server.js, Campaign.js, admin.js) + parseo
+  campana.html. **Back necesita redeploy**; panel recargar. PROBAR: generar el
+  link → abrirlo → ver los 3 números de esa campaña con filtro de fecha; con
+  token mal → "Acceso no válido".
+
 ### 228. Atribución LAST-TOUCH (elegido por el partner): la carga se acredita a la última campaña
 - **Decisión del partner (Martin/Pulse):** opción 2 = si el jugador vuelve por
   OTRA campaña/anuncio y convierte, la atribución se actualiza a esa última

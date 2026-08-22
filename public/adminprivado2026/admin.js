@@ -9160,6 +9160,7 @@ function renderCampaigns() {
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <button onclick="copyCampaignLink('${escapeHtml(c.code)}')" style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:#00ff88;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">📋 Copiar link</button>
                 <button onclick="viewCampaignStats('${escapeHtml(c.code)}')" style="background:rgba(212,175,55,0.1);border:1px solid #d4af37;color:#d4af37;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">📊 Ver detalle</button>
+                <button onclick="publisherStatsLink('${escapeHtml(c.code)}')" style="background:rgba(41,169,235,0.12);border:1px solid #29a9eb;color:#8fd0f7;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">🔗 Link publicista</button>
                 <button onclick="editCampaign('${escapeHtml(c.code)}')" style="background:rgba(99,102,241,0.1);border:1px solid #6366f1;color:#a5b4fc;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">✏️ Editar</button>
                 ${c.isActive ? `<button onclick="deactivateCampaign('${escapeHtml(c.code)}')" style="background:rgba(255,80,80,0.1);border:1px solid #ff5050;color:#ff8888;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">🛑 Desactivar</button>` : `<button onclick="reactivateCampaign('${escapeHtml(c.code)}')" style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:#00ff88;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">✅ Reactivar</button>`}
                 <button onclick="deleteCampaignPermanent('${escapeHtml(c.code)}')" style="background:rgba(180,40,40,0.18);border:1px solid #b42828;color:#ff6b6b;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;">🗑️ Borrar definitivamente</button>
@@ -9754,6 +9755,23 @@ function editCampaignFromStats() {
     closeCampaignStatsModal();
     editCampaign(_campaignStatsCurrentCode);
 }
+
+// Genera (o regenera) el link de SOLO LECTURA para que el publicista vea las
+// stats de SU campaña (entraron/registros/primeras cargas). No da acceso al
+// panel ni a cargar/retirar. Solo admin general.
+async function publisherStatsLink(code) {
+    if (!confirm('¿Generar el link de estadísticas para el publicista de "' + code + '"?\n\nSolo verá los números de ESA campaña (entraron, registros, primeras cargas). No puede cargar, retirar ni ver nada más.\n\nSi ya había un link, este lo reemplaza (el anterior deja de funcionar).')) return;
+    try {
+        const r = await authFetch('/api/admin/campaigns/' + encodeURIComponent(code) + '/stats-token', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok || !j.url) { showToast(j.error || 'No se pudo generar', 'error'); return; }
+        // Copiar al portapapeles + mostrar.
+        try { await navigator.clipboard.writeText(j.url); showToast('🔗 Link copiado — pasáselo al publicista', 'success'); }
+        catch (e) { showToast('Link generado', 'success'); }
+        prompt('Link de estadísticas para el publicista de ' + code + ' (solo lectura):', j.url);
+    } catch (e) { showToast('Error de conexión', 'error'); }
+}
+window.publisherStatsLink = publisherStatsLink;
 
 window.loadCampaigns = loadCampaigns;
 window.showCreateCampaignModal = showCreateCampaignModal;

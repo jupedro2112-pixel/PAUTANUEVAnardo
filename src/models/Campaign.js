@@ -137,6 +137,16 @@ const campaignSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Token de SOLO LECTURA para que el PUBLICISTA vea las estadísticas de SU
+  // campaña (entraron / registros / primeras cargas) desde una página aparte,
+  // SIN entrar al panel admin ni poder cargar/retirar nada (owner 2026-08-22).
+  // select:false — es una llave; si se filtra, el peor caso es ver números
+  // agregados de esa campaña, nada operativo. El admin general lo genera.
+  statsToken: {
+    type: String,
+    default: null,
+    select: false
+  },
   // === Influencers del publicista (sub-atribución para analítica) ===
   // Lista fija, gestionada por el admin general. Cuando un publisher_admin crea
   // un usuario, elige uno de estos influencers y el nombre queda en

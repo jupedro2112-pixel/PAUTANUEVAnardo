@@ -1063,6 +1063,13 @@ async function _getActiveCampaignsCached() {
   return items;
 }
 
+// Página de ESTADÍSTICAS del publicista (solo lectura). Se registra ANTES del
+// vanity /:code para que no la capture. La página lee ?c=CODE&t=TOKEN y pega al
+// endpoint público /api/campaign-stats. NO tiene nada del panel admin.
+app.get('/campana', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'campana.html'));
+});
+
 // Vanity URL para links de pauta:
 //   - https://vipcargas.com/MI_CODIGO          (matchea por Campaign.code)
 //   - https://vipcargas.com/juan-perez         (matchea por slug del publisher)
@@ -10353,6 +10360,103 @@ app.post('/api/landing/touch', landingIpLimiter, async (req, res) => {
   } catch (e) {
     logger.warn(`[landing-touch] falló: ${e.message}`);
     res.status(500).json({ ok: false });
+  }
+});
+
+// ============================================================
+// ESTADÍSTICAS DE CAMPAÑA PARA EL PUBLICISTA (solo lectura, owner 2026-08-22)
+// El publicista ve SOLO su campaña (entraron/registros/primeras cargas) desde
+// una página aparte con link + token. NO entra al panel admin, NO puede cargar
+// ni retirar ni ver datos de otras campañas. Es un endpoint público validado
+// por token; el peor caso si se filtra el token es ver números agregados.
+// ============================================================
+
+// Admin general: genera (o regenera) el token de stats y devuelve el link.
+app.post('/api/admin/campaigns/:code/stats-token', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin general' });
+    const code = String(req.params.code || '').toUpperCase().trim();
+    const camp = await Campaign.findOne({ code });
+    if (!camp) return res.status(404).json({ error: 'Campaña no encontrada' });
+    const token = crypto.randomBytes(16).toString('base64url'); // 128 bits
+    camp.statsToken = token;
+    await camp.save();
+    const url = `${getPublicBaseUrl()}/campana?c=${encodeURIComponent(code)}&t=${encodeURIComponent(token)}`;
+    res.json({ success: true, token, url });
+  } catch (e) {
+    logger.warn(`[campaign-stats] gen token falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Público (con token): stats agregadas de UNA campaña. Cache 60s por (code,days).
+const _campStatsCache = new Map();
+app.get('/api/campaign-stats/:code', async (req, res) => {
+  try {
+    const code = String(req.params.code || '').toUpperCase().trim();
+    const token = String(req.query.token || '').trim();
+    if (!code || !token) return res.status(400).json({ error: 'Falta código o token.' });
+
+    const camp = await Campaign.findOne({ code }).select('code publisher statsToken').lean();
+    if (!camp || !camp.statsToken || camp.statsToken !== token) {
+      return res.status(403).json({ error: 'Acceso no válido.' });
+    }
+
+    // Rango: 'hoy' | '7' | '30' | 'total' (default 30).
+    const daysParam = String(req.query.days || '30');
+    let sinceMs = null, label = 'Total';
+    if (daysParam === 'hoy') { sinceMs = Date.now() - 24 * 3600 * 1000; label = 'Últimas 24 hs'; }
+    else if (daysParam === '7') { sinceMs = Date.now() - 7 * 24 * 3600 * 1000; label = 'Últimos 7 días'; }
+    else if (daysParam === '30') { sinceMs = Date.now() - 30 * 24 * 3600 * 1000; label = 'Últimos 30 días'; }
+    else if (daysParam === 'total') { sinceMs = null; label = 'Total'; }
+
+    const cacheKey = code + '|' + daysParam;
+    const cached = _campStatsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.at) < 60000) {
+      return res.json(cached.data);
+    }
+
+    const since = sinceMs ? new Date(sinceMs) : null;
+
+    // 1) Entraron (clicks, dedup 30min ya aplicado al registrar el click).
+    const clickQ = { campaignCode: code };
+    if (since) clickQ.clickedAt = { $gte: since };
+    const clicks = await CampaignClick.countDocuments(clickQ);
+
+    // 2) Registros (usuarios de la campaña).
+    const regQ = { acquisitionCampaign: code, role: 'user' };
+    if (since) regQ.createdAt = { $gte: since };
+    const registros = await User.countDocuments(regQ);
+
+    // 3) Primeras cargas (FTD): usuarios de la campaña cuya PRIMERA carga real
+    //    cae en el rango. Se calcula el primer depósito por usuario y se cuenta.
+    const campUserIds = await User.find({ acquisitionCampaign: code, role: 'user' }).select('id').lean();
+    const ids = campUserIds.map((u) => u.id);
+    let primerasCargas = 0;
+    if (ids.length) {
+      const agg = await Transaction.aggregate([
+        { $match: { userId: { $in: ids }, type: 'deposit', 'metadata.source': { $ne: 'payout_refund' } } },
+        { $group: { _id: '$userId', firstAt: { $min: '$timestamp' } } },
+        ...(since ? [{ $match: { firstAt: { $gte: since } } }] : []),
+        { $count: 'n' }
+      ]);
+      primerasCargas = (agg[0] && agg[0].n) || 0;
+    }
+
+    const data = {
+      campaign: code,
+      publisher: camp.publisher || null,
+      range: label,
+      clicks,
+      registros,
+      primerasCargas,
+      updatedAt: new Date()
+    };
+    _campStatsCache.set(cacheKey, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    logger.warn(`[campaign-stats] falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
   }
 });
 

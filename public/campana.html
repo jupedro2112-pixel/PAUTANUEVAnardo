@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Estadísticas de campaña · 1GIROX</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d0d14; color:#e9edef; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         min-height:100vh; padding:20px; }
+  .wrap { max-width:520px; margin:0 auto; }
+  .head { text-align:center; margin:14px 0 18px; }
+  .logo { font-size:26px; font-weight:900; letter-spacing:0.5px; }
+  .logo .g { color:#d4af37; }
+  .sub { color:#8a939b; font-size:13px; margin-top:4px; }
+  .camp { display:inline-block; margin-top:10px; background:#151226; border:1px solid rgba(212,175,55,0.35);
+          border-radius:999px; padding:6px 16px; font-weight:800; font-size:14px; }
+  .tabs { display:flex; gap:6px; margin:16px 0; }
+  .tab { flex:1; background:#151226; border:1px solid #2a2740; color:#c9c9d6; border-radius:10px; padding:9px 4px;
+         font-size:12.5px; font-weight:700; cursor:pointer; text-align:center; }
+  .tab.on { background:#128c4a; color:#fff; border-color:#128c4a; }
+  .cards { display:flex; flex-direction:column; gap:12px; }
+  .card { background:#151226; border:1px solid #2a2740; border-radius:16px; padding:18px 18px; display:flex;
+          align-items:center; gap:14px; }
+  .ic { width:52px; height:52px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+        font-size:26px; flex:0 0 auto; }
+  .ic.a { background:rgba(41,169,235,0.15); } .ic.b { background:rgba(155,89,255,0.15); } .ic.c { background:rgba(37,211,102,0.15); }
+  .cval { font-size:30px; font-weight:900; line-height:1; }
+  .clbl { color:#8a939b; font-size:13px; margin-top:4px; }
+  .foot { text-align:center; color:#6b7280; font-size:11.5px; margin-top:18px; line-height:1.5; }
+  .err { background:#2a1414; border:1px solid #7a2a2a; color:#ff9b9b; border-radius:12px; padding:16px; text-align:center;
+         font-weight:700; margin-top:20px; }
+  .load { text-align:center; color:#8a939b; padding:30px; }
+  a.refresh { color:#25d366; text-decoration:none; font-weight:700; font-size:12.5px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo"><span class="g">1</span>GIROX</div>
+    <div class="sub">Estadísticas de tu campaña</div>
+    <div id="campBadge" class="camp" style="display:none;"></div>
+  </div>
+
+  <div id="content"><div class="load">Cargando…</div></div>
+
+  <div class="foot">
+    Datos actualizados cada minuto · <a class="refresh" id="refreshBtn">🔄 Actualizar</a><br>
+    <span id="upd"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var code = qs.get('c') || '';
+  var token = qs.get('t') || '';
+  var days = '30';
+  var content = document.getElementById('content');
+  var campBadge = document.getElementById('campBadge');
+  var upd = document.getElementById('upd');
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+  function fmt(n) { return (Number(n) || 0).toLocaleString('es-AR'); }
+
+  function render(d) {
+    campBadge.style.display = 'inline-block';
+    campBadge.textContent = '📣 ' + (d.campaign || code) + (d.publisher ? ' · ' + d.publisher : '');
+    content.innerHTML =
+      '<div class="tabs">' +
+        tab('hoy', 'Hoy') + tab('7', '7 días') + tab('30', '30 días') + tab('total', 'Total') +
+      '</div>' +
+      '<div class="cards">' +
+        card('a', '👀', d.clicks, 'Entraron (clics al link)') +
+        card('b', '📝', d.registros, 'Registros (cuentas creadas)') +
+        card('c', '💰', d.primerasCargas, 'Primeras cargas (FTD)') +
+      '</div>';
+    // Marcar el tab activo + cablear.
+    var tabs = content.querySelectorAll('.tab');
+    tabs.forEach(function (el) {
+      if (el.getAttribute('data-d') === days) el.classList.add('on');
+      el.onclick = function () { days = el.getAttribute('data-d'); load(); };
+    });
+    try { upd.textContent = 'Última actualización: ' + new Date(d.updatedAt).toLocaleTimeString('es-AR'); } catch (e) {}
+  }
+  function tab(d, label) { return '<div class="tab" data-d="' + d + '">' + label + '</div>'; }
+  function card(cls, icon, val, label) {
+    return '<div class="card"><div class="ic ' + cls + '">' + icon + '</div>' +
+      '<div><div class="cval">' + fmt(val) + '</div><div class="clbl">' + esc(label) + '</div></div></div>';
+  }
+
+  function load() {
+    if (!code || !token) { content.innerHTML = '<div class="err">Link inválido. Pedile a tu contacto el enlace correcto.</div>'; return; }
+    content.innerHTML = '<div class="load">Cargando…</div>';
+    fetch('/api/campaign-stats/' + encodeURIComponent(code) + '?token=' + encodeURIComponent(token) + '&days=' + days)
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { content.innerHTML = '<div class="err">' + esc((res.d && res.d.error) || 'No pudimos cargar los datos.') + '</div>'; return; }
+        render(res.d);
+      })
+      .catch(function () { content.innerHTML = '<div class="err">Sin conexión. Probá de nuevo.</div>'; });
+  }
+
+  document.getElementById('refreshBtn').onclick = load;
+  load();
+  // Auto-refresco cada 60s.
+  setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>
