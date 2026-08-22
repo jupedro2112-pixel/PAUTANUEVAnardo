@@ -2320,12 +2320,27 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     // plataforma responde duplicate:true y NO acredita dos veces. Es la misma
     // garantía que ya daba `chargeKey` en nuestra base, ahora también del otro lado.
     const _ref = `vip-hg-${chargeKey || movement.movementId}`;
-    const result = await girox.depositToUser(user.username, Number(amount), 'Carga automática (hgcash)', _ref);
+    // BONO DE PRIMERA CARGA (100% a todos, 1 vez): también en la auto-carga
+    // hgcash (owner 2026-08-22). Reserva atómica antes de cargar; el bono viaja
+    // NATIVO en el depósito. Si la carga o el bono fallan, se revierte la marca.
+    const _fcbHg = await claimFirstChargeBonus(user, Number(amount));
+    const _hgBonus = _fcbHg.bonus || 0;
+    const result = await girox.depositToUser(
+      user.username, Number(amount), 'Carga automática (hgcash)', _ref,
+      _hgBonus > 0 ? { bonusAmount: _hgBonus, bonusMultiplier: await getGiroxBonusMultiplier() } : null
+    );
     if (!result.success) {
+      if (_fcbHg.claimed) await revertFirstChargeBonus(user.id);
       if (chargeLocked) { try { await HgcashCharge.deleteOne({ chargeKey }); } catch (_) {} }
       await hgcashHandleChargeFailure(movClaim || movement, comprobante, result.error || 'fallo deposit', dataDesc, user);
       return;
     }
+    // Carga OK pero el bono adjunto falló → revertir la marca (lo recibe en la
+    // próxima carga) y seguir (la carga entró igual).
+    const _hgBonusApplied = _hgBonus > 0 && !result.bonusFailed;
+    if (_fcbHg.claimed && !_hgBonusApplied) await revertFirstChargeBonus(user.id);
+    // Liberar el bono si quedó "a reclamar" (claim_required=true).
+    if (_hgBonusApplied) { try { await girox.claimPendingBonus(user.username); } catch (_) {} }
 
     await BankMovement.updateOne({ movementId: movement.movementId }, {
       $set: { matchStatus: 'auto_charged', matchedUserId: user.id, matchedUsername: user.username, matchedComprobanteId: comprobante.id, chargedAt: new Date() }
@@ -2336,6 +2351,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     try { await recordUserActivity(user.id, 'deposit', Number(amount)); } catch (_) {}
     await Transaction.create({
       id: uuidv4(), type: 'deposit', amount: Number(amount),
+      bonus: _hgBonusApplied ? _hgBonus : 0,
       username: user.username, userId: user.id,
       description: `Carga automática hgcash (${opDesc})`,
       adminUsername: 'auto-hgcash', adminRole: 'system',
@@ -2351,10 +2367,15 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
       if (balRes.success) newBalance = balRes.balance;
     } catch (_) {}
     const balStr = newBalance !== null ? `$${newBalance}` : 'actualizándose 🔄';
-    const depositCmd = await Command.findOne({ name: '/sys_deposit', isActive: true });
-    const depositTpl = resolveSysContent(depositCmd, `🔒💰 Depósito de $${Number(amount).toLocaleString('es-AR')} acreditado con éxito. ✅\n💸 Tu nuevo saldo es ${balStr} 💸`);
+    // Si aplicó el bono de primera carga, usar la plantilla /sys_deposit_bonus.
+    const _hgDepCmdName = _hgBonusApplied ? '/sys_deposit_bonus' : '/sys_deposit';
+    const depositCmd = await Command.findOne({ name: _hgDepCmdName, isActive: true });
+    const _hgFallback = _hgBonusApplied
+      ? `🔒💰 Depósito de $${Number(amount).toLocaleString('es-AR')} (incluye $${_hgBonus.toLocaleString('es-AR')} de bonificación) acreditado con éxito. ✅\n💸 Tu nuevo saldo es ${balStr} 💸`
+      : `🔒💰 Depósito de $${Number(amount).toLocaleString('es-AR')} acreditado con éxito. ✅\n💸 Tu nuevo saldo es ${balStr} 💸`;
+    const depositTpl = resolveSysContent(depositCmd, _hgFallback);
     if (depositTpl) { // null = comando vaciado a propósito → no enviar mensaje al cliente
-      const clientMsg = depositTpl.replace(/\{amount\}/g, Number(amount)).replace(/\{bonus\}/g, 0).replace(/\{balance\}/g, newBalance !== null ? newBalance : 'actualizándose');
+      const clientMsg = depositTpl.replace(/\{amount\}/g, Number(amount)).replace(/\{bonus\}/g, _hgBonusApplied ? _hgBonus : 0).replace(/\{balance\}/g, newBalance !== null ? newBalance : 'actualizándose');
       const sysMsg = await Message.create({
         id: uuidv4(), senderId: 'admin', senderUsername: 'Sistema', senderRole: 'admin',
         receiverId: user.id, receiverRole: 'user', content: clientMsg, type: 'system', timestamp: new Date(), read: false

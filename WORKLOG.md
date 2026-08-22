@@ -63,10 +63,10 @@
   depósito y el mensaje al cliente ahora usan el bono EFECTIVO (`_effectiveBonus`)
   en vez del bono del agente (que es 0 en auto-bono) → el auto-bono se registra
   bien y el cliente ve el mensaje "incluye $X de bonificación".
-- **Alcance:** implementado en la carga del AGENTE (`/api/admin/deposit`, el
-  flujo real con hgcash en sombra). La auto-carga hgcash y `/api/movements/
-  deposit` (legacy) no lo aplican todavía; si se activa la auto-carga, se
-  agrega ahí igual.
+- **Alcance:** implementado en la carga del AGENTE (`/api/admin/deposit`) Y en
+  la AUTO-CARGA hgcash (2026-08-22): misma reserva atómica + revert; el bono
+  viaja nativo, se auto-reclama, y el mensaje/Transaction reflejan el bono.
+  `/api/movements/deposit` (legacy, sin uso) no lo aplica.
 - **Validado:** `node --check` OK (server.js, User.js, admin.js). **Back
   necesita redeploy**; panel recargar. Viene APAGADO por defecto → activar en
   la card. PROBAR: activar 100% → cargarle a un cliente NUEVO → recibe carga +
