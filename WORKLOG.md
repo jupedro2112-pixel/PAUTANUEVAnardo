@@ -43,6 +43,27 @@
 
 ## Sesión 2026-08-20
 
+### 228. Atribución LAST-TOUCH (elegido por el partner): la carga se acredita a la última campaña
+- **Decisión del partner (Martin/Pulse):** opción 2 = si el jugador vuelve por
+  OTRA campaña/anuncio y convierte, la atribución se actualiza a esa última
+  interacción, manteniendo UNA cuenta y sin duplicar eventos.
+- **Cómo:** cuando un dispositivo YA registrado vuelve a la landing con un
+  `fbclid` nuevo (otra campaña), la landing llama a **`POST /api/landing/touch`**
+  {username (del localStorage), fbc, fbp, campaignCode} → el server ACTUALIZA
+  `metaFbc`/`metaFbp` del usuario al último clic + guarda `lastTouchCampaign`.
+  Como el Purchase (carga, manual o self-service) usa `user.metaFbc` al momento
+  de disparar, la conversión queda atribuida en Meta a la ÚLTIMA campaña. No
+  crea cuenta, no re-dispara CompleteRegistration.
+- **Alcance:** se actualiza la atribución de META (fbc/fbp). NO se toca
+  `giroxOwnerCampaign` (ruteo de key del publicista) ni `acquisitionCampaign`
+  para no romper el alta bajo sub-agente. `lastTouchCampaign` queda para
+  visibilidad interna. Solo aplica cuando reconocemos el dispositivo
+  (localStorage); incógnito/otro dispositivo crea cuenta nueva (first-touch de
+  esa cuenta), como es esperable.
+- **Validado:** `node --check` OK (server.js, User.js) + parseo landing. **Back
+  necesita redeploy**; landing en Vercel con el push. Campos nuevos en User
+  (default null, sin migración).
+
 ### 227. Retiro pagado en VIVO + comprobante del pago hgcash como detalle en "Tus últimos retiros"
 - **Pedido owner:** que cuando el pago se aprueba salga "Pagado", y si fue por
   hgcash (API) que el comprobante aparezca como detalle del pago confirmado.

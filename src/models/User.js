@@ -434,6 +434,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // Atribución LAST-TOUCH (owner 2026-08-22, pedido del partner): si el jugador
+  // vuelve por OTRA campaña/anuncio y después convierte, la conversión (carga)
+  // se atribuye a esa ÚLTIMA interacción. `metaFbc`/`metaFbp` se ACTUALIZAN al
+  // último clic (antes eran fijos al primero). Se guarda la campaña del último
+  // toque para visibilidad interna (no cambia el ruteo de key del publicista).
+  lastTouchCampaign: { type: String, default: null },
+  lastTouchAt: { type: Date, default: null },
   // URL completa con la que aterrizó el usuario (incluye ?fbclid, ?p=,
   // utm_*). Se manda en cada conversión al sistema externo fb-ads para
   // que pueda atribuir al anuncio específico que lo trajo. Se actualiza

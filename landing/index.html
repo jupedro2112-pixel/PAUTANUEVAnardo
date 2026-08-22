@@ -346,6 +346,24 @@
     var signed = null;
     try { signed = localStorage.getItem('girox_signed'); } catch (e) {}
     if (!signed) return;
+
+    // LAST-TOUCH (owner 2026-08-22): si el jugador YA registrado vuelve por OTRA
+    // campaña/anuncio (viene con fbclid nuevo), actualizamos su atribución de
+    // Meta al último clic → la próxima carga se acredita a ESA campaña. No crea
+    // cuenta ni dispara registro. Solo si hay fbclid (o sea, vino de un anuncio).
+    try {
+      var _hasClick = new URLSearchParams(location.search).get('fbclid');
+      if (_hasClick && signed && signed !== '1') {
+        fetch(API_BASE + '/api/landing/touch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: signed, campaignCode: resolveCampaign(),
+            fbc: fbcFromUrl(), fbp: cookie('_fbp'), landingUrl: location.href
+          })
+        }).catch(function () {});
+      }
+    } catch (e) {}
+
     if (scForm) scForm.style.display = 'none';
     var box = document.createElement('section');
     box.className = 'done on';

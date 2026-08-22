@@ -10323,6 +10323,39 @@ app.get('/api/withdrawal/account', authMiddleware, async (req, res) => {
 // Verifica el saldo real en JugaYGana, ejecuta el retiro, guarda los datos
 // bancarios (opcional) y manda un mensaje automático al chat para que el agente
 // procese la transferencia bancaria.
+// LAST-TOUCH (owner 2026-08-22, pedido del partner): cuando un jugador que YA
+// tiene cuenta vuelve a la landing por OTRA campaña/anuncio, la landing llama
+// acá para ACTUALIZAR su atribución de Meta (metaFbc/metaFbp) al último clic →
+// la próxima carga (conversión) se atribuye a esa última campaña. No crea
+// cuenta ni dispara evento de registro (se mantiene 1 sola cuenta). El username
+// viene del dispositivo (localStorage); solo se tocan campos de atribución
+// (no sensibles), y solo si llega un fbclid/fbc real.
+app.post('/api/landing/touch', landingIpLimiter, async (req, res) => {
+  try {
+    const { username, fbc, fbp, campaignCode, landingUrl } = req.body || {};
+    const uname = String(username || '').trim();
+    const newFbc = sanitizeFbCookie(fbc);
+    const newFbp = sanitizeFbCookie(fbp);
+    // Sin fbc válido no hay atribución nueva que aplicar → no hacemos nada.
+    if (!uname || !newFbc) return res.json({ ok: false, reason: 'no_attribution' });
+
+    const set = { metaFbc: newFbc, lastTouchAt: new Date() };
+    if (newFbp) set.metaFbp = newFbp;
+    if (campaignCode) set.lastTouchCampaign = String(campaignCode).toUpperCase().trim().slice(0, 40);
+    if (typeof landingUrl === 'string' && landingUrl.length <= 2000) set.landingUrl = landingUrl;
+
+    // Solo cuentas de jugador (role user). Actualiza al último toque.
+    const u = await findUserByUsernameCI(uname, { select: 'id role' });
+    if (!u || u.role !== 'user') return res.json({ ok: false, reason: 'not_found' });
+    await User.updateOne({ id: u.id }, { $set: set });
+    logger.info(`[landing-touch] atribución actualizada (last-touch) para ${uname}${set.lastTouchCampaign ? ' → ' + set.lastTouchCampaign : ''}`);
+    res.json({ ok: true });
+  } catch (e) {
+    logger.warn(`[landing-touch] falló: ${e.message}`);
+    res.status(500).json({ ok: false });
+  }
+});
+
 // MIS RETIROS — el cliente ve sus últimos retiros (estado + motivo si fue
 // rechazado) dentro de la sección de Retiro del widget (owner 2026-08-22).
 app.get('/api/withdrawal/mine', authMiddleware, async (req, res) => {
