@@ -10339,9 +10339,11 @@ app.post('/api/withdrawal/request', authMiddleware, async (req, res) => {
     const user = await User.findOne({ id: req.user.userId });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    // Para retirar, la cuenta debe tener el teléfono verificado por SMS.
-    // El registro es sin SMS, pero el retiro siempre exige verificación.
-    if (user.phoneVerified !== true) {
+    // SMS al retirar: DESACTIVADO temporalmente (owner 2026-08-22). Para
+    // volver a exigirlo, setear WITHDRAW_REQUIRE_SMS=true en SSM. Con el flag
+    // en true vuelve a pedir teléfono verificado como antes.
+    if (String(process.env.WITHDRAW_REQUIRE_SMS || '').toLowerCase() === 'true'
+        && user.phoneVerified !== true) {
       return res.status(400).json({
         error: 'Para retirar tu premio necesitás verificar tu teléfono por SMS.',
         code: 'PHONE_VERIFICATION_REQUIRED'
@@ -16042,6 +16044,38 @@ app.post('/api/admin/payouts/:id/cancel', authMiddleware, withdrawerMiddleware, 
       { new: true }
     );
     if (!payout) return res.status(400).json({ error: 'No se pudo rechazar (ya está pagado o en proceso).' });
+
+    // MOTIVO del rechazo → mensaje VISIBLE para el cliente (owner 2026-08-22:
+    // "que se pueda explicar el porqué y le llegue al usuario"). El agente lo
+    // escribe en el panel; si no puso motivo, va un texto genérico. Se guarda
+    // en el payout y se le manda al cliente (lo ve en su chat de retiros).
+    try {
+      const _reason = String((req.body && req.body.reason) || '').trim().slice(0, 300);
+      await PendingPayout.updateOne({ id }, { $set: { rejectReason: _reason || null } }).catch(() => {});
+      const _wAmt = Number(payout.amount).toLocaleString('es-AR');
+      const _msg = _reason
+        ? `❌ Tu retiro de $${_wAmt} fue RECHAZADO.\n\nMotivo: ${_reason}\n\nSi tenés dudas, escribinos por soporte.`
+        : `❌ Tu retiro de $${_wAmt} fue RECHAZADO. Escribinos por soporte para más información.`;
+      // Mensaje VISIBLE que ALERTA al cliente (no va como 'system'/auto: usa
+      // sender 'Retiros' para que dispare el aviso de mensaje nuevo en el
+      // widget y el cliente se entere del rechazo). + push si está offline.
+      const _rejMsg = await Message.create({
+        id: uuidv4(), senderId: 'retiros', senderUsername: 'Retiros 1Girox', senderRole: 'admin',
+        receiverId: payout.userId, receiverRole: 'user', content: _msg,
+        type: 'text', timestamp: new Date(), read: false
+      });
+      const _rejData = {
+        id: _rejMsg.id, senderId: 'retiros', senderUsername: 'Retiros 1Girox', senderRole: 'admin',
+        receiverId: payout.userId, receiverRole: 'user', content: _msg, timestamp: _rejMsg.timestamp, type: 'text'
+      };
+      io.to(`user_${payout.userId}`).emit('new_message', _rejData);
+      io.to(`chat_${payout.userId}`).emit('new_message', _rejData);
+      notifyAdmins('new_message', { message: _rejData, userId: payout.userId, username: payout.username });
+      try {
+        const _u = await User.findOne({ id: payout.userId }).select('id username fcmToken fcmTokens').lean();
+        if (_u) await sendPushIfOffline(_u, 'Retiro rechazado', 'Tocá para ver el motivo', { tag: 'chat-message' }, { forcePush: true });
+      } catch (_) {}
+    } catch (_) {}
 
     // FLUJO NUEVO (deductAtPay): las fichas NO se descuentan al solicitar.
     //  - Si todavía NO se confirmó el pago (debitConfirmed !== true) → NO se descontó nada

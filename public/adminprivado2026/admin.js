@@ -3039,10 +3039,16 @@ async function payPayout(id) {
 }
 
 async function cancelPayout(id) {
-    if (!confirm('¿Rechazar este pago? NO se paga. Como las fichas se descuentan recién al pagar, acá no hay nada que devolver: solo se cancela la solicitud.')) return;
+    // Motivo del rechazo → se le manda al CLIENTE (owner 2026-08-22). Opcional:
+    // si lo deja vacío, al cliente le llega un mensaje genérico.
+    var reason = prompt('¿Por qué se rechaza el retiro? (se le explica al cliente)\nDejalo vacío para un mensaje genérico:', '');
+    if (reason === null) return; // canceló el prompt → no rechaza
     const el = document.getElementById('chatPayoutBanner');
     try {
-        const r = await authFetch('/api/admin/payouts/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+        const r = await authFetch('/api/admin/payouts/' + encodeURIComponent(id) + '/cancel', {
+            method: 'POST',
+            body: JSON.stringify({ reason: String(reason || '').trim() })
+        });
         const j = await r.json();
         if (r.ok && j.success) {
             // Flujo nuevo: noDeduction = no se había descontado nada (caso normal).

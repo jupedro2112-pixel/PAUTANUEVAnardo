@@ -44,6 +44,8 @@ const pendingPayoutSchema = new mongoose.Schema({
   paidBy: { type: String, default: null },   // agente que confirmó
   paidAt: { type: Date, default: null },
   error: { type: String, default: null },
+  // Motivo del rechazo que el agente le explica al cliente (owner 2026-08-22).
+  rejectReason: { type: String, default: null },
   // Forma de pago: 'hgcash' (automático) | 'other_bank' (pagado manual por otro banco)
   paidVia: { type: String, default: null },
   // Si al rechazar se le devolvieron las fichas al cliente (re-crédito en JUGAYGANA)

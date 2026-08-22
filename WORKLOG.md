@@ -43,6 +43,25 @@
 
 ## Sesión 2026-08-20
 
+### 225. Retiro: SIN SMS obligatorio (temporal) + rechazo con MOTIVO que le llega al cliente
+- **Pedidos owner (2026-08-22):**
+  1. **Sacar el SMS obligatorio del retiro** (temporal). El check
+     `phoneVerified` en `/api/withdrawal/request` ahora solo aplica si
+     `WITHDRAW_REQUIRE_SMS=true` (SSM). Por defecto NO pide SMS → el retiro se
+     completa directo desde el widget y crea el PendingPayout normal →
+     adminprivado sección **Pagos** (ya movía el chat a payments). Sin el
+     fallback al modal viejo con OTP. Para reactivar: `WITHDRAW_REQUIRE_SMS=true`.
+  2. **Rechazo con motivo:** el panel ("Rechazar") ahora PIDE el motivo
+     (prompt; vacío = genérico) y lo manda en el body. El backend lo guarda
+     (`PendingPayout.rejectReason`) y le manda al CLIENTE un mensaje VISIBLE
+     ("❌ Tu retiro de $X fue RECHAZADO. Motivo: …") que además ALERTA (sender
+     'Retiros 1Girox', no 'system' → dispara el aviso del widget) + push si
+     está offline. El flujo de retiro es el de siempre: confirma/rechaza el
+     admin de Pagos.
+- **Validado:** `node --check` OK (server.js, admin.js, PendingPayout.js). SW
+  **v128**. **Back necesita redeploy.** ⚠️ El SMS queda OFF por defecto tras el
+  deploy (pedido del owner); reactivar con la env cuando quiera.
+
 ### 224. Landing: sacado el link "crear otra cuenta" de la pantalla "ya tenés cuenta"
 - El link "¿No sos vos? Crear otra cuenta" (#223) contradecía el dedup pedido
   por el partner (dejaba re-registrarse). Sacado: una cuenta por dispositivo,
