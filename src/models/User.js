@@ -441,6 +441,11 @@ const userSchema = new mongoose.Schema({
   // toque para visibilidad interna (no cambia el ruteo de key del publicista).
   lastTouchCampaign: { type: String, default: null },
   lastTouchAt: { type: Date, default: null },
+
+  // Bono de PRIMERA CARGA (100% a TODOS, una sola vez — owner 2026-08-22). Se
+  // marca true de forma ATÓMICA cuando se aplica en la primera carga real del
+  // cliente, para que NUNCA se dé dos veces. Si esa carga falla, se revierte.
+  firstChargeBonusDone: { type: Boolean, default: false },
   // URL completa con la que aterrizó el usuario (incluye ?fbclid, ?p=,
   // utm_*). Se manda en cada conversión al sistema externo fb-ads para
   // que pueda atribuir al anuncio específico que lo trajo. Se actualiza

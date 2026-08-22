@@ -534,6 +534,56 @@ async function _isFirstDeposit(userId) {
   }
 }
 
+// ============================================================
+// BONO DE PRIMERA CARGA (100% a TODOS, una sola vez — owner 2026-08-22)
+// Config['firstChargeBonus'] = { enabled, percent } (default off, 100%).
+// ============================================================
+async function getFirstChargeBonusConfig() {
+  try {
+    const raw = await getConfig('firstChargeBonus', null);
+    if (raw && typeof raw === 'object') {
+      return {
+        enabled: raw.enabled === true,
+        percent: Math.max(0, Math.min(500, Math.round(Number(raw.percent) || 0)))
+      };
+    }
+  } catch (_) {}
+  return { enabled: false, percent: 100 };
+}
+
+// Reclama (ATÓMICO) el bono de primera carga. Devuelve {bonus, claimed}.
+// Solo si: está activo, es la PRIMERA carga real del cliente (sin depósitos
+// previos) y no lo reclamó antes. `claimed:true` → hay que revertir si la carga
+// falla (revertFirstChargeBonus). Se llama ANTES de la carga.
+async function claimFirstChargeBonus(user, amount) {
+  try {
+    const cfg = await getFirstChargeBonusConfig();
+    if (!cfg.enabled || cfg.percent <= 0) return { bonus: 0, claimed: false };
+    // ¿Ya cargó alguna vez? (excluye devoluciones de retiro) → no es la primera.
+    const prior = await Transaction.countDocuments({
+      userId: String(user.id), type: 'deposit', 'metadata.source': { $ne: 'payout_refund' }
+    });
+    if (prior > 0) return { bonus: 0, claimed: false };
+    // Reserva atómica: solo UN depósito puede reclamar el bono (anti doble).
+    const claimed = await User.findOneAndUpdate(
+      { id: user.id, firstChargeBonusDone: { $ne: true } },
+      { $set: { firstChargeBonusDone: true } },
+      { new: false }
+    ).lean();
+    if (!claimed) return { bonus: 0, claimed: false };
+    return { bonus: Math.round(Number(amount) * cfg.percent / 100), claimed: true, percent: cfg.percent };
+  } catch (e) {
+    logger.warn(`[first-charge-bonus] claim falló: ${e.message}`);
+    return { bonus: 0, claimed: false };
+  }
+}
+
+async function revertFirstChargeBonus(userId) {
+  try {
+    await User.updateOne({ id: userId, firstChargeBonusDone: true }, { $set: { firstChargeBonusDone: false } });
+  } catch (_) {}
+}
+
 // Valida y normaliza un valor de cookie _fbc / _fbp de Meta antes de
 // persistirlo o reenviarlo a Conversions API. El formato real es
 // `fb.<subdomainIndex>.<creationTimeMs>.<payload>` (ej: fb.1.1747531860000.IwAR0...).
@@ -8085,7 +8135,9 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
     // Reserva atómica pending→(marca temporal) para no aplicarlo dos veces si
     // hay dos cargas casi simultáneas.
     let _roulPct = 0, _roulClaimed = false;
+    let _fcbBonus = 0, _fcbClaimed = false;
     if (!(parseFloat(bonus) > 0)) {
+      // 1) Ruleta de bienvenida (%), si el cliente tiene una pendiente.
       try {
         const _ru = await User.findOne({ id: user.id, welcomeRouletteStatus: 'pending', welcomeRoulettePrizeType: 'percent' })
           .select('welcomeRoulettePrizeValue').lean();
@@ -8099,8 +8151,13 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
           if (_claim) { _roulPct = _ru.welcomeRoulettePrizeValue; _roulClaimed = true; }
         }
       } catch (e) { logger.warn(`[welcome-roulette] auto-aplicar % falló: ${e.message}`); }
+      // 2) Si no hubo ruleta, BONO DE PRIMERA CARGA (100% a todos, 1 vez).
+      if (_roulPct === 0) {
+        const _fcb = await claimFirstChargeBonus(user, amount);
+        _fcbBonus = _fcb.bonus; _fcbClaimed = _fcb.claimed;
+      }
     }
-    const _autoBonus = _roulPct > 0 ? Math.round(parseFloat(amount) * _roulPct / 100) : 0;
+    const _autoBonus = _roulPct > 0 ? Math.round(parseFloat(amount) * _roulPct / 100) : _fcbBonus;
     const _effectiveBonus = _autoBonus > 0 ? _autoBonus : parseFloat(bonus);
 
     const bonusRequested = _effectiveBonus > 0;
@@ -8120,6 +8177,11 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
         { id: user.id, welcomeRouletteStatus: 'used', welcomeRouletteUsedBy: req.user.username || 'auto' },
         { $set: { welcomeRouletteStatus: 'pending', welcomeRouletteUsedAt: null, welcomeRouletteUsedBy: null } }
       ).catch(() => {});
+    }
+    // Ídem bono de PRIMERA CARGA: si la carga o el bono fallaron, se revierte la
+    // marca para que el cliente pueda recibirlo en su primera carga exitosa.
+    if (_fcbClaimed && (!result.success || result.bonusFailed)) {
+      await revertFirstChargeBonus(user.id);
     }
 
     if (result.success) {
@@ -8219,8 +8281,11 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       }
       const balanceStr = newBalance !== null ? `$${newBalance}` : 'actualizándose 🔄';
 
-      // Crear mensaje de sistema para el usuario
-      const depositCmdName = parseFloat(bonus) > 0 ? '/sys_deposit_bonus' : '/sys_deposit';
+      // Crear mensaje de sistema para el usuario. Usa el bono EFECTIVO (agente,
+      // ruleta o primera carga) para elegir la plantilla y mostrar el monto —
+      // así el auto-bono (ruleta / primera carga) también se ve en el mensaje.
+      const _effBonusApplied = bonusActuallyApplied ? _effectiveBonus : 0;
+      const depositCmdName = _effBonusApplied > 0 ? '/sys_deposit_bonus' : '/sys_deposit';
       const depositCmd = await Command.findOne({ name: depositCmdName, isActive: true });
       // Si el comando existe pero fue vaciado desde el panel → no se envía la confirmación.
       const depositMsgDisabled = depositCmd && (!depositCmd.response || !String(depositCmd.response).trim());
@@ -8237,10 +8302,10 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       if (depositCmd && depositCmd.response) {
         messageContent = depositCmd.response
           .replace(/\{amount\}/g, amount)
-          .replace(/\{bonus\}/g, includeBonusInMessage ? bonus : 0)
+          .replace(/\{bonus\}/g, includeBonusInMessage ? _effBonusApplied : 0)
           .replace(/\{balance\}/g, newBalance !== null ? newBalance : 'actualizándose');
       } else if (includeBonusInMessage) {
-        messageContent = `🔒💰 Depósito de $${amount} (incluye $${bonus} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
+        messageContent = `🔒💰 Depósito de $${amount} (incluye $${_effBonusApplied} de bonificación) acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
       } else {
         messageContent = `🔒💰 Depósito de $${amount} acreditado con éxito. ✅ \n💸 Tu nuevo saldo es ${balanceStr} 💸\n\nPuedes verificarlo en: https://1girox.com\n\n🔥 Mañana podes revisar si tenes reembolso para reclamar de forma automatica 🔥`;
       }
@@ -8442,7 +8507,8 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
         id: _depTxId,
         type: 'deposit',
         amount: parseFloat(amount),
-        bonus: bonusActuallyApplied ? parseFloat(bonus) : 0,
+        // Bono REALMENTE aplicado (agente, ruleta o primera carga): _effectiveBonus.
+        bonus: bonusActuallyApplied ? _effectiveBonus : 0,
         username: user.username,
         userId: user.id,
         description: description || 'Depósito realizado',
@@ -11023,6 +11089,25 @@ app.get('/api/admin/welcome-roulette', authMiddleware, adminMiddleware, async (r
     const cfg = await getWelcomeRouletteConfig();
     res.json(cfg);
   } catch (e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// Bono de PRIMERA CARGA (100% a todos, 1 vez) — GET/POST config (admin general).
+app.get('/api/admin/first-charge-bonus', authMiddleware, adminMiddleware, async (req, res) => {
+  try { res.json(await getFirstChargeBonusConfig()); }
+  catch (e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+app.post('/api/admin/first-charge-bonus', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin general' });
+    const enabled = req.body && req.body.enabled === true;
+    const percent = Math.max(0, Math.min(500, Math.round(Number(req.body && req.body.percent) || 0)));
+    if (enabled && percent <= 0) return res.status(400).json({ error: 'El % debe ser mayor a 0.' });
+    await Config.set('firstChargeBonus', { enabled, percent }, req.user.username);
+    res.json({ success: true, enabled, percent });
+  } catch (e) {
+    logger.warn(`[first-charge-bonus] guardar config falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
 });
 
 // POST config (solo admin general).

@@ -652,6 +652,30 @@ document.addEventListener('change', function (ev) {
                                 <span class="icon icon-save"></span> Guardar Comunidad
                             </button>
                         </div>
+                        <!-- Bono de PRIMERA CARGA (100% a todos, 1 vez) -->
+                        <div class="panel-subheader" style="margin-top: 24px;" id="firstChargeHeader">
+                            <h3>🎁 Bono de primera carga (100% a todos)</h3>
+                        </div>
+                        <div class="cbu-form" id="firstChargeForm">
+                            <p style="color:#aaa;font-size:12px;line-height:1.5;margin:0 0 10px;">
+                                Le da a <b>TODOS</b> los clientes un bono en su <b>PRIMERA carga</b> (y solo la
+                                primera), automático. Ej: 100% = si carga $5.000, se le suman $5.000 de bono.
+                                Se aplica una sola vez por cliente, con reserva atómica (no se duplica). No afecta
+                                a los que ya cargaron antes.
+                            </p>
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="fcbEnabled" style="width:auto;"> Activar bono de primera carga
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>% de bono en la primera carga:</label>
+                                <input type="number" id="fcbPercent" min="1" max="500" step="5" placeholder="100" style="width:100%;">
+                                <small style="color:#aaa;font-size:11px;">100 = duplica la primera carga. Máx 500.</small>
+                            </div>
+                            <button type="button" class="btn btn-primary" onclick="saveFirstChargeBonus()">💾 Guardar</button>
+                        </div>
+
                         <!-- Ruleta de bienvenida (solo admin general) -->
                         <div class="panel-subheader" style="margin-top: 24px;" id="welcomeRouletteHeader">
                             <h3>🎡 Ruleta de bienvenida</h3>

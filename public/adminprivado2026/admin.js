@@ -5826,6 +5826,8 @@ async function loadCBUConfig() {
     loadWelcomeCodeConfig();
     // Cargar la config de la ruleta de bienvenida (solo admin general)
     loadWelcomeRoulette();
+    // Cargar la config del bono de primera carga (solo admin general)
+    loadFirstChargeBonus();
     // Cargar la config del banco automático (hgcash)
     loadHgcashConfig();
     // Cargar los porcentajes de reembolso (solo admin general)
@@ -6507,6 +6509,37 @@ async function saveCommunityConfig() {
         showToast('Error al guardar comunidad', 'error');
     }
 }
+
+// ====== Bono de primera carga (100% a todos, 1 vez) ======
+async function loadFirstChargeBonus() {
+    const form = document.getElementById('firstChargeForm');
+    const header = document.getElementById('firstChargeHeader');
+    try {
+        const r = await authFetch('/api/admin/first-charge-bonus');
+        if (!r.ok) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; return; }
+        const cfg = await r.json();
+        if (form) form.style.display = '';
+        if (header) header.style.display = '';
+        const en = document.getElementById('fcbEnabled');
+        const pc = document.getElementById('fcbPercent');
+        if (en) en.checked = cfg.enabled === true;
+        if (pc) pc.value = cfg.percent || 100;
+    } catch (e) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; }
+}
+async function saveFirstChargeBonus() {
+    const enabled = document.getElementById('fcbEnabled').checked;
+    const percent = Number(document.getElementById('fcbPercent').value) || 0;
+    if (enabled && percent <= 0) { showToast('Poné un % mayor a 0', 'error'); return; }
+    try {
+        const r = await authFetch('/api/admin/first-charge-bonus', {
+            method: 'POST', body: JSON.stringify({ enabled: enabled, percent: percent })
+        });
+        const j = await r.json();
+        if (!r.ok) { showToast(j.error || 'No se pudo guardar', 'error'); return; }
+        showToast(enabled ? ('Bono de primera carga ACTIVADO (' + percent + '%)') : 'Bono de primera carga desactivado', 'success');
+    } catch (e) { showToast('Error de conexión', 'error'); }
+}
+window.saveFirstChargeBonus = saveFirstChargeBonus;
 
 // ====== Ruleta de bienvenida (solo admin general) ======
 async function loadWelcomeRoulette() {

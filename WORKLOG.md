@@ -43,6 +43,36 @@
 
 ## Sesión 2026-08-20
 
+### 230. Bono de PRIMERA CARGA (100% a TODOS, una sola vez, sin errores)
+- **Pedido owner:** que la PRIMERA carga de todos reciba 100% de bono
+  automático, solo la primera, sin fallar.
+- **Config:** `Config['firstChargeBonus']` = {enabled, percent} (default off,
+  100). `GET/POST /api/admin/first-charge-bonus` (admin general). Card nueva en
+  el panel "🎁 Bono de primera carga (100% a todos)" con toggle + %.
+- **Lógica (server.js, en `/api/admin/deposit`):** helper `claimFirstChargeBonus`
+  — antes de la carga, si el agente NO pasó bonus y no hay ruleta pendiente,
+  y es la PRIMERA carga real del cliente (0 depósitos previos, excluye
+  payout_refund), RESERVA ATÓMICA de `User.firstChargeBonusDone` (none→true) →
+  solo un depósito puede reclamarlo (imposible duplicar). El bono
+  (amount×%/100) viaja NATIVO en la carga (bonus_amount). Si la carga o el
+  bono fallan → `revertFirstChargeBonus` (vuelve a false → lo recibe en la
+  próxima carga exitosa).
+- **Prioridad de bono:** agente manual > ruleta de bienvenida > primera carga
+  (no se apilan).
+- **Fixes de correctitud (afectaban también a la ruleta):** la Transaction del
+  depósito y el mensaje al cliente ahora usan el bono EFECTIVO (`_effectiveBonus`)
+  en vez del bono del agente (que es 0 en auto-bono) → el auto-bono se registra
+  bien y el cliente ve el mensaje "incluye $X de bonificación".
+- **Alcance:** implementado en la carga del AGENTE (`/api/admin/deposit`, el
+  flujo real con hgcash en sombra). La auto-carga hgcash y `/api/movements/
+  deposit` (legacy) no lo aplican todavía; si se activa la auto-carga, se
+  agrega ahí igual.
+- **Validado:** `node --check` OK (server.js, User.js, admin.js). **Back
+  necesita redeploy**; panel recargar. Viene APAGADO por defecto → activar en
+  la card. PROBAR: activar 100% → cargarle a un cliente NUEVO → recibe carga +
+  100% de bono; segunda carga del mismo → sin bono; cliente que ya había
+  cargado antes → sin bono.
+
 ### 229. Acceso de SOLO LECTURA para el publicista: ve solo SU campaña (entraron/registros/FTD), sin tocar plata
 - **Pedido owner:** dar al publicista un acceso que muestre SOLO su campaña
   (cuántos entraron, registros, primeras cargas) sin ningún riesgo de poder
