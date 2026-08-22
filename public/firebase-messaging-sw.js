@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v129'; // v129: 'Tus ultimos retiros' en la seccion Retiro (estado + motivo del rechazo + hablar con soporte); el rechazo ya no va al chat
+const CACHE_VERSION = 'v130'; // v130: retiro pagado en vivo (payout_paid) + comprobante del pago hgcash como detalle en 'Tus ultimos retiros'
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

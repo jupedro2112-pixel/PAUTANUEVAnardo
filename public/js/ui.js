@@ -1988,6 +1988,13 @@ VIP.ui._renderMyWithdrawals = function() {
           'background:#128c4a;color:#fff;border:none;border-radius:9px;padding:9px;font-size:12.5px;font-weight:800;cursor:pointer;">' +
           '¿Creés que es un error? Hablá con soporte 🎧</button></div>';
       }
+      // Comprobante del pago confirmado por hgcash (owner 2026-08-22).
+      if (p.status === 'paid' && p.receiptUrl) {
+        html += '<a href="' + _wrEsc(p.receiptUrl) + '" target="_blank" rel="noopener" ' +
+          'style="display:block;margin-top:6px;text-align:center;background:rgba(37,211,102,0.14);' +
+          'color:#25d366;border-radius:8px;padding:8px;font-size:12.5px;font-weight:800;text-decoration:none;">' +
+          '📄 Ver comprobante del pago</a>';
+      }
       html += '</div>';
     });
     const box = VIP.ui._botMsg(html);

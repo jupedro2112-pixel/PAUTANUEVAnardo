@@ -205,6 +205,16 @@ VIP.socket = (function () {
             } catch (e) { /* nunca romper el socket */ }
         });
 
+        // Retiro PAGADO: pasa a "✅ Pagado" en la sección Retiro, con toast y
+        // (si el casino está abierto) refresco de la vista.
+        VIP.state.socket.on('payout_paid', function (data) {
+            try {
+                var monto = data && data.amount ? '$' + Number(data.amount).toLocaleString('es-AR') : 'Tu retiro';
+                if (VIP.ui && VIP.ui.showToast) VIP.ui.showToast('✅ ' + monto + ' pagado — mirá el comprobante en "Solicitar Retiro"', 'success');
+                if (VIP.ui && VIP.ui._casinoOpen && VIP.ui.casinoBotGo) VIP.ui.casinoBotGo('withdraw');
+            } catch (e) { /* nunca romper el socket */ }
+        });
+
         VIP.state.socket.on('messages_read_by_admin', function () {
             document.querySelectorAll('#chatMessages .msg-ticks').forEach(function (el) {
                 el.classList.add('msg-read');

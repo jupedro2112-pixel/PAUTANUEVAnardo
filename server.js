@@ -1965,6 +1965,14 @@ async function notifyPayoutPaid(payout) {
     io.to(`user_${payout.userId}`).emit('new_message', data);
     io.to(`chat_${payout.userId}`).emit('new_message', data);
     notifyAdmins('new_message', { message: data, userId: payout.userId, username: payout.username });
+    // Aviso en vivo para la sección Retiro del widget (owner 2026-08-22): que
+    // el retiro pase a "✅ Pagado" al instante, con el link del comprobante si
+    // fue por hgcash (other_bank no tiene comprobante PDF).
+    const receiptUrl = (payout.paidVia !== 'other_bank')
+      ? `${getPublicBaseUrl()}/api/payout-receipt/${payout.id}` : null;
+    io.to(`user_${payout.userId}`).emit('payout_paid', {
+      amount: payout.amount, receiptUrl: receiptUrl
+    });
   } catch (e) {
     logger.warn(`[hgcash-pay] notifyPayoutPaid falló: ${e.message}`);
   }
@@ -10321,14 +10329,19 @@ app.get('/api/withdrawal/mine', authMiddleware, async (req, res) => {
   try {
     const list = await PendingPayout.find({ userId: req.user.userId })
       .sort({ createdAt: -1 }).limit(6)
-      .select('amount status createdAt rejectReason paidVia').lean();
+      .select('id amount status createdAt rejectReason paidVia').lean();
+    const base = getPublicBaseUrl();
     res.json({
       payouts: (list || []).map((p) => ({
         amount: p.amount,
         status: p.status,
         createdAt: p.createdAt,
         rejectReason: p.rejectReason || null,
-        paidVia: p.paidVia || null
+        paidVia: p.paidVia || null,
+        // Comprobante PDF (link permanente que resuelve un signedUrl fresco de
+        // hgcash) solo para retiros PAGADOS por hgcash (other_bank no tiene).
+        receiptUrl: (p.status === 'paid' && p.paidVia !== 'other_bank')
+          ? `${base}/api/payout-receipt/${p.id}` : null
       }))
     });
   } catch (e) {

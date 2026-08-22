@@ -43,6 +43,20 @@
 
 ## Sesión 2026-08-20
 
+### 227. Retiro pagado en VIVO + comprobante del pago hgcash como detalle en "Tus últimos retiros"
+- **Pedido owner:** que cuando el pago se aprueba salga "Pagado", y si fue por
+  hgcash (API) que el comprobante aparezca como detalle del pago confirmado.
+- **Pagado en vivo:** `notifyPayoutPaid` (se llama al DONE de hgcash y en el
+  pago manual) ahora emite socket `payout_paid` {amount, receiptUrl}. El
+  widget: toast "✅ pagado" + si el casino está abierto refresca la vista →
+  el retiro pasa a "✅ Pagado" al instante.
+- **Comprobante como detalle:** `GET /api/withdrawal/mine` devuelve `receiptUrl`
+  (link permanente `/api/payout-receipt/:id` que resuelve un signedUrl fresco
+  de hgcash) para los retiros PAGADOS por hgcash (other_bank no tiene). En "Tus
+  últimos retiros" los pagados muestran **"📄 Ver comprobante del pago"**.
+- **Validado:** `node --check` OK (server.js, ui.js, socket.js). SW **v130**.
+  **Back necesita redeploy.**
+
 ### 226. "Tus últimos retiros" en la sección Retiro (estado + motivo del rechazo + hablar con soporte)
 - **Reclamo owner:** el motivo del rechazo llegaba al chat y la bienvenida de
   soporte lo TAPABA. Pidió mostrar en Retiro los últimos retiros
