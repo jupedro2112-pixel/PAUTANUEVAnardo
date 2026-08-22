@@ -3758,11 +3758,17 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     });
 
     // Meta CAPI + webhook fb-ads: conversión de registro (misma que register-quick).
+    // event_id ESTABLE por usuario (`reg_<id>`): si este alta se reintenta (doble
+    // request por timeout, reintento del front), Meta DEDUPLICA por event_id y
+    // cuenta UN solo registro — pedido del partner (evitar duplicación de
+    // eventos). Como cada alta es un userId nuevo, esto no bloquea altas
+    // legítimas distintas; la dedup de "misma persona vuelve a registrarse" la
+    // hace la landing en el dispositivo (localStorage) y el límite por IP.
     metaCapi.track(
       'CompleteRegistration',
       { externalId: newUser.id, fbc: metaFbc, fbp: metaFbp },
       { content_name: 'signup_landing', status: true, campaign_code: normalizedCode, publisher: campaign.publisher },
-      { req }
+      { req, eventId: 'reg_' + newUser.id }
     );
     try { fbAdsWebhook.notify('CompleteRegistration', newUser); } catch (_) {}
 

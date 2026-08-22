@@ -55,6 +55,13 @@ VIP.chat = (function () {
 
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${isFromUser ? 'agente' : 'usuario'}`;
+        // Marcar los mensajes AUTOMÁTICOS del sistema (bienvenida, credenciales,
+        // "carga acreditada", etc.) para que NO cuenten como "Soporte te
+        // respondió" (owner 2026-08-22). Soporte HUMANO tiene senderId/nombre
+        // real; los del sistema van con senderId 'system' / 'Sistema'.
+        if (message.type === 'system' || message.senderId === 'system' || message.senderUsername === 'Sistema') {
+            msgDiv.classList.add('msg-auto');
+        }
 
         const time = new Date(message.timestamp).toLocaleTimeString('es-AR', {
             hour: '2-digit',

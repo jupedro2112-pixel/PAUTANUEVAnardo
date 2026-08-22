@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v126'; // v126: '¿Como funciona?' abre desde arriba + aviso claro cuando responde Soporte (badge en boton + toast)
+const CACHE_VERSION = 'v127'; // v127: mensajes automaticos no disparan aviso de soporte + dedup de registro (event_id estable + landing recuerda alta por dispositivo)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

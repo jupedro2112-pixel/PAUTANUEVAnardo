@@ -43,6 +43,29 @@
 
 ## Sesión 2026-08-20
 
+### 223. Mensajes automáticos no disparan "Soporte respondió" + DEDUP de registro (pedido del partner)
+- **(1) owner:** el mensaje automático de credenciales ("¡Tu cuenta está
+  creada! Usuario/Clave") disparaba el aviso "Soporte te respondió" del #222.
+  **Fix:** chat.js marca los mensajes AUTOMÁTICOS con clase `.msg-auto`
+  (type system, o senderId 'system'/'Sistema'); el observer del widget solo
+  cuenta como soporte los entrantes `.usuario:not(.msg-auto)` → soporte HUMANO.
+  La bienvenida, credenciales y "carga acreditada" ya no avisan como soporte.
+- **(2) partner Pulse — dedup de eventos/registros:** pidieron que si el
+  jugador vuelve o se desvía del flujo no se registre de nuevo ni dispare otro
+  evento a Meta, y un límite/sesión.
+  - **event_id estable:** el CompleteRegistration de la landing va con
+    `eventId: 'reg_<userId>'` → Meta DEDUPLICA reintentos del mismo alta
+    (defensa ante doble request/timeout).
+  - **Landing recuerda el alta por DISPOSITIVO** (`localStorage girox_signed`):
+    al volver a la landing NO muestra el form → pantalla "Ya tenés cuenta" +
+    ENTRAR (va a la PWA, no re-registra ni dispara evento). Link chico "crear
+    otra cuenta" para el caso legítimo de dispositivo compartido.
+  - (Ya existía el límite por IP `LANDING_SIGNUP_MAX_PER_IP_HOUR` como 3ª capa.)
+- **Validado:** `node --check` OK (server.js, ui.js, chat.js). SW **v127**.
+  **Back necesita redeploy** (event_id); front con SW; landing en Vercel con el
+  push. Nota para el partner: el mismo dispositivo ya no genera registros
+  repetidos, y los reintentos del mismo alta se deduplican por event_id.
+
 ### 222. "¿Cómo funciona?" abre desde arriba + aviso claro cuando responde SOPORTE
 - **(1) "¿Cómo funciona?":** abría mostrando el final del bloque (porque
   `_botMsg` scrollea al fondo). Ahora `area.scrollTop = 0` tras renderizar →

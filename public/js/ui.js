@@ -1462,7 +1462,11 @@ VIP.ui._showCasinoFrame = function() {
           for (let j = 0; j < muts[i].addedNodes.length; j++) {
             const node = muts[i].addedNodes[j];
             if (node && node.querySelector) {
-              const m = node.querySelector('.message.usuario') || (node.classList && node.classList.contains('usuario') ? node : null);
+              // Solo mensajes de SOPORTE HUMANO: entrantes (.usuario) que NO
+              // sean automáticos del sistema (.msg-auto) — así la bienvenida y
+              // el mensaje de credenciales NO disparan "Soporte te respondió".
+              const m = node.querySelector('.message.usuario:not(.msg-auto)') ||
+                (node.classList && node.classList.contains('usuario') && !node.classList.contains('msg-auto') ? node : null);
               if (m) incoming++;
             }
           }

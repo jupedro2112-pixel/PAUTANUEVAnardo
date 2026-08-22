@@ -308,6 +308,10 @@
         try {
           dest += '#lc=' + encodeURIComponent((res.d.username || '') + ':' + (res.d.password || ''));
         } catch (e) {}
+        // DEDUP (pedido del partner Pulse, 2026-08-22): recordar en ESTE
+        // dispositivo que ya se registró → si vuelve a la landing NO crea otra
+        // cuenta ni dispara otro evento de registro a Meta.
+        try { localStorage.setItem('girox_signed', res.d.username || '1'); } catch (e) {}
         ctaLabel.textContent = 'Entrando';
         window.location.href = dest;
       } else {
@@ -334,6 +338,37 @@
   document.getElementById('popCta').onclick = function () { pop.classList.remove('on'); nameEl.focus(); };
   document.getElementById('popLater').onclick = function () { pop.classList.remove('on'); };
   pop.addEventListener('click', function (e) { if (e.target === pop) pop.classList.remove('on'); });
+
+  // DEDUP al VOLVER (pedido del partner): si en este dispositivo ya se creó una
+  // cuenta, NO se muestra el form de registro → no se crea otra cuenta ni se
+  // dispara otro evento a Meta. Se ofrece ENTRAR a la cuenta existente.
+  (function () {
+    var signed = null;
+    try { signed = localStorage.getItem('girox_signed'); } catch (e) {}
+    if (!signed) return;
+    if (scForm) scForm.style.display = 'none';
+    var box = document.createElement('section');
+    box.className = 'done on';
+    box.innerHTML =
+      '<h2>Ya tenés tu cuenta <span class="em">✅</span></h2>' +
+      '<p class="p">En este dispositivo ya creaste una cuenta' +
+        (signed && signed !== '1' ? ' (<b>' + signed.replace(/[<>&]/g, '') + '</b>)' : '') + '.</p>' +
+      '<button class="cta" id="reenterBtn" type="button">ENTRAR A MI CUENTA →</button>' +
+      '<div class="save-note" style="margin-top:14px;">¿No sos vos? ' +
+        '<a href="#" id="newAcctLink" style="color:#25d366;">Crear otra cuenta</a></div>';
+    scForm.parentNode.insertBefore(box, scForm);
+    document.getElementById('reenterBtn').onclick = function () {
+      // A la PWA (misma página del casino): si la sesión sigue viva entra
+      // directo; si no, ahí inicia sesión con su usuario/clave. NO re-registra.
+      window.location.href = API_BASE;
+    };
+    document.getElementById('newAcctLink').onclick = function (e) {
+      e.preventDefault();
+      try { localStorage.removeItem('girox_signed'); } catch (er) {}
+      box.remove();
+      if (scForm) scForm.style.display = '';
+    };
+  })();
 })();
 </script>
 </body>
