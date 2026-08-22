@@ -43,6 +43,11 @@
 
 ## Sesión 2026-08-20
 
+### 224. Landing: sacado el link "crear otra cuenta" de la pantalla "ya tenés cuenta"
+- El link "¿No sos vos? Crear otra cuenta" (#223) contradecía el dedup pedido
+  por el partner (dejaba re-registrarse). Sacado: una cuenta por dispositivo,
+  solo "ENTRAR A MI CUENTA". Solo landing (Vercel con el push).
+
 ### 223. Mensajes automáticos no disparan "Soporte respondió" + DEDUP de registro (pedido del partner)
 - **(1) owner:** el mensaje automático de credenciales ("¡Tu cuenta está
   creada! Usuario/Clave") disparaba el aviso "Soporte te respondió" del #222.

@@ -353,21 +353,15 @@
       '<h2>Ya tenés tu cuenta <span class="em">✅</span></h2>' +
       '<p class="p">En este dispositivo ya creaste una cuenta' +
         (signed && signed !== '1' ? ' (<b>' + signed.replace(/[<>&]/g, '') + '</b>)' : '') + '.</p>' +
-      '<button class="cta" id="reenterBtn" type="button">ENTRAR A MI CUENTA →</button>' +
-      '<div class="save-note" style="margin-top:14px;">¿No sos vos? ' +
-        '<a href="#" id="newAcctLink" style="color:#25d366;">Crear otra cuenta</a></div>';
+      '<button class="cta" id="reenterBtn" type="button">ENTRAR A MI CUENTA →</button>';
     scForm.parentNode.insertBefore(box, scForm);
     document.getElementById('reenterBtn').onclick = function () {
       // A la PWA (misma página del casino): si la sesión sigue viva entra
       // directo; si no, ahí inicia sesión con su usuario/clave. NO re-registra.
       window.location.href = API_BASE;
     };
-    document.getElementById('newAcctLink').onclick = function (e) {
-      e.preventDefault();
-      try { localStorage.removeItem('girox_signed'); } catch (er) {}
-      box.remove();
-      if (scForm) scForm.style.display = '';
-    };
+    // Sin "crear otra cuenta" (owner 2026-08-22): contradecía el dedup pedido
+    // por el partner. Una cuenta por dispositivo → solo ENTRAR.
   })();
 })();
 </script>
