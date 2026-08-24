@@ -43,6 +43,29 @@
 
 ## Sesión 2026-08-20
 
+### 232. Stats del publicista: calendario por fecha + horario argentino; y FIX del trackeo de Purchase
+- **(1) Calendario + horario ART:** el `/campana` usaba ventanas RODANTES
+  (Date.now()-24h) → no coincidía con el dashboard del owner (que agrupa por
+  día ART). Ahora `GET /api/campaign-stats` acepta `from`/`to` (YYYY-MM-DD ART,
+  calendario) o presets (hoy/ayer/7/30/total) calculados como DÍAS CALENDARIO
+  ART (00:00–23:59:59.999 UTC-3) — helper `_campaignArtRange`. La página tiene
+  un **selector Desde/Hasta** (elegir 1 día, 2 días, un miércoles puntual, etc.)
+  + botones Hoy/Ayer/7/30/Total, y muestra el rango activo. Así coincide con lo
+  que ve el owner filtrando el mismo día+campaña.
+- **(2) FIX trackeo de venta (Purchase):** el partner recibía casi 0 compras y
+  con calidad 2.5/10. Dos causas:
+  a. **La AUTO-CARGA hgcash NO disparaba Purchase** → si las cargas entran por
+     hgcash, la venta nunca llegaba a Meta. Ahora la auto-carga dispara Purchase
+     (firstDeposit-aware) + fbAdsWebhook.
+  b. **Calidad baja:** el Purchase de la carga del AGENTE mandaba la IP/UA del
+     ADMIN (por pasar su `req`) → Meta matcheaba a otra persona. Ahora NO se
+     pasa el `req` del admin; se manda la IP/UA del JUGADOR (registrationIp/UA)
+     + fbc/fbp/external_id + eventSourceUrl de su landing. `buildUserData`
+     acepta `clientIp`/`clientUserAgent` como fallback.
+- **Validado:** `node --check` OK (server.js, metaCapiService.js) + parseo
+  campana.html. **Back necesita redeploy.** La calidad del Purchase debería
+  subir con la próxima tanda de cargas (Meta recalcula con los nuevos datos).
+
 ### 231. Stats del publicista: + total cargado (monto) y cantidad de cargas (para su ROI), SIN neto
 - **Pedido de OneKey:** ver el total de cargas para calcular su ROI en la
   presentación. Decisión: mostrar BRUTO (monto + cantidad), NO el neto ni los

@@ -128,8 +128,16 @@ function buildUserData(userInfo = {}, requestCtx = {}) {
   const dobHash = sha256(userInfo.dateOfBirth);
   if (dobHash) user_data.db = [dobHash];
 
-  if (requestCtx.ip) user_data.client_ip_address = requestCtx.ip;
-  if (requestCtx.userAgent) user_data.client_user_agent = requestCtx.userAgent;
+  // IP / user-agent: se prioriza el REQUEST (evento del propio navegador del
+  // jugador). En eventos server-side disparados por un ADMIN (ej. Purchase de
+  // una carga manual) NO hay que usar la IP/UA del admin — se pasa la del
+  // JUGADOR persistida (userInfo.clientIp / clientUserAgent, de su registro).
+  // Enviar la del admin baja la calidad de coincidencia de Meta (matchea a otra
+  // persona). owner 2026-08-24.
+  const clientIp = requestCtx.ip || userInfo.clientIp;
+  const clientUa = requestCtx.userAgent || userInfo.clientUserAgent;
+  if (clientIp) user_data.client_ip_address = clientIp;
+  if (clientUa) user_data.client_user_agent = clientUa;
   // fbp / fbc — identificadores de Meta Ads (fbp = navegador, fbc = clic del
   // anuncio, clave para atribuir conversiones a la pauta).
   // Prioridad: la cookie viva del request (eventos browser-side / self-service).

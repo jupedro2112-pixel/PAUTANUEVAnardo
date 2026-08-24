@@ -2360,6 +2360,28 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
       timestamp: new Date()
     });
 
+    // Meta CAPI — Purchase (la AUTO-CARGA no lo disparaba → los partners no
+    // recibían la venta; owner 2026-08-24). Con la IP/UA del jugador (mejor
+    // calidad). firstDeposit: la Transaction ya se creó → si es la única, es FTD.
+    try {
+      const _hgFTD = await _isFirstDeposit(user.id);
+      metaCapi.track(
+        'Purchase',
+        {
+          email: user.email, phone: user.phone, externalId: user.id,
+          fbc: user.metaFbc, fbp: user.metaFbp,
+          clientIp: user.registrationIp, clientUserAgent: user.registrationUserAgent
+        },
+        {
+          value: Number(amount), currency: 'ARS', content_name: 'deposit_hgcash',
+          content_type: 'product', content_category: metaCapi.valueCategory(Number(amount)),
+          order_id: result.data?.transfer_id || result.data?.transferId || null
+        },
+        { firstDeposit: _hgFTD, eventSourceUrl: user.landingUrl || undefined }
+      );
+      fbAdsWebhook.notify('Purchase', user, { value: Number(amount), currency: 'ARS' });
+    } catch (_) {}
+
     // Mensaje al cliente (usa /sys_deposit si está; si no, fallback).
     let newBalance = null;
     try {
@@ -8573,7 +8595,13 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
       const _isFTD = await _isFirstDeposit(user.id);
       metaCapi.track(
         'Purchase',
-        { email: user.email, phone: user.phone, externalId: user.id, fbc: user.metaFbc, fbp: user.metaFbp },
+        {
+          email: user.email, phone: user.phone, externalId: user.id,
+          fbc: user.metaFbc, fbp: user.metaFbp,
+          // IP/UA del JUGADOR (de su registro), NO del admin que carga → mejora
+          // la calidad de coincidencia de Meta.
+          clientIp: user.registrationIp, clientUserAgent: user.registrationUserAgent
+        },
         {
           value: parseFloat(amount),
           currency: 'ARS',
@@ -8582,7 +8610,8 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
           content_category: metaCapi.valueCategory(parseFloat(amount)),
           order_id: depositAdminOrderId
         },
-        { req, firstDeposit: _isFTD }
+        // SIN `req`: es la request del ADMIN, no del jugador.
+        { firstDeposit: _isFTD, eventSourceUrl: user.landingUrl || undefined }
       );
 
       // Webhook a fb-ads: conversión Purchase para aprendizaje por anuncio.
@@ -10476,7 +10505,50 @@ app.post('/api/admin/campaigns/:code/stats-token', authMiddleware, adminMiddlewa
   }
 });
 
-// Público (con token): stats agregadas de UNA campaña. Cache 60s por (code,days).
+// Rango de fechas en HORARIO ARGENTINO (UTC-3 fijo). Devuelve {since, until,
+// label}. Acepta from/to ('YYYY-MM-DD' ART) o un preset days. Los días son
+// CALENDARIO ART (00:00:00 a 23:59:59.999 ART), para coincidir con el dashboard
+// del owner. Fecha ART de un instante = correrlo -3h y leer la parte UTC.
+function _artDayStr(d) {
+  return new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function _campaignArtRange({ from, to, days }) {
+  const isYmd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+  let since = null, until = null, label = 'Total';
+  if (isYmd(from) || isYmd(to)) {
+    const f = isYmd(from) ? from : to;
+    const t = isYmd(to) ? to : f;
+    // Ordenar por las dudas (si mandan to < from).
+    const lo = f <= t ? f : t, hi = f <= t ? t : f;
+    since = new Date(lo + 'T00:00:00.000-03:00');
+    until = new Date(hi + 'T23:59:59.999-03:00');
+    label = lo === hi ? lo : (lo + ' → ' + hi);
+  } else {
+    const todayArt = _artDayStr(new Date());
+    if (days === 'hoy') {
+      since = new Date(todayArt + 'T00:00:00.000-03:00');
+      label = 'Hoy (' + todayArt + ')';
+    } else if (days === 'ayer') {
+      const y = _artDayStr(new Date(Date.now() - 24 * 3600 * 1000));
+      since = new Date(y + 'T00:00:00.000-03:00');
+      until = new Date(y + 'T23:59:59.999-03:00');
+      label = 'Ayer (' + y + ')';
+    } else if (days === '7') {
+      const d7 = _artDayStr(new Date(Date.now() - 6 * 24 * 3600 * 1000));
+      since = new Date(d7 + 'T00:00:00.000-03:00');
+      label = 'Últimos 7 días';
+    } else if (days === '30') {
+      const d30 = _artDayStr(new Date(Date.now() - 29 * 24 * 3600 * 1000));
+      since = new Date(d30 + 'T00:00:00.000-03:00');
+      label = 'Últimos 30 días';
+    } else {
+      label = 'Total';
+    }
+  }
+  return { since, until, label };
+}
+
+// Público (con token): stats agregadas de UNA campaña. Cache 60s por (code,rango).
 const _campStatsCache = new Map();
 app.get('/api/campaign-stats/:code', async (req, res) => {
   try {
@@ -10489,30 +10561,37 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
       return res.status(403).json({ error: 'Acceso no válido.' });
     }
 
-    // Rango: 'hoy' | '7' | '30' | 'total' (default 30).
+    // Rango en HORARIO ARGENTINO (UTC-3 fijo, igual que el resto del panel).
+    // Acepta from/to ('YYYY-MM-DD' ART, calendario) O un preset days
+    // (hoy|ayer|7|30|total). Los días son CALENDARIO ART (00:00 a 23:59:59 ART),
+    // así coincide con el dashboard del owner (que también agrupa por día ART).
     const daysParam = String(req.query.days || '30');
-    let sinceMs = null, label = 'Total';
-    if (daysParam === 'hoy') { sinceMs = Date.now() - 24 * 3600 * 1000; label = 'Últimas 24 hs'; }
-    else if (daysParam === '7') { sinceMs = Date.now() - 7 * 24 * 3600 * 1000; label = 'Últimos 7 días'; }
-    else if (daysParam === '30') { sinceMs = Date.now() - 30 * 24 * 3600 * 1000; label = 'Últimos 30 días'; }
-    else if (daysParam === 'total') { sinceMs = null; label = 'Total'; }
+    const fromParam = String(req.query.from || '');
+    const toParam = String(req.query.to || '');
+    const { since, until, label } = _campaignArtRange({ from: fromParam, to: toParam, days: daysParam });
 
-    const cacheKey = code + '|' + daysParam;
+    const cacheKey = code + '|' + daysParam + '|' + fromParam + '|' + toParam;
     const cached = _campStatsCache.get(cacheKey);
     if (cached && (Date.now() - cached.at) < 60000) {
       return res.json(cached.data);
     }
 
-    const since = sinceMs ? new Date(sinceMs) : null;
+    // Helper: agrega los límites de fecha a un query sobre `field`.
+    const dateBounds = () => {
+      const b = {};
+      if (since) b.$gte = since;
+      if (until) b.$lte = until;
+      return Object.keys(b).length ? b : null;
+    };
 
     // 1) Entraron (clicks, dedup 30min ya aplicado al registrar el click).
     const clickQ = { campaignCode: code };
-    if (since) clickQ.clickedAt = { $gte: since };
+    const _db1 = dateBounds(); if (_db1) clickQ.clickedAt = _db1;
     const clicks = await CampaignClick.countDocuments(clickQ);
 
     // 2) Registros (usuarios de la campaña).
     const regQ = { acquisitionCampaign: code, role: 'user' };
-    if (since) regQ.createdAt = { $gte: since };
+    const _db2 = dateBounds(); if (_db2) regQ.createdAt = _db2;
     const registros = await User.countDocuments(regQ);
 
     // 3) Primeras cargas (FTD): usuarios de la campaña cuya PRIMERA carga real
@@ -10522,10 +10601,13 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
     let primerasCargas = 0;
     let totalCargasMonto = 0, totalCargasCantidad = 0;
     if (ids.length) {
+      const _ftdBounds = {};
+      if (since) _ftdBounds.$gte = since;
+      if (until) _ftdBounds.$lte = until;
       const agg = await Transaction.aggregate([
         { $match: { userId: { $in: ids }, type: 'deposit', 'metadata.source': { $ne: 'payout_refund' } } },
         { $group: { _id: '$userId', firstAt: { $min: '$timestamp' } } },
-        ...(since ? [{ $match: { firstAt: { $gte: since } } }] : []),
+        ...(Object.keys(_ftdBounds).length ? [{ $match: { firstAt: _ftdBounds } }] : []),
         { $count: 'n' }
       ]);
       primerasCargas = (agg[0] && agg[0].n) || 0;
@@ -10534,7 +10616,10 @@ app.get('/api/campaign-stats/:code', async (req, res) => {
       // (owner 2026-08-22). BRUTO: no se muestra neto ni retiros (eso es margen
       // propio). Excluye devoluciones de retiro (payout_refund).
       const _tMatch = { userId: { $in: ids }, type: 'deposit', 'metadata.source': { $ne: 'payout_refund' } };
-      if (since) _tMatch.timestamp = { $gte: since };
+      const _tb = {};
+      if (since) _tb.$gte = since;
+      if (until) _tb.$lte = until;
+      if (Object.keys(_tb).length) _tMatch.timestamp = _tb;
       const totAgg = await Transaction.aggregate([
         { $match: _tMatch },
         { $group: { _id: null, monto: { $sum: '$amount' }, n: { $sum: 1 } } }

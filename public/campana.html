@@ -57,7 +57,8 @@
   var qs = new URLSearchParams(location.search);
   var code = qs.get('c') || '';
   var token = qs.get('t') || '';
-  var days = '30';
+  var days = 'hoy';     // preset activo
+  var fromD = '', toD = ''; // rango del calendario (YYYY-MM-DD, ART)
   var content = document.getElementById('content');
   var campBadge = document.getElementById('campBadge');
   var upd = document.getElementById('upd');
@@ -65,14 +66,32 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
   function fmt(n) { return (Number(n) || 0).toLocaleString('es-AR'); }
+  // Fecha de HOY en horario argentino (para topar el calendario en "hoy" ART).
+  function artToday() {
+    var d = new Date(Date.now() - 3 * 3600 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
 
   function render(d) {
     campBadge.style.display = 'inline-block';
     campBadge.textContent = '📣 ' + (d.campaign || code) + (d.publisher ? ' · ' + d.publisher : '');
+    var usingRange = !!(fromD || toD);
     content.innerHTML =
       '<div class="tabs">' +
-        tab('hoy', 'Hoy') + tab('7', '7 días') + tab('30', '30 días') + tab('total', 'Total') +
+        tab('hoy', 'Hoy') + tab('ayer', 'Ayer') + tab('7', '7 días') + tab('30', '30 días') + tab('total', 'Total') +
       '</div>' +
+      '<div style="background:#151226;border:1px solid #2a2740;border-radius:12px;padding:12px;margin-bottom:14px;">' +
+        '<div style="color:#8a939b;font-size:12px;font-weight:700;margin-bottom:8px;">📅 Elegí un día o un rango (horario argentino)</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">' +
+          '<div><div style="color:#8a939b;font-size:11px;">Desde</div>' +
+            '<input type="date" id="fromInp" max="' + artToday() + '" value="' + (fromD || '') + '" style="background:#0d0d14;color:#e9edef;border:1px solid #2a2740;border-radius:8px;padding:8px;"></div>' +
+          '<div><div style="color:#8a939b;font-size:11px;">Hasta</div>' +
+            '<input type="date" id="toInp" max="' + artToday() + '" value="' + (toD || '') + '" style="background:#0d0d14;color:#e9edef;border:1px solid #2a2740;border-radius:8px;padding:8px;"></div>' +
+          '<button id="verBtn" style="background:#128c4a;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:800;cursor:pointer;">Ver</button>' +
+          (usingRange ? '<button id="clearBtn" style="background:#2a2740;color:#c9c9d6;border:none;border-radius:8px;padding:9px 12px;cursor:pointer;">✕ Limpiar</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div style="color:#25d366;font-size:12px;font-weight:700;margin-bottom:10px;">Mostrando: ' + esc(d.range || '') + '</div>' +
       '<div class="cards">' +
         card('a', '👀', d.clicks, 'Entraron (clics al link)') +
         card('b', '📝', d.registros, 'Registros (cuentas creadas)') +
@@ -80,12 +99,21 @@
         cardMoney('a', '💵', d.totalCargasMonto, 'Total cargado (para tu ROI)') +
         card('b', '🔢', d.totalCargasCantidad, 'Cantidad de cargas') +
       '</div>';
-    // Marcar el tab activo + cablear.
+    // Presets: solo el activo si NO hay rango de calendario.
     var tabs = content.querySelectorAll('.tab');
     tabs.forEach(function (el) {
-      if (el.getAttribute('data-d') === days) el.classList.add('on');
-      el.onclick = function () { days = el.getAttribute('data-d'); load(); };
+      if (!usingRange && el.getAttribute('data-d') === days) el.classList.add('on');
+      el.onclick = function () { days = el.getAttribute('data-d'); fromD = ''; toD = ''; load(); };
     });
+    // Calendario.
+    var fi = document.getElementById('fromInp'), ti = document.getElementById('toInp');
+    document.getElementById('verBtn').onclick = function () {
+      var f = fi.value, t = ti.value;
+      if (!f && !t) { return; }
+      fromD = f || t; toD = t || f; load();
+    };
+    var cb = document.getElementById('clearBtn');
+    if (cb) cb.onclick = function () { fromD = ''; toD = ''; days = 'hoy'; load(); };
     try { upd.textContent = 'Última actualización: ' + new Date(d.updatedAt).toLocaleTimeString('es-AR'); } catch (e) {}
   }
   function tab(d, label) { return '<div class="tab" data-d="' + d + '">' + label + '</div>'; }
@@ -101,7 +129,10 @@
   function load() {
     if (!code || !token) { content.innerHTML = '<div class="err">Link inválido. Pedile a tu contacto el enlace correcto.</div>'; return; }
     content.innerHTML = '<div class="load">Cargando…</div>';
-    fetch('/api/campaign-stats/' + encodeURIComponent(code) + '?token=' + encodeURIComponent(token) + '&days=' + days)
+    var q = '?token=' + encodeURIComponent(token);
+    if (fromD || toD) { q += '&from=' + encodeURIComponent(fromD) + '&to=' + encodeURIComponent(toD); }
+    else { q += '&days=' + days; }
+    fetch('/api/campaign-stats/' + encodeURIComponent(code) + q)
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) { content.innerHTML = '<div class="err">' + esc((res.d && res.d.error) || 'No pudimos cargar los datos.') + '</div>'; return; }
