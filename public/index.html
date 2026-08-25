@@ -811,23 +811,7 @@
                     animation:dashUserCtaPulse 2.4s ease-in-out infinite;
                 }
                 @keyframes dashUserCtaPulse { 0%,100%{opacity:1;} 50%{opacity:.55;} }
-                #rouletteHomeCard { flex:0 0 84px; display:flex; overflow:hidden; }
-                .dash-roulette {
-                    flex:1; display:flex; flex-direction:column; align-items:center;
-                    justify-content:center; gap:3px; cursor:pointer; color:#fff;
-                    background:linear-gradient(135deg,#1a0033,#2d0052); border:1px solid #1a0033;
-                    border-radius:11px; padding:8px 5px; overflow:hidden;
-                }
-                .dash-roulette-avatar {
-                    font-size:18px; width:32px; height:32px; display:flex;
-                    align-items:center; justify-content:center;
-                    background:linear-gradient(135deg,#d4af37,#ffd700); border-radius:50%;
-                }
-                .dash-roulette-label { font-size:8.5px; font-weight:800; color:#ffd700; letter-spacing:.6px; }
-                .dash-roulette-sub {
-                    font-size:9px; font-weight:900; color:#fff; text-align:center;
-                    line-height:1.15; max-width:74px;
-                }
+                /* (owner 2026-08-25) CSS de la ruleta diaria removido — feature eliminada. Ver WORKLOG #235. */
                 .dash-refunds {
                     flex:1; min-width:0; background:linear-gradient(135deg,#1a0033,#0a0015);
                     border:1.5px solid #1a0033; border-radius:11px; padding:7px 7px 8px;
@@ -917,8 +901,6 @@
             <div id="homePanel">
             <div class="home-dash">
                 <div class="dash-top">
-                    <!-- Ruleta diaria: render dinámico desde js/roulette.js -->
-                    <div id="rouletteHomeCard" style="display:none;"></div>
                     <div class="dash-refunds">
                         <div class="dash-refunds-title">🎁 REEMBOLSOS</div>
                         <!-- 🪦 dailyRefundBtn eliminado (2026-08-07): el reembolso diario
@@ -988,9 +970,9 @@
                 </div>
             </div>
 
-            <!-- Cartel de bonificación vigente (bono de carga activado por
-                 una notificación). Render dinámico desde js/promobonus.js. -->
-            <div id="promoBonusCard" style="display:none;"></div>
+            <!-- (owner 2026-08-25) #promoBonusCard + js/promobonus.js removidos —
+                 feature eliminada (invisible bajo el casino + polleaba cada 2min
+                 y el sistema que la alimentaba está apagado). Ver WORKLOG #235. -->
 
             <!-- Ruleta diaria: la celda vive ahora dentro del panel dorado
                  (.dash-top), al lado de reembolsos. -->
@@ -1016,48 +998,8 @@
                     0%, 100% { opacity: 1; transform: scale(1); }
                     50%      { opacity: 0.55; transform: scale(1.35); }
                 }
-                #rouletteWinnersList .winner-row, #rouletteModalWinnersList .winner-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 6px 8px;
-                    border-bottom: 1px solid rgba(255,255,255,0.06);
-                }
-                #rouletteWinnersList .winner-row:last-child, #rouletteModalWinnersList .winner-row:last-child { border-bottom: none; }
-                #rouletteWinnersList .winner-row.is-me, #rouletteModalWinnersList .winner-row.is-me {
-                    background: rgba(255,215,0,0.08);
-                    border-radius: 6px;
-                }
-                #rouletteWinnersList .winner-user, #rouletteModalWinnersList .winner-user {
-                    color: #66b6ee;
-                    font-family: monospace;
-                    letter-spacing: 0.5px;
-                    font-size: 12.5px;
-                    font-weight: 700;
-                    flex: 1;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-                #rouletteWinnersList .winner-row.is-me .winner-user, #rouletteModalWinnersList .winner-row.is-me .winner-user {
-                    color: #ffd700;
-                    font-weight: 800;
-                }
-                #rouletteWinnersList .winner-prize, #rouletteModalWinnersList .winner-prize {
-                    color: #25d366;
-                    font-weight: 800;
-                    font-size: 12.5px;
-                    flex-shrink: 0;
-                }
-                #rouletteWinnersList .winner-time, #rouletteModalWinnersList .winner-time {
-                    color: #777;
-                    font-size: 10.5px;
-                    flex-shrink: 0;
-                    min-width: 56px;
-                    text-align: right;
-                }
+                /* (owner 2026-08-25) CSS de ganadores de la ruleta diaria removido — feature eliminada. Ver WORKLOG #235. */
             </style>
-            <div id="rouletteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:25500;align-items:flex-start;justify-content:center;padding:8px;overflow-y:auto;-webkit-overflow-scrolling:touch;" onclick="if(event.target===event.currentTarget)VIP.roulette && VIP.roulette.close()"></div>
 
             <!-- Cabecera del chat, estilo WhatsApp: avatar + "Soporte" + estado.
                  Va DENTRO de .chat-container para que quede pegada arriba de los
@@ -2217,9 +2159,7 @@
     <script src="/js/chat.js"></script>
     <script src="/js/refunds.js"></script>
     <script src="/js/fire.js"></script>
-    <script src="/js/roulette.js"></script>
     <script src="/js/reviews.js"></script>
-    <script src="/js/promobonus.js"></script>
     <script src="/js/notifications.js"></script>
     <script src="/js/ui.js"></script>
     <script src="/js/withdraw.js"></script>

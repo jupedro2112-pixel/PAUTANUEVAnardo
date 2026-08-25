@@ -8,6 +8,35 @@
 
 ## Sesión 2026-08-25
 
+### 235. Eliminadas 2 features invisibles que polleaban en background bajo el casino (A); fueguito/reembolsos van por B (dormidos)
+- **Regla del owner:** si borrar del todo NO tiene riesgo y da velocidad → borrar
+  (A); si hay riesgo → dejar dormido (B). Se decidió por feature, con barrido de
+  referencias (onclick inline + alias `window.*` + accesos por string dinámico).
+- **A — BORRADAS del todo (0 refs externas, no tocan el orquestador `app.js`):**
+  - **Ruleta diaria vieja** (`public/js/roulette.js` ELIMINADO): se auto-arrancaba
+    y polleaba `/api/roulette/status` + `recent-winners` **cada 30s** para pintar
+    `#rouletteHomeCard`, INVISIBLE bajo el casino. Sacado: script tag, archivo,
+    `#rouletteHomeCard` (div+CSS `.dash-roulette*`), `#rouletteModal` (div) y CSS
+    `#rouletteWinnersList/#rouletteModalWinnersList`. ⚠️ NO es la ruleta de
+    bienvenida del bot (welcome-roulette, `/api/welcome-roulette/*`) — esa queda.
+    Se conservó `@keyframes winners-pulse` (lo usa el punto verde "EN VIVO").
+  - **Bonificación vigente** (`public/js/promobonus.js` ELIMINADO): polleaba
+    `/api/promo-bonus/mine` **cada 2min** para `#promoBonusCard` invisible, y el
+    sistema que lo alimentaba está apagado (`BONUS_STRATEGY_DISABLED`). Sacado:
+    script tag, archivo, `#promoBonusCard`.
+- **B — DEJADAS DORMIDAS (no tocado):** fueguito (`fire.js`) y reembolsos
+  (`refunds.js`). Motivo: borrarlas exige cirugía en `app.js` (el orquestador →
+  blast radius alto) y en `auth.js`; además **ya no corren en el casino** (su boot
+  está gateado off por `_casinoFirst`), así que no gastan red → borrarlas casi no
+  da velocidad y sí mete riesgo. `refunds` encima arrastra el modal "Mi Perfil /
+  nivel VIP" y usa ids por string dinámico (`${type}RefundBtn/Amount/Timer`).
+  Quedan como módulos cargados pero idle; si algún día se re-muestra el dashboard,
+  siguen funcionando.
+- **Validado:** `node --check` OK en TODOS los `public/js/*.js`. Balance
+  `<div>` 389/389, `<style>` 5/5. Cero referencias colgadas (grep). PRECACHE_URLS
+  del SW no listaba esos .js (solo iconos) → borrarlos no rompe el install.
+  **SW → v132.** Front en Vercel se actualiza con el push.
+
 ### 234. Limpieza de código muerto del front (formato nuevo: entrada única al casino)
 - **Contexto:** el owner clonó un repo viejo y quedó código que ya no es
   alcanzable en el formato actual (todo cliente `user` entra SIEMPRE al casino

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v131'; // v131: limpieza de codigo muerto del front (bono instalar-app neutralizado + quick-actions viejos del casino + modal Depositar muerto + div reviews vacio)
+const CACHE_VERSION = 'v132'; // v132: eliminadas features invisibles que polleaban en background bajo el casino — ruleta diaria (roulette.js, poll 30s) y bonificacion vigente (promobonus.js, poll 2min)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
