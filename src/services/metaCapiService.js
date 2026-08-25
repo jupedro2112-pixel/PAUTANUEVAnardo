@@ -345,6 +345,7 @@ module.exports = {
   isConfigured,
   newEventId,
   extractRequestContext,
+  buildUserData, // expuesto para la vista previa admin (qué user_data llevaría un evento)
   sendEvent,
   track,
   buildAdvancedMatching,

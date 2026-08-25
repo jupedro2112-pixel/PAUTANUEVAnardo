@@ -6123,6 +6123,47 @@ app.get('/api/admin/meta-events', authMiddleware, adminMiddleware, async (req, r
   }
 });
 
+// GET /api/admin/meta-events/preview/:userId — VISTA PREVIA: qué user_data llevaría
+// AHORA un Purchase de ese usuario (viejo o nuevo), armado con lo que tiene guardado
+// en su ficha. No dispara nada a Meta ni escribe nada; solo lo calcula y lo muestra.
+// Sirve para auditar usuarios EXISTENTES sin esperar a que hagan una carga nueva.
+app.get('/api/admin/meta-events/preview/:userId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const uid = String(req.params.userId || '').trim();
+    if (!uid) return res.status(400).json({ error: 'Falta userId' });
+    const user = await User.findOne({ id: uid }).lean();
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    // MISMO userInfo que arma un Purchase server-side (hgcash / carga manual admin).
+    const userInfo = {
+      email: user.email, phone: user.phone, externalId: user.id,
+      fbc: user.metaFbc, fbp: user.metaFbp,
+      clientIp: user.registrationIp, clientUserAgent: user.registrationUserAgent
+    };
+    const ud = metaCapi.buildUserData(userInfo, {});
+    res.json({
+      preview: true,
+      userId: user.id,
+      username: user.username,
+      createdAt: user.createdAt || null,
+      eventName: 'Purchase (vista previa)',
+      em: ud.em ? String(ud.em[0]).slice(0, 10) : null,
+      ph: ud.ph ? String(ud.ph[0]).slice(0, 10) : null,
+      external_id: ud.external_id ? String(ud.external_id[0]).slice(0, 10) : null,
+      fbc: ud.fbc || null,
+      fbp: ud.fbp || null,
+      ip: ud.client_ip_address || null,
+      ua: ud.client_user_agent || null,
+      // Contexto útil de la ficha (de dónde salen esos valores).
+      acquisitionCampaign: user.acquisitionCampaign || null,
+      email_present: !!user.email,
+      phone_present: !!user.phone
+    });
+  } catch (e) {
+    logger.error(`[meta-events preview] error: ${e.message}`);
+    res.status(500).json({ error: 'No se pudo generar la vista previa' });
+  }
+});
+
 // entra": el 99% de las veces es una variable de entorno que falta.
 // NUNCA devuelve la API key ni la contraseña del panel — sólo si están presentes.
 app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, res) => {

@@ -64,6 +64,13 @@
     <label style="font-size:12px;color:#8a939b;"><input type="checkbox" id="onlyPaired"> solo usuarios con compra</label>
   </div>
 
+  <div class="bar" style="margin-top:-4px;">
+    <input id="pvUser" placeholder="Auditar usuario EXISTENTE: pegá su userId" size="30">
+    <button id="pvBtn">🔍 Ver qué mandaría su compra AHORA</button>
+    <span style="font-size:12px;color:#8a939b;">(sirve para los viejos, sin esperar una carga nueva)</span>
+  </div>
+  <div id="preview" style="margin-bottom:14px;"></div>
+
   <div id="content"><div class="load">Cargando…</div></div>
 </div>
 
@@ -147,6 +154,35 @@
       };
     });
   }
+
+  function loadPreview() {
+    var uid = document.getElementById('pvUser').value.trim();
+    var box = document.getElementById('preview');
+    if (!uid) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="load">Calculando…</div>';
+    fetch('/api/admin/meta-events/preview/' + encodeURIComponent(uid), { credentials: 'include' })
+      .then(function(r){ if (r.status===401||r.status===403) throw new Error('auth'); return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+      .then(function(res){
+        if (!res.ok) { box.innerHTML = '<div class="err">' + esc((res.d && res.d.error) || 'Error') + '</div>'; return; }
+        var e = res.d;
+        var missing = []; COLS.forEach(function(c){ if (!e[c]) missing.push(c); });
+        var html = '<div class="user"><div class="user-h">🔍 Vista previa — usuario <b>' + esc(e.userId) + '</b> (' + esc(e.username||'') + ')'
+          + (e.acquisitionCampaign ? ' · campaña ' + esc(e.acquisitionCampaign) : '') + '</div>';
+        html += '<table class="tbl"><thead><tr><th>Evento</th>';
+        COLS.forEach(function(c){ html += '<th>' + c + '</th>'; });
+        html += '</tr></thead><tbody><tr><td class="ev buy">Compra (previa)</td>';
+        COLS.forEach(function(c){ html += '<td>' + badge(e[c]) + '</td>'; });
+        html += '</tr></tbody></table>';
+        html += '<div class="val" style="margin-top:8px;">fbc: ' + esc(e.fbc||'—') + '<br>fbp: ' + esc(e.fbp||'—') + '<br>ip: ' + esc(e.ip||'—') + '<br>ua: ' + esc(e.ua||'—') + '</div>';
+        if (missing.length) html += '<div style="margin-top:8px;color:#e0a05a;font-weight:800;font-size:12px;">⚠️ Le faltan: ' + missing.join(', ') + ' → eso le baja la calidad de coincidencia a su compra.</div>';
+        else html += '<div style="margin-top:8px;color:#25d366;font-weight:800;font-size:12px;">✅ Manda todos los parámetros que tiene guardados.</div>';
+        html += '</div>';
+        box.innerHTML = html;
+      })
+      .catch(function(err){ box.innerHTML = (err && err.message === 'auth') ? '<div class="err">No autorizado. Logueate en el panel admin primero.</div>' : '<div class="err">Error generando la vista previa.</div>'; });
+  }
+  document.getElementById('pvBtn').onclick = loadPreview;
+  document.getElementById('pvUser').addEventListener('keydown', function(e){ if (e.key==='Enter') loadPreview(); });
 
   document.getElementById('reload').onclick = load;
   document.getElementById('fEvent').onchange = load;

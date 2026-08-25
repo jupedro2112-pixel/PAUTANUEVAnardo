@@ -33,6 +33,13 @@
 - **Validado:** `node --check` OK (modelo, metaCapiService, server.js). Visor 13/13 div.
   **Requiere redeploy del back** (endpoint+modelo+hook nuevos). Los eventos se registran
   DESDE el redeploy (no retroactivo). No toca el SW del cliente.
+- **AMPLIACIÓN — vista previa para usuarios VIEJOS** (el log solo captura eventos nuevos):
+  como el Purchase arma sus datos con lo guardado en la ficha, se agregó
+  `GET /api/admin/meta-events/preview/:userId` que calcula (sin disparar ni escribir
+  nada) qué `user_data` llevaría AHORA la compra de ese usuario — reusa el
+  `buildUserData` exportado. En el visor hay un campo "Auditar usuario existente":
+  pegás el userId y muestra los badges ✅/❌ + los valores crudos + qué le falta. Así se
+  audita a cualquier usuario ya existente sin esperar a que haga una carga nueva.
 
 ### 239. FIX del arrastre (#237): el panel no seguía a la burbuja y la tapaba
 - **Reporte owner (screencast):** al mover la burbuja, el chat seguía abriendo en el
