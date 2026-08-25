@@ -10164,9 +10164,9 @@ async function initializeData() {
     },
     {
       name: '/sys_install_bonus',
-      description: 'Mensaje de felicitación cuando el usuario reclama el bono por instalar la app. Variables: {username}, ${amount}',
+      description: 'Mensaje cuando el usuario reclama el bono por instalar la app. El bono es un 100% EN LA PRÓXIMA CARGA (no un monto fijo), así que NO uses ${amount}. Variable: {username}. Si lo dejás vacío, no se envía.',
       type: 'message',
-      response: '🎁 ¡Felicitaciones {username}! Te acreditamos tu BONO DE ${amount} por instalar la app. ¡Gracias por sumarte! 🥳'
+      response: '🎁 ¡Listo {username}! Tenés un *100% de bono en tu próxima carga* por instalar la app. Cuando cargues, se te aplica solo. 🥳\n\n⚠️ Es por única vez.'
     },
     {
       name: '/sys_payout_paid',
@@ -10260,6 +10260,14 @@ async function initializeData() {
       { $set: { response: '' } }
     );
     if (r.modifiedCount) console.log('✅ /sys_reminder con texto viejo de vipcargas → VACIADO (no se envía más)');
+    // /sys_install_bonus con `${amount}` viejo (era $5.000 fijo; ahora es 100%
+    // en la próxima carga, sin monto) → se muestra "${amount}" literal al
+    // cliente. Se corrige solo el que TODAVÍA tiene la variable rota.
+    const rIB = await Command.updateOne(
+      { name: '/sys_install_bonus', response: /\$\{amount\}/ },
+      { $set: { response: '🎁 ¡Listo! Tenés un *100% de bono en tu próxima carga* por instalar la app. Cuando cargues, se te aplica solo. 🥳\n\n⚠️ Es por única vez.' } }
+    );
+    if (rIB.modifiedCount) console.log('✅ /sys_install_bonus con ${amount} viejo → corregido (100% próxima carga)');
     // Aviso (solo log): otros comandos que aún mencionen el dominio viejo —
     // no se tocan solos (pueden tener texto editado a mano); se editan desde COMANDOS.
     const stale = await Command.find({ response: /vipcargas/i }).select('name').lean();

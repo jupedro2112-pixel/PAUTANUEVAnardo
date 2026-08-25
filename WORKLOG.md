@@ -43,6 +43,16 @@
 
 ## Sesión 2026-08-20
 
+### 233. FIX: el mensaje del bono de instalación mostraba "${amount}" literal
+- El template `/sys_install_bonus` sembrado tenía `${amount}` (de cuando el
+  bono era $5.000 FIJO). Desde #100 el bono es "100% en la próxima carga" (sin
+  monto) y el claim no pasa `amount` → se mostraba "${amount}" literal.
+- **Fix:** seed reescrito sin `${amount}` (texto "100% en tu próxima carga") +
+  migración idempotente que corrige el `/sys_install_bonus` de las bases que
+  todavía tienen la variable rota (solo si matchea `${amount}`; no pisa textos
+  editados sin esa variable). **Back necesita redeploy** (corre la migración).
+- **Validado:** `node --check` OK (server.js).
+
 ### 232. Stats del publicista: calendario por fecha + horario argentino; y FIX del trackeo de Purchase
 - **(1) Calendario + horario ART:** el `/campana` usaba ventanas RODANTES
   (Date.now()-24h) → no coincidía con el dashboard del owner (que agrupa por
