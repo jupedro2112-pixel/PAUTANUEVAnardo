@@ -8,6 +8,32 @@
 
 ## Sesión 2026-08-25
 
+### 241. HALLAZGO con el visor (#240): faltaba el fbp en TODOS los eventos → arreglada la landing
+- **Qué mostró el visor:** en 4 usuarios reales (compraran o no), el `user_data` sale
+  IGUAL → em ❌, ph ❌, external_id ✅, fbc ✅, **fbp ❌**, ip ✅, ua ✅. O sea:
+  1) confirma que la **compra manda lo mismo que el registro** (mismos ❌) — el Purchase
+  NO está peor; 2) el EMQ es bajo porque faltan em/ph/**fbp**.
+- **Causa raíz del fbp faltante:** la landing lee la cookie `_fbp`, pero esa cookie la
+  crea el **pixel de navegador de Meta** y la landing **NO carga pixel** → `_fbp` nunca
+  existía → `fbp` viajaba vacío para todos (y se persistía null en el usuario, así que
+  la compra tampoco lo tenía).
+- **Fix (`landing/index.html`):** se agregó `fbpFromCookieOrGen()` (mismo criterio que
+  el `fbcFromUrl()` que ya construía el fbc a mano): si no existe la cookie `_fbp`,
+  genera un valor válido `fb.1.<ts>.<random>`, lo PERSISTE en la cookie y lo manda. Se
+  usa en el signup y en el touch. Así el registro captura el fbp, se guarda en la ficha,
+  la compra lo hereda, y el pixel de la PWA reutiliza el MISMO `_fbp` al entrar
+  (correlación con el navegador). **Sube la cobertura de fbp en todos los eventos.**
+- **Alcance honesto:** aplica a usuarios NUEVOS desde el deploy de la landing (Vercel);
+  los viejos ya registrados sin fbp no se pueden retrofixear (nunca tuvimos su fbp).
+  **em/ph siguen faltando por diseño** (la landing pide solo el nombre) — para subirlos
+  habría que pedir teléfono/email (baja conversión, decisión del owner).
+- **Aclaración del visor (confusión "david compró"):** la vista previa mostraba "Compra
+  (previa)" para CUALQUIER usuario (es hipotético). Se re-etiquetó a "Si comprara →" +
+  aviso "HIPOTÉTICO — no significa que compró". david (solo registrado, saldo $0) no
+  disparó ninguna compra real (la lista de eventos está vacía).
+- **Validado:** balance HTML OK (visor 25/25, landing 17/17). Landing en Vercel se
+  actualiza con el push; el visor (admin) se sirve sin caché. No toca el SW del cliente.
+
 ### 240. Visor PRIVADO de eventos Meta (diagnóstico): ver qué user_data se envía en cada evento
 - **Pedido owner:** poder ver, en un lugar propio/privado, qué información (cookies +
   datos) se manda a Meta en cada evento, para comparar registro vs compra y entender

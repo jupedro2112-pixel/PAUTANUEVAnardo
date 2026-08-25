@@ -268,6 +268,23 @@
     return null;
   }
 
+  // fbp: identificador de navegador que normalmente crea el pixel de Meta. Como
+  // esta landing NO tiene pixel, la cookie _fbp no existía → antes se mandaba
+  // VACÍO y Meta no recibía ese parámetro (bajaba la calidad de coincidencia de
+  // TODOS los eventos, ver diagnóstico 2026-08-25). Se genera uno válido
+  // (fb.1.<timestamp>.<random>) y se PERSISTE en la cookie, así se reusa el MISMO
+  // valor siempre — y el pixel de la PWA lo reutiliza al entrar, correlacionándolo
+  // con el navegador. Mismo criterio que fbcFromUrl(). owner 2026-08-25.
+  function fbpFromCookieOrGen() {
+    var existing = cookie('_fbp');
+    if (existing) return existing;
+    try {
+      var v = 'fb.1.' + Date.now() + '.' + (Math.floor(1e9 + Math.random() * 9e9));
+      document.cookie = '_fbp=' + v + '; path=/; max-age=' + (90 * 24 * 3600) + '; SameSite=Lax';
+      return v;
+    } catch (e) { return null; }
+  }
+
   var form = document.getElementById('form');
   var nameEl = document.getElementById('name');
   var cta = document.getElementById('cta');
@@ -292,7 +309,7 @@
     fetch(API_BASE + '/api/landing/signup', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, campaignCode: campaign, utm: utmFromUrl(),
-        fbc: fbcFromUrl(), fbp: cookie('_fbp'), landingUrl: location.href })
+        fbc: fbcFromUrl(), fbp: fbpFromCookieOrGen(), landingUrl: location.href })
     })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
@@ -358,7 +375,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: signed, campaignCode: resolveCampaign(),
-            fbc: fbcFromUrl(), fbp: cookie('_fbp'), landingUrl: location.href
+            fbc: fbcFromUrl(), fbp: fbpFromCookieOrGen(), landingUrl: location.href
           })
         }).catch(function () {});
       }
