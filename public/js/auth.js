@@ -444,6 +444,20 @@ VIP.auth = (function () {
         }
     }
 
+    // Reintentos de verificación cuando el backend está momentáneamente caído
+    // (típico DURANTE UN DEPLOY de Elastic Beanstalk, que reinicia instancias unos
+    // segundos y responde 502/503 o corta la conexión). En ese caso NO se cierra la
+    // sesión: el token sigue siendo válido, se reintenta hasta que el backend vuelva.
+    let _reverifyTries = 0;
+    let _reverifyTimer = null;
+    function _scheduleTokenReverify() {
+        if (!VIP.state.currentToken) return;   // sin token no hay nada que reverificar
+        if (_reverifyTries >= 24) return;      // ~2 min (24 × 5s) y paramos de insistir
+        _reverifyTries += 1;
+        clearTimeout(_reverifyTimer);
+        _reverifyTimer = setTimeout(function () { verifyToken(); }, 5000);
+    }
+
     async function verifyToken() {
         try {
             const response = await fetch(`${VIP.config.API_URL}/api/auth/verify`, {
@@ -451,6 +465,7 @@ VIP.auth = (function () {
             });
 
             if (response.ok) {
+                _reverifyTries = 0; // sesión OK → reset del contador de reintentos
                 const data = await response.json();
 
                 if (!data.user || !data.user.username) {
@@ -559,12 +574,22 @@ VIP.auth = (function () {
                 VIP.notifications.sendFcmTokenAfterLogin().catch(function (e) {
                     console.warn('[FCM] Error al re-sincronizar token en verifyToken:', e);
                 });
-            } else {
+            } else if (response.status === 401) {
+                // Token REALMENTE inválido o expirado → única razón legítima para
+                // cerrar la sesión. Recién acá se borra y se pide login de nuevo.
                 localStorage.removeItem('userToken');
+                VIP.state.currentToken = null;
+            } else {
+                // 500/502/503/otros: hipo del backend (típico durante un DEPLOY de
+                // EB). El token sigue siendo válido → NO se borra; se reintenta.
+                console.warn('[auth] verify devolvió ' + response.status + ' — backend caído (deploy?); NO cierro sesión, reintento.');
+                _scheduleTokenReverify();
             }
         } catch (error) {
-            console.error('Error verificando token:', error);
-            localStorage.removeItem('userToken');
+            // Error de red (offline o conexión cortada durante el deploy): NO
+            // borrar el token; reintentar cuando el backend vuelva.
+            console.warn('[auth] verify falló (red/transitorio); NO cierro sesión, reintento:', error);
+            _scheduleTokenReverify();
         }
     }
 

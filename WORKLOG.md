@@ -8,6 +8,33 @@
 
 ## Sesión 2026-08-25
 
+### 238. FIX: cada deploy en EB deslogueaba a los usuarios (verifyToken borraba el token ante 502/red)
+- **Síntoma (owner):** cada vez que hace deploy en Amazon, la sesión abierta se
+  cierra y hay que re-escribir usuario + contraseña.
+- **Causa (no era el JWT_SECRET):** el token vive en localStorage y sobrevive el
+  deploy; `JWT_SECRET` sale FIJO de SSM (`loadSecrets.js` solo lee, no genera). El
+  problema estaba en el CLIENTE: `verifyToken` (`public/js/auth.js`) hacía
+  `localStorage.removeItem('userToken')` ante CUALQUIER respuesta ≠ 2xx **y** ante
+  cualquier error de red. Durante un deploy de Elastic Beanstalk las instancias
+  reinician y el backend responde **502/503** (o corta la conexión) unos segundos;
+  si la página corre `verifyToken` en esa ventana (y lo hace al recargar, que el SW
+  nuevo fuerza), el token VÁLIDO caía en el `else`/`catch` y se BORRABA → login.
+- **Fix:** `verifyToken` ahora cierra sesión **solo ante 401** (token realmente
+  inválido/expirado, único caso legítimo — el `authMiddleware` devuelve 401 para
+  eso). Ante 500/502/503/otros o error de red **mantiene el token** y reintenta
+  (`_scheduleTokenReverify`, cada 5s hasta ~2 min) → cuando el backend vuelve,
+  re-loguea SOLO, sin re-escribir nada. Los otros `removeItem('userToken')` son
+  logout intencional (el del usuario + "cerrar todas las sesiones") y no se tocaron.
+- **Ojo (diagnóstico residual):** si DESPUÉS de que esto deploye el owner SIGUE
+  deslogueándose en cada deploy, entonces sí sería el `JWT_SECRET` cambiando por
+  deploy (param no fijo en SSM) — se vería como un **401** en la consola en vez del
+  `502` que ahora se loguea. En ese caso el fix es dejar un `JWT_SECRET` fijo en SSM.
+  El admin (adminprivado2026) usa cookie httpOnly que sobrevive el deploy, así que
+  está menos afectado (un refresh re-autentica sin re-escribir clave).
+- **Validado:** `node --check` OK (`auth.js`, `sw`). **SW → v135.** NOTA: este
+  deploy es el ÚLTIMO que desloguea (los clientes corren el auth.js viejo hasta
+  tomar el nuevo); a partir del siguiente, los deploys ya no cierran sesión.
+
 ### 237. Portado el ARRASTRE de la burbuja del casino (lo que en #236 quedó como "no aplica")
 - **Contexto:** el doc de la tanda C daba por hecho que la burbuja ya era
   arrastrable (feature #202 de la gemela) y NO incluía ese código. En #236 se dejó

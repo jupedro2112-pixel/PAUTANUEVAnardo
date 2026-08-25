@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v134'; // v134: burbuja del casino ARRASTRABLE con imán al borde (pointer events + setPointerCapture) + pista de arrastre una vez por dispositivo + panel se ancla al lado de la burbuja
+const CACHE_VERSION = 'v135'; // v135: FIX deslogueo en cada deploy — verifyToken solo cierra sesion ante 401 real; ante 502/503/red (backend caido durante el deploy de EB) mantiene el token y reintenta
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
