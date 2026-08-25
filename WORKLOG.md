@@ -8,6 +8,24 @@
 
 ## Sesión 2026-08-25
 
+### 242. Panel: mensajes de sistema INTERNOS (adminOnly) en VERDE con etiqueta "🔒 INTERNO" (réplica #198 del original)
+- **Problema:** en el chat del panel TODOS los mensajes de sistema salían naranjas
+  iguales → no se distinguía cuáles le LLEGARON al cliente (automáticos) de los solo
+  internos del equipo (cierre de chat, alertas de bonus, sync de clave, comprobante
+  repetido, etc.).
+- **La distinción ya estaba en los datos:** `adminOnly: true`. Verificado que llega al
+  panel — el historial lo proyecta (`adminOnly: 1` en el GET, server.js:6695) y los
+  payloads de socket lo incluyen. Solo faltaba PINTARLO. No se tocó backend.
+- **Cambio (`public/adminprivado2026/admin.js` + `admin.css`):** en `createMessageElement`
+  rama `type==='system'`: `isInternal = message.adminOnly === true` → clase `internal`
+  (verde) + etiqueta `🔒 INTERNO — el cliente NO lo ve`, sin ícono; si NO es interno
+  (automático que el cliente sí recibió) → 🤖 delante (reemplaza al 🔒, que engañaba).
+  Render ÚNICO (`addMessageToChat`→`createMessageElement`), sirve para historial y vivo.
+  CSS: `.message.system.internal` (verde) + `.internal-badge` + `.icon-robot::before`.
+- **Validado:** `node --check` OK (admin.js, admin-sw). **admin-sw → v44.** Estáticos con
+  el push. PROBAR: abrir un chat con historial → "Chat cerrado por…" y alertas internas
+  en VERDE con "🔒 INTERNO"; confirmaciones de depósito / bono, en naranja con 🤖.
+
 ### 241. HALLAZGO con el visor (#240): faltaba el fbp en TODOS los eventos → arreglada la landing
 - **Qué mostró el visor:** en 4 usuarios reales (compraran o no), el `user_data` sale
   IGUAL → em ❌, ph ❌, external_id ✅, fbc ✅, **fbp ❌**, ip ✅, ua ✅. O sea:
