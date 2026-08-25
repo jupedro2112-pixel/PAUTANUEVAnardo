@@ -54,7 +54,7 @@
       <option value="Purchase">Solo Compras (Purchase)</option>
       <option value="CompleteRegistration">Solo Registros</option>
     </select>
-    <input id="fUser" placeholder="Filtrar por userId (opcional)" size="20">
+    <input id="fUser" placeholder="Filtrar por userId o username" size="22">
     <select id="fLimit">
       <option value="100">Últimos 100</option>
       <option value="250">Últimos 250</option>
@@ -65,7 +65,7 @@
   </div>
 
   <div class="bar" style="margin-top:-4px;">
-    <input id="pvUser" placeholder="Auditar usuario EXISTENTE: pegá su userId" size="30">
+    <input id="pvUser" placeholder="Auditar usuario: username (ej. gxjana805) o id" size="34">
     <button id="pvBtn">🔍 Ver qué mandaría su compra AHORA</button>
     <span style="font-size:12px;color:#8a939b;">(sirve para los viejos, sin esperar una carga nueva)</span>
   </div>
@@ -117,7 +117,8 @@
       if (onlyPaired && !hasBuy) return;
       // Referencia: el mejor registro del usuario (para marcar qué le falta a la compra).
       var reg = evs.filter(function(e){ return e.eventName==='CompleteRegistration'; })[0];
-      html += '<div class="user"><div class="user-h">👤 <b>' + esc(k) + '</b> · ' + evs.length + ' evento(s)</div>';
+      var uname = (evs[0] && evs[0].username) ? evs[0].username : null;
+      html += '<div class="user"><div class="user-h">👤 <b>' + esc(uname || k) + '</b>' + (uname ? ' <span style="color:#6b7280;">· id ' + esc(k) + '</span>' : '') + ' · ' + evs.length + ' evento(s)</div>';
       html += '<table class="tbl"><thead><tr><th>Fecha</th><th>Evento</th>';
       COLS.forEach(function(c){ html += '<th>' + c + '</th>'; });
       html += '<th>$</th><th></th></tr></thead><tbody>';

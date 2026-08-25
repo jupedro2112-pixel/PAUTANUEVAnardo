@@ -6113,9 +6113,22 @@ app.get('/api/admin/meta-events', authMiddleware, adminMiddleware, async (req, r
     const MetaEventLog = require('./src/models/MetaEventLog');
     const q = {};
     if (req.query.event) q.eventName = String(req.query.event).slice(0, 60);
-    if (req.query.userId) q.userId = String(req.query.userId).slice(0, 120);
+    if (req.query.userId) {
+      // Acepta id interno O username (lo que uno conoce). Resuelve username → id.
+      const key = String(req.query.userId).slice(0, 120).trim();
+      const byName = await User.findOne({ $or: [{ id: key }, { username: key }] }, { id: 1 }).lean();
+      q.userId = byName ? byName.id : key;
+    }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
     const events = await MetaEventLog.find(q).sort({ createdAt: -1 }).limit(limit).lean();
+    // Enriquecer con el username (el log guarda el id interno; se muestra el nombre).
+    const ids = [...new Set(events.map((e) => e.userId).filter(Boolean))];
+    if (ids.length) {
+      const users = await User.find({ id: { $in: ids } }, { id: 1, username: 1 }).lean();
+      const nameById = {};
+      users.forEach((u) => { nameById[u.id] = u.username; });
+      events.forEach((e) => { e.username = e.userId ? (nameById[e.userId] || null) : null; });
+    }
     res.json({ events });
   } catch (e) {
     logger.error(`[meta-events] error: ${e.message}`);
@@ -6131,8 +6144,14 @@ app.get('/api/admin/meta-events/preview/:userId', authMiddleware, adminMiddlewar
   try {
     const uid = String(req.params.userId || '').trim();
     if (!uid) return res.status(400).json({ error: 'Falta userId' });
-    const user = await User.findOne({ id: uid }).lean();
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    // Acepta id interno O username (exacto, y case-insensitive como último intento).
+    let user = await User.findOne({ id: uid }).lean();
+    if (!user) user = await User.findOne({ username: uid }).lean();
+    if (!user) {
+      const rx = new RegExp('^' + uid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+      user = await User.findOne({ username: rx }).lean();
+    }
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado (probá con el username exacto o el id)' });
     // MISMO userInfo que arma un Purchase server-side (hgcash / carga manual admin).
     const userInfo = {
       email: user.email, phone: user.phone, externalId: user.id,
