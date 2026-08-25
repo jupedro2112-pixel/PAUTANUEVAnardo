@@ -4,7 +4,49 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-19**
+> **Última actualización: 2026-08-25**
+
+## Sesión 2026-08-25
+
+### 234. Limpieza de código muerto del front (formato nuevo: entrada única al casino)
+- **Contexto:** el owner clonó un repo viejo y quedó código que ya no es
+  alcanzable en el formato actual (todo cliente `user` entra SIEMPRE al casino
+  overlay `position:fixed;inset:0;z-index:99999` — el dashboard viejo queda
+  TAPADO). Pedido: sacar lo NO funcional, minucioso, sin romper nada. Se mapeó
+  con 2 subagentes read-only (arranque + referencias cruzadas) antes de tocar.
+- **Bono "por instalar la app" NEUTRALIZADO** (`public/js/installbonus.js`):
+  el banner "🎁 Reclamar mi 100%" vive en el dashboard viejo → queda debajo del
+  overlay del casino, INALCANZABLE. Además pisaba al **100% automático de
+  primera carga (#230)** → riesgo de doble 100% (200%) si un agente veía el
+  cartel "BONO 100% PENDIENTE" y lo aplicaba a mano encima del automático.
+  `init()` ahora SIEMPRE oculta el banner y no consulta nada; `claim()` es no-op.
+  No se borró el archivo para no tocar el listener que `app.js` engancha al botón.
+  **El único bono de bienvenida queda el 100% de primera carga (automático).**
+- **Código muerto removido (0 referencias verificado con grep):**
+  - `ui.js`: acciones rápidas del pop-up VIEJO del casino — `_casinoChip`,
+    `_casinoSendQuick`, `casinoQuickAction` (+ `#casinoAmountRow`). Reemplazadas
+    por el asistente/bot (`casinoBotGo`). Y `casinoBotWithdraw` (wrapper sin
+    callers; el flujo usa `casinoBotGo('withdraw')` directo).
+  - `index.html`: modal Depositar completo (`#depositModal`/`#depositForm`/…)
+    — ningún JS de la PWA lo abría (el depósito va por bot+CBU; el `#depositModal`
+    del panel admin es OTRA página, intacto). Y `<div id="adServiceReviews">`
+    vacío (nadie lo rellena; `reviews.js` usa `infoReviewsSection`/`loginReviewsWidget`).
+- **FIX previo del mismo tema (#233):** el `${amount}` del `/sys_install_bonus`
+  ya estaba corregido (seed + migración). Con el bono neutralizado, ese mensaje
+  además ya no se dispara desde el flujo actual.
+- **PENDIENTE decisión del owner (NO tocado aún):** features OCULTAS que
+  igual se auto-arrancan y hacen fetch en background para tarjetas que nadie ve
+  bajo el casino → **desperdicio de recursos**: ruleta diaria vieja
+  (`roulette.js`, poll `/api/roulette/status` cada 30s) y bonificación vigente
+  (`promobonus.js`, poll `/api/promo-bonus/mine` cada 2min — encima el sistema
+  que lo alimenta está apagado por `BONUS_STRATEGY_DISABLED`). También `fire`
+  (fueguito) y `refunds` (reembolsos) tienen DOM/wiring vivo pero invisible (su
+  boot YA está gateado off para casino, no gastan red). Opciones: (A) eliminar
+  del todo; (B) sólo cortar el auto-boot/poll y dejarlas dormidas (reversible,
+  recomendado). Esperar respuesta antes de tocar (son features con backend).
+- **Validado:** `node --check` OK (`ui.js`, `installbonus.js`, `sw`). Balance
+  `<div>` de index.html 392/392. **SW → v131.** Front en Vercel se actualiza con
+  el push; `/js/` llega por stale-while-revalidate en la próxima carga.
 
 ## Sesión 2026-08-19
 

@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v130'; // v130: retiro pagado en vivo (payout_paid) + comprobante del pago hgcash como detalle en 'Tus ultimos retiros'
+const CACHE_VERSION = 'v131'; // v131: limpieza de codigo muerto del front (bono instalar-app neutralizado + quick-actions viejos del casino + modal Depositar muerto + div reviews vacio)
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

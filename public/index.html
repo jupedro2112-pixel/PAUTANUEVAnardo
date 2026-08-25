@@ -1440,26 +1440,9 @@
         </div>
     </div>
 
-    <!-- Modal Depositar -->
-    <div id="depositModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>💰 Depositar</h2>
-                <p>Ingresa el monto a depositar en tu cuenta</p>
-            </div>
-            <form id="depositForm">
-                <div class="input-group">
-                    <label>Monto ($)</label>
-                    <input type="number" id="depositAmount" placeholder="Ej: 10000" required min="100">
-                </div>
-                <div id="depositError" class="error-message"></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" id="closeDepositModal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">💰 Depositar</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <!-- (owner 2026-08-25) Modal Depositar removido: era código muerto en la PWA
+         de usuario (ningún JS abría #depositModal ni manejaba #depositForm; el
+         depósito real va por el asistente/bot y el CBU). Ver WORKLOG #234. -->
 
     <!-- Modal Retirar -->
     <div id="withdrawModal" class="modal hidden">
@@ -1846,8 +1829,6 @@
                     <div style="color:#b0b0b0; font-size:9.5px; line-height:1.3;">Hasta 30% extra en cargas y atención por chat todo el día.</div>
                 </div>
             </div>
-            <!-- Reseñas (prueba social). Render desde js/reviews.js; se oculta si no hay. -->
-            <div id="adServiceReviews"></div>
             <!-- Dos opciones: registrarse ahora, o cerrar y ver la página normal.
                  Cerrar NO borra la atribución de campaña (vive en localStorage
                  60 días), así un registro posterior por la vía normal sigue

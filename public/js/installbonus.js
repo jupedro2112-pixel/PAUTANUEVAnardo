@@ -15,94 +15,26 @@ VIP.installBonus = (function () {
 
     function _el(id) { return document.getElementById(id); }
 
-    // Consulta el estado del bono y muestra/oculta el cartel.
+    // NEUTRALIZADO (owner 2026-08-25). El bono "por instalar la app" quedó como
+    // código heredado del repo viejo: en el formato nuevo (entrada ÚNICA al
+    // casino, overlay a pantalla completa z-index 99999) el banner queda tapado
+    // y es INALCANZABLE. Además pisaba al 100% AUTOMÁTICO de primera carga
+    // (riesgo de doble 100%). init() ahora SIEMPRE oculta el cartel y no consulta
+    // nada; claim() es un no-op. El único bono de bienvenida es el 100% de
+    // primera carga (automático). No borramos el archivo para no tocar los
+    // listeners de app.js; sólo lo dejamos inerte.
     async function init() {
         const banner = _el('installBonusBanner');
-        if (!banner) return;
-        try {
-            const res = await fetch(`${VIP.config.API_URL}/api/install-bonus/status`, {
-                headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                _claimed = data.claimed === true;
-            }
-        } catch (e) { /* si falla, dejamos el cartel oculto */ }
-        banner.style.display = _claimed ? 'none' : '';
-
-        // Aviso solo para usuarios que se registraron DIRECTO (sin pauta): el
-        // bono es para probar la página y no es retirable hasta ser usuario
-        // activo. Si vino por pauta, el flujo es distinto y no mostramos esto.
-        // Usamos acquisitionCampaign del usuario (verdad del server), no la
-        // atribución de localStorage (que vence a los 60 días).
+        if (banner) banner.style.display = 'none';
         const notice = _el('installBonusDirectNotice');
-        if (notice) {
-            const fromPauta = !!(VIP.state.currentUser && VIP.state.currentUser.acquisitionCampaign);
-            notice.style.display = (!_claimed && !fromPauta) ? '' : 'none';
-        }
-
-        VIP.ui.adjustLayout();
+        if (notice) notice.style.display = 'none';
     }
 
+    // NEUTRALIZADO (owner 2026-08-25): no-op. Ver nota en init(). Se conserva la
+    // firma porque app.js le engancha un listener al botón (que ya no se ve).
     async function claim() {
-        const btn = _el('installBonusClaimBtn');
-
-        // El bono solo se reclama desde la app instalada.
-        if (!VIP.ui.isAppStandalone()) {
-            _showHelp();
-            return;
-        }
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Reclamando...'; }
-        try {
-            const res = await fetch(`${VIP.config.API_URL}/api/install-bonus/claim`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${VIP.state.currentToken}`
-                },
-                body: JSON.stringify({ standalone: true })
-            });
-            const data = await res.json().catch(() => ({}));
-
-            if (res.ok && data.success) {
-                _claimed = true;
-                const banner = _el('installBonusBanner');
-                if (banner) banner.style.display = 'none';
-                localStorage.removeItem('installBonusFailedAttempts');
-                VIP.ui.adjustLayout();
-                VIP.ui.showToast('🎁 ¡Tenés un 100% de bono en tu próxima carga!', 'success');
-                setTimeout(() => VIP.ui.syncBalance(), 1000);
-                setTimeout(() => VIP.chat.loadMessages(), 800);
-            } else if (data.code === 'NOT_STANDALONE') {
-                _showHelp();
-            } else if (data.code === 'PHONE_VERIFICATION_REQUIRED') {
-                // Requisito anti-multi-cuenta: pedir verificación de teléfono y
-                // abrir el modal de verify-phone en su paso 1 (limpio).
-                VIP.ui.showToast(data.error || '📱 Verificá tu teléfono por SMS para poder reclamar el bono.', 'info');
-                const s1 = _el('verifyPhoneStep1');
-                const s2 = _el('verifyPhoneStep2');
-                const input = _el('verifyPhoneInput');
-                const err = _el('verifyPhoneError');
-                if (s1) s1.style.display = '';
-                if (s2) s2.style.display = 'none';
-                if (input) input.value = '';
-                if (err) err.classList.remove('show');
-                VIP.ui.showModal('verifyPhoneModal');
-            } else if (data.code === 'ALREADY_CLAIMED') {
-                _claimed = true;
-                const banner = _el('installBonusBanner');
-                if (banner) banner.style.display = 'none';
-                VIP.ui.adjustLayout();
-                VIP.ui.showToast('Ya habías reclamado este bono.', 'info');
-            } else {
-                VIP.ui.showToast(data.error || 'No se pudo reclamar el bono', 'error');
-            }
-        } catch (e) {
-            VIP.ui.showToast('Error de conexión', 'error');
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '🎁 Reclamar mi 100%'; }
-        }
+        const banner = _el('installBonusBanner');
+        if (banner) banner.style.display = 'none';
     }
 
     // Cuenta los intentos fallidos: el 1ro explica cómo instalar bien;

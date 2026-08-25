@@ -1209,66 +1209,10 @@ VIP.ui._casinoFrameStuck = function() {
   if (frame) frame.style.display = 'block';
 };
 
-/** Chip del menú de acciones rápidas del pop-up del casino. Declaración de
- *  función (hoisted) para poder usarla dentro del innerHTML de _showCasinoFrame. */
-function _casinoChip(label, onclick, primary) {
-  const base = primary
-    ? 'background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;'
-    : 'background:rgba(212,175,55,0.12);color:#e3bd48;border:1px solid rgba(212,175,55,0.35);';
-  return '<button type="button" onclick="' + onclick + '" style="' + base +
-    'flex:0 0 auto;white-space:nowrap;border-radius:16px;padding:7px 12px;font-size:12.5px;' +
-    'font-weight:700;cursor:pointer;">' + label + '</button>';
-}
-
-/** Envía un mensaje al cajero desde el pop-up (mismo camino que escribir a mano
- *  → cae en el panel adminprivado2026). */
-VIP.ui._casinoSendQuick = function(text) {
-  const input = document.getElementById('messageInput');
-  if (!input) return false;
-  input.value = text;
-  try { if (VIP.chat && VIP.chat.sendMessage) VIP.chat.sendMessage(); } catch (e) {}
-  return true;
-};
-
-/** Acciones rápidas del pop-up. TODO termina en el chat del cajero; los botones
- *  solo le ahorran al cliente tener que escribir. */
-VIP.ui.casinoQuickAction = function(action, arg) {
-  switch (action) {
-    case 'cargar-toggle': {
-      const row = document.getElementById('casinoAmountRow');
-      if (row) row.style.display = (row.style.display === 'none' || !row.style.display) ? 'flex' : 'none';
-      return;
-    }
-    case 'cargar':
-      VIP.ui._casinoSendQuick('🎰 Quiero cargar $' + Number(arg).toLocaleString('es-AR'));
-      break;
-    case 'cargar-otro': {
-      const i = document.getElementById('messageInput');
-      if (i) { i.value = '🎰 Quiero cargar $'; i.focus(); }
-      break;
-    }
-    case 'cbu':
-      try { if (VIP.ui.loadAndShowCBU) VIP.ui.loadAndShowCBU(); } catch (e) {}
-      break;
-    case 'comprobante': {
-      const a = document.getElementById('attachBtn');
-      if (a) a.click();
-      break;
-    }
-    case 'saldo':
-      try { if (VIP.ui.syncBalance) VIP.ui.syncBalance(); } catch (e) {}
-      VIP.ui._casinoSendQuick('👛 ¿Me confirmás mi saldo?');
-      break;
-    case 'retirar':
-      VIP.ui._casinoSendQuick('💸 Quiero retirar mi premio');
-      break;
-    case 'escribir': {
-      const e2 = document.getElementById('messageInput');
-      if (e2) e2.focus();
-      break;
-    }
-  }
-};
+// (owner 2026-08-25) Removidas las acciones rápidas del pop-up VIEJO del casino
+// (_casinoChip / _casinoSendQuick / casinoQuickAction + #casinoAmountRow):
+// quedaron sin ningún caller al reemplazar ese pop-up por el asistente/bot
+// (casinoBotGo). Código muerto verificado (0 referencias). Ver WORKLOG #234.
 
 /** Crea (una sola vez) y muestra el recuadro del casino. */
 VIP.ui._showCasinoFrame = function() {
@@ -1943,10 +1887,8 @@ VIP.ui.casinoBotPickReceipt = function() {
   fi.click();
 };
 
-/** Retiro: form adentro del panel (estado 'withdraw' del bot). */
-VIP.ui.casinoBotWithdraw = function() {
-  VIP.ui.casinoBotGo('withdraw');
-};
+// (owner 2026-08-25) Removido VIP.ui.casinoBotWithdraw: wrapper sin callers
+// (el flujo usa casinoBotGo('withdraw') directo). Ver WORKLOG #234.
 
 /** "Tus últimos retiros" dentro de la sección de Retiro: estado de cada uno y,
  *  si salió RECHAZADO, el motivo + botón "Hablar con soporte" (owner
