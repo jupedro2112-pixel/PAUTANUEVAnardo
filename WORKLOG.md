@@ -8,6 +8,32 @@
 
 ## Sesión 2026-08-25
 
+### 240. Visor PRIVADO de eventos Meta (diagnóstico): ver qué user_data se envía en cada evento
+- **Pedido owner:** poder ver, en un lugar propio/privado, qué información (cookies +
+  datos) se manda a Meta en cada evento, para comparar registro vs compra y entender
+  por qué el EMQ de Purchase está bajo (ver #232, hilo con OneKey/Martin).
+- **Implementado (4 piezas):**
+  - **Modelo** `src/models/MetaEventLog.js` (TTL 14 días): guarda por evento el
+    `user_data` que se envió — em/ph/external_id como PREFIJO del hash (no PII en
+    claro, sólo para confirmar "mismo valor"), y fbc/fbp/ip/ua tal cual (es lo que se
+    manda a Meta y lo que se quiere ver). + content_name, value, destinos, eventId, userId.
+  - **Hook** en `metaCapiService.sendEvent`: tras armar el `user_data`, escribe el
+    registro (fire-and-forget, nunca bloquea/rompe el envío). Se apaga con
+    `META_EVENT_LOG_DISABLED=true`.
+  - **Endpoint** `GET /api/admin/meta-events` (authMiddleware+adminMiddleware): lista
+    los últimos N (filtros `?event=`, `?userId=`, `?limit=` máx 500).
+  - **Visor** `public/adminprivado2026/meta-events` (ruta explícita antes del catch-all;
+    HTML estático no sensible, datos por el cookie `admin_api_session`): agrupa por
+    usuario, muestra badges ✅/❌ por parámetro y **marca en naranja** la compra a la que
+    le falta un parámetro que su registro sí tenía. "Ver valores" despliega el crudo.
+- **Cómo se usa:** logueado en el panel admin, ir a `…/adminprivado2026/meta-events`.
+  Comparás el registro y la compra del MISMO usuario y ves de un vistazo si la compra
+  manda menos. (Complementa el desglose de Meta, pero es dato TUYO, sin depender del
+  número agregado.)
+- **Validado:** `node --check` OK (modelo, metaCapiService, server.js). Visor 13/13 div.
+  **Requiere redeploy del back** (endpoint+modelo+hook nuevos). Los eventos se registran
+  DESDE el redeploy (no retroactivo). No toca el SW del cliente.
+
 ### 239. FIX del arrastre (#237): el panel no seguía a la burbuja y la tapaba
 - **Reporte owner (screencast):** al mover la burbuja, el chat seguía abriendo en el
   mismo lugar de siempre (no se adaptaba); el panel tapaba la burbuja de cerrar; y el

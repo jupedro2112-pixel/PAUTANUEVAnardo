@@ -240,6 +240,33 @@ async function sendEvent(eventName, userInfo, customData, options) {
     event.event_source_url = String(req.headers.referer);
   }
 
+  // Diagnóstico PRIVADO (solo admin): guarda en la base qué user_data se envió,
+  // para comparar registro vs compra sin depender del número agregado de Meta.
+  // Fire-and-forget: nunca bloquea ni rompe el envío. TTL 14d (en el modelo).
+  // Se apaga con META_EVENT_LOG_DISABLED=true.
+  if (process.env.META_EVENT_LOG_DISABLED !== 'true') {
+    try {
+      const MetaEventLog = require('../models/MetaEventLog');
+      const cd = customData || {};
+      MetaEventLog.create({
+        eventId: event.event_id,
+        eventName,
+        userId: (userInfo && userInfo.externalId != null) ? String(userInfo.externalId) : null,
+        em: user_data.em ? String(user_data.em[0]).slice(0, 10) : null,
+        ph: user_data.ph ? String(user_data.ph[0]).slice(0, 10) : null,
+        external_id: user_data.external_id ? String(user_data.external_id[0]).slice(0, 10) : null,
+        fbc: user_data.fbc || null,
+        fbp: user_data.fbp || null,
+        ip: user_data.client_ip_address || null,
+        ua: user_data.client_user_agent ? String(user_data.client_user_agent).slice(0, 500) : null,
+        value: (cd.value != null && !isNaN(Number(cd.value))) ? Number(cd.value) : null,
+        currency: cd.currency || null,
+        contentName: cd.content_name || null,
+        destinations: dests.map((d) => d.label)
+      }).catch(() => {});
+    } catch (_) { /* el diagnóstico nunca rompe el envío */ }
+  }
+
   // Se dispara a CADA pixel configurado (propio + partner) en paralelo. Un fallo
   // en uno no afecta al otro. Cada destino usa su propio test_event_code.
   const results = await Promise.all(dests.map(async (d) => {

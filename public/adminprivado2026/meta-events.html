@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Eventos Meta (diagnóstico) · 1GIROX</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d0d14; color:#e9edef; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  h1 { font-size:20px; margin:6px 0 2px; } h1 .g { color:#d4af37; }
+  .sub { color:#8a939b; font-size:13px; margin-bottom:14px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .bar select, .bar input, .bar button { background:#151226; color:#e9edef; border:1px solid #2a2740; border-radius:8px; padding:8px 10px; font-size:13px; }
+  .bar button { background:#128c4a; border-color:#128c4a; font-weight:800; cursor:pointer; }
+  .legend { background:#151226; border:1px solid #2a2740; border-radius:10px; padding:10px 12px; font-size:12px; color:#c9c9d6; margin-bottom:14px; line-height:1.6; }
+  .legend b { color:#e9edef; }
+  .user { background:#12101f; border:1px solid #2a2740; border-radius:12px; padding:10px 12px; margin-bottom:14px; }
+  .user-h { font-size:12px; color:#8a939b; margin-bottom:8px; }
+  .user-h b { color:#e3bd48; font-family:monospace; }
+  .tbl { width:100%; border-collapse:collapse; font-size:12px; }
+  .tbl th, .tbl td { text-align:left; padding:6px 8px; border-bottom:1px solid #221f33; white-space:nowrap; }
+  .tbl th { color:#8a939b; font-weight:700; font-size:11px; }
+  .ev { font-weight:800; }
+  .ev.reg { color:#66b6ee; } .ev.buy { color:#25d366; }
+  .ok { color:#25d366; font-weight:900; } .no { color:#e05a5a; font-weight:900; }
+  .val { font-family:monospace; font-size:10.5px; color:#8a939b; }
+  .toggle { color:#25d366; cursor:pointer; font-size:11px; text-decoration:underline; }
+  .detail { display:none; }
+  .detail td { background:#0f0d1a; color:#c9c9d6; font-family:monospace; font-size:10.5px; white-space:normal; word-break:break-all; }
+  .err { background:#2a1414; border:1px solid #7a2a2a; color:#ff9b9b; border-radius:12px; padding:16px; text-align:center; font-weight:700; margin-top:20px; }
+  .load { text-align:center; color:#8a939b; padding:30px; }
+  .diff { outline:2px solid #e0a05a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="g">1</span>GIROX · Eventos Meta <span style="font-size:13px;color:#8a939b;">(diagnóstico privado)</span></h1>
+  <div class="sub">Qué información se envió a Meta en cada evento. Comparás el MISMO usuario: registro vs compra.</div>
+
+  <div class="legend">
+    <b>Cómo leerlo:</b> ✅ = ese parámetro SÍ se envió · ❌ = no se envió (vacío).
+    Los eventos se agrupan por usuario para comparar su <b class="ev reg">registro</b> con su <b class="ev buy">compra</b>.
+    Si a la compra le falta un ✅ que el registro sí tiene, la fila queda <span style="outline:2px solid #e0a05a;padding:0 4px;border-radius:4px;">marcada</span>.
+    <br><b>em/ph/external_id</b> = email/teléfono/ID (hasheados, se muestra un prefijo para confirmar que es el mismo valor).
+    <b>fbc/fbp</b> = identificadores del anuncio · <b>ip/ua</b> = IP y navegador del jugador. Tocá "ver valores" para el detalle.
+  </div>
+
+  <div class="bar">
+    <select id="fEvent">
+      <option value="">Todos los eventos</option>
+      <option value="Purchase">Solo Compras (Purchase)</option>
+      <option value="CompleteRegistration">Solo Registros</option>
+    </select>
+    <input id="fUser" placeholder="Filtrar por userId (opcional)" size="20">
+    <select id="fLimit">
+      <option value="100">Últimos 100</option>
+      <option value="250">Últimos 250</option>
+      <option value="500">Últimos 500</option>
+    </select>
+    <button id="reload">🔄 Actualizar</button>
+    <label style="font-size:12px;color:#8a939b;"><input type="checkbox" id="onlyPaired"> solo usuarios con compra</label>
+  </div>
+
+  <div id="content"><div class="load">Cargando…</div></div>
+</div>
+
+<script>
+(function () {
+  var content = document.getElementById('content');
+  var COLS = ['em','ph','external_id','fbc','fbp','ip','ua'];
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function badge(v){ return v ? '<span class="ok">✅</span>' : '<span class="no">❌</span>'; }
+  function fmtDate(d){ try { return new Date(d).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return ''; } }
+
+  function load() {
+    content.innerHTML = '<div class="load">Cargando…</div>';
+    var ev = document.getElementById('fEvent').value;
+    var uid = document.getElementById('fUser').value.trim();
+    var lim = document.getElementById('fLimit').value;
+    var q = '?limit=' + encodeURIComponent(lim);
+    if (ev) q += '&event=' + encodeURIComponent(ev);
+    if (uid) q += '&userId=' + encodeURIComponent(uid);
+    fetch('/api/admin/meta-events' + q, { credentials: 'include' })
+      .then(function(r){ if (r.status===401||r.status===403) throw new Error('auth'); return r.json(); })
+      .then(function(d){ render(d.events || []); })
+      .catch(function(e){
+        if (e && e.message === 'auth') content.innerHTML = '<div class="err">No autorizado. Iniciá sesión en el panel admin primero (misma pestaña), después recargá esta página.</div>';
+        else content.innerHTML = '<div class="err">No se pudieron cargar los eventos.</div>';
+      });
+  }
+
+  function render(rows) {
+    if (!rows.length) { content.innerHTML = '<div class="err">No hay eventos registrados todavía (o el filtro no devolvió nada). Se registran a partir del deploy.</div>'; return; }
+    // Agrupar por userId (los que no tienen userId van juntos al final).
+    var groups = {}; var order = [];
+    rows.forEach(function(r){
+      var k = r.userId || '(sin userId)';
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(r);
+    });
+    var onlyPaired = document.getElementById('onlyPaired').checked;
+    var html = '';
+    order.forEach(function(k){
+      var evs = groups[k];
+      var hasBuy = evs.some(function(e){ return e.eventName === 'Purchase'; });
+      if (onlyPaired && !hasBuy) return;
+      // Referencia: el mejor registro del usuario (para marcar qué le falta a la compra).
+      var reg = evs.filter(function(e){ return e.eventName==='CompleteRegistration'; })[0];
+      html += '<div class="user"><div class="user-h">👤 <b>' + esc(k) + '</b> · ' + evs.length + ' evento(s)</div>';
+      html += '<table class="tbl"><thead><tr><th>Fecha</th><th>Evento</th>';
+      COLS.forEach(function(c){ html += '<th>' + c + '</th>'; });
+      html += '<th>$</th><th></th></tr></thead><tbody>';
+      evs.forEach(function(e, i){
+        var isBuy = e.eventName === 'Purchase';
+        var cls = isBuy ? 'buy' : (e.eventName==='CompleteRegistration' ? 'reg' : '');
+        var name = isBuy ? 'Compra' : (e.eventName==='CompleteRegistration' ? 'Registro' : e.eventName);
+        // ¿La compra pierde algún parámetro que el registro sí tenía?
+        var missing = false;
+        if (isBuy && reg) COLS.forEach(function(c){ if (reg[c] && !e[c]) missing = true; });
+        html += '<tr class="' + (missing?'diff':'') + '">';
+        html += '<td class="val">' + fmtDate(e.createdAt) + '</td>';
+        html += '<td class="ev ' + cls + '">' + esc(name) + '</td>';
+        COLS.forEach(function(c){ html += '<td>' + badge(e[c]) + '</td>'; });
+        html += '<td class="val">' + (e.value!=null ? (e.currency||'')+' '+e.value : '') + '</td>';
+        html += '<td><span class="toggle" data-g="'+esc(k)+'" data-i="'+i+'">ver valores</span></td>';
+        html += '</tr>';
+        // Fila de detalle (valores crudos).
+        html += '<tr class="detail" id="det-'+esc(k).replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+i+'"><td colspan="'+(COLS.length+4)+'">'
+          + 'fbc: ' + esc(e.fbc||'—') + '<br>fbp: ' + esc(e.fbp||'—') + '<br>ip: ' + esc(e.ip||'—')
+          + '<br>ua: ' + esc(e.ua||'—') + '<br>em: ' + esc(e.em||'—') + '  ph: ' + esc(e.ph||'—') + '  external_id: ' + esc(e.external_id||'—')
+          + '<br>content_name: ' + esc(e.contentName||'—') + '  destinos: ' + esc((e.destinations||[]).join(', ')||'—') + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    if (!html) html = '<div class="err">No hay usuarios con compra en este set.</div>';
+    content.innerHTML = html;
+    // Toggles de detalle.
+    Array.prototype.forEach.call(content.querySelectorAll('.toggle'), function(t){
+      t.onclick = function(){
+        var id = 'det-' + t.getAttribute('data-g').replace(/[^a-zA-Z0-9_-]/g,'_') + '-' + t.getAttribute('data-i');
+        var row = document.getElementById(id);
+        if (row) row.style.display = (row.style.display==='table-row'?'none':'table-row');
+      };
+    });
+  }
+
+  document.getElementById('reload').onclick = load;
+  document.getElementById('fEvent').onchange = load;
+  document.getElementById('fLimit').onchange = load;
+  document.getElementById('onlyPaired').onchange = load;
+  document.getElementById('fUser').addEventListener('keydown', function(e){ if (e.key==='Enter') load(); });
+  load();
+})();
+</script>
+</body>
+</html>

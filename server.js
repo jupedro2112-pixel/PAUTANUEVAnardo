@@ -1077,6 +1077,18 @@ app.get('/adminprivado2026/admin.js', adminHostCheck, (req, res) => {
   res.send(content);
 });
 
+// Visor PRIVADO de eventos Meta (diagnóstico). Ruta explícita ANTES del catch-all.
+// El HTML es estático (no sensible); los datos van por /api/admin/meta-events con
+// el cookie admin_api_session (requiere admin logueado).
+app.get('/adminprivado2026/meta-events', adminHostCheck, (req, res) => {
+  const p = path.join(__dirname, 'public', 'adminprivado2026', 'meta-events.html');
+  const content = readFileCached(p);
+  if (!content) return res.status(404).send('Not found');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(content);
+});
+
 // Catch-all: block every other path under /adminprivado2026/ (e.g. direct
 // access to /adminprivado2026/index.html, /adminprivado2026/manifest.json).
 // This runs BEFORE express.static so static never serves these files.
@@ -6092,6 +6104,25 @@ app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
 // GET /api/admin/girox/health
 // Dice en un solo lugar QUÉ está configurado y QUÉ responde la plataforma. Es lo
 // primero que hay que mirar cuando "no se crea el usuario" o "el botón CASINO no
+// GET /api/admin/meta-events — diagnóstico PRIVADO: qué user_data se envió a Meta
+// (Conversions API) en cada evento. Sirve para comparar registro vs compra sin
+// depender del número agregado de Meta. Filtros opcionales: ?event=Purchase,
+// ?userId=..., ?limit=N (máx 500). Solo admin.
+app.get('/api/admin/meta-events', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const MetaEventLog = require('./src/models/MetaEventLog');
+    const q = {};
+    if (req.query.event) q.eventName = String(req.query.event).slice(0, 60);
+    if (req.query.userId) q.userId = String(req.query.userId).slice(0, 120);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+    const events = await MetaEventLog.find(q).sort({ createdAt: -1 }).limit(limit).lean();
+    res.json({ events });
+  } catch (e) {
+    logger.error(`[meta-events] error: ${e.message}`);
+    res.status(500).json({ error: 'No se pudieron cargar los eventos' });
+  }
+});
+
 // entra": el 99% de las veces es una variable de entorno que falta.
 // NUNCA devuelve la API key ni la contraseña del panel — sólo si están presentes.
 app.get('/api/admin/girox/health', authMiddleware, adminMiddleware, async (req, res) => {
