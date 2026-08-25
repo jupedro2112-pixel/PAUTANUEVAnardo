@@ -1272,16 +1272,26 @@ VIP.ui._showCasinoFrame = function() {
       // `allow` habilita pantalla completa y sonido dentro de los juegos.
       '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
         'allow="autoplay; fullscreen; payment"></iframe>' +
-      // BURBUJA de soporte flotante (abajo a la derecha) — abre el chat de acciones.
+      // BURBUJA "Carga automática" (abre/cierra el widget) — logo de la marca +
+      // etiqueta "⚡ CARGA AUTOMÁTICA": con el 🎧 pelado los clientes creían que
+      // era el soporte propio de la página del casino. Todo vive DENTRO del
+      // button para moverse junto (owner 2026-08-25, réplica tanda C).
       '<button type="button" id="casinoSupportBubble" onclick="VIP.ui.toggleCasinoChat()" ' +
-        'title="Soporte y cargas" style="position:absolute;z-index:6;right:16px;' +
-        'bottom:calc(18px + env(safe-area-inset-bottom,0px));width:60px;height:60px;border-radius:50%;' +
-        'background:linear-gradient(135deg,#128c4a,#25d366);color:#fff;border:none;' +
-        'box-shadow:0 6px 20px rgba(0,0,0,0.55);font-size:26px;cursor:pointer;' +
-        'display:flex;align-items:center;justify-content:center;">🎧' +
-        '<span id="casinoChatBadge" style="display:none;position:absolute;top:-2px;right:-2px;' +
-        'background:#e53935;color:#fff;border-radius:11px;min-width:20px;height:20px;line-height:20px;' +
-        'font-size:12px;font-weight:800;padding:0 5px;text-align:center;">0</span></button>' +
+        'style="position:absolute;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));' +
+        'display:flex;flex-direction:column;align-items:center;gap:4px;padding:0;z-index:6;' +
+        'background:none;border:none;cursor:pointer;user-select:none;-webkit-user-select:none;">' +
+        '<span style="position:relative;display:block;width:60px;height:60px;">' +
+          '<img src="/images/soporte-1girox.png" alt="Carga automática 1Girox" draggable="false" ' +
+            'style="width:60px;height:60px;border-radius:50%;object-fit:cover;display:block;' +
+            'border:2px solid #00e676;box-shadow:0 6px 22px rgba(0,200,83,0.55);-webkit-user-drag:none;">' +
+          '<span id="casinoChatBadge" style="display:none;position:absolute;top:-3px;right:-3px;' +
+            'background:#ff3b30;color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;' +
+            'border-radius:10px;line-height:19px;padding:0 4px;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></span>' +
+        '</span>' +
+        '<span style="display:block;background:linear-gradient(135deg,#00a844,#00e676);color:#04240f;' +
+          'font-size:10px;font-weight:900;letter-spacing:0.3px;padding:3px 8px;border-radius:9px;' +
+          'white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.45);">⚡ CARGA AUTOMÁTICA</span>' +
+      '</button>' +
       // WIDGET de soporte flotante en la ESQUINA (owner 2026-08-17, referencia
       // Bet33): se abre "medio abierto" sobre el casino, NO parte la pantalla.
       // Ancho fijo pegado abajo a la derecha (arriba de la burbuja). El chat real
@@ -1298,7 +1308,8 @@ VIP.ui._showCasinoFrame = function() {
           // En modo soporte este círculo muestra la FOTO del logo (misma que
           // la cabecera del chat, configurable desde el panel); en asistente, 🎧.
           '<div id="casinoWidgetIcon" style="width:34px;height:34px;border-radius:50%;background:#0d0d1a;flex:0 0 auto;' +
-          'display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden;">🎧</div>' +
+          'display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden;">' +
+          '<img src="/images/soporte-1girox.png" alt="" draggable="false" style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block;-webkit-user-drag:none;"></div>' +
           '<div style="flex:1;min-width:0;">' +
             // El título cambia según el modo: asistente ("Cargas Automáticas")
             // o chat humano ("SOPORTE") — así el cliente diferencia (owner).
@@ -1553,7 +1564,8 @@ VIP.ui._casinoChatRestoreNodes = function() {
   const title = document.getElementById('casinoWidgetTitle');
   if (title) title.textContent = 'Cargas Automáticas 1Girox';
   const icon = document.getElementById('casinoWidgetIcon');
-  if (icon) icon.innerHTML = '🎧';
+  if (icon) icon.innerHTML = '<img src="/images/soporte-1girox.png" alt="" draggable="false" ' +
+    'style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block;-webkit-user-drag:none;">';
 };
 
 /** Compat: devuelve el chat Y esconde el panel (lo usa closeCasinoFrame). */

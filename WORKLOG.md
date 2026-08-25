@@ -8,6 +8,34 @@
 
 ## Sesión 2026-08-25
 
+### 236. Identidad de la burbuja del casino: logo de marca + "⚡ CARGA AUTOMÁTICA" (réplica tanda C, adaptada)
+- **Pedido owner:** la burbuja 🎧 pelada parecía el soporte propio de la PÁGINA
+  del casino → que sea el LOGO de la marca con etiqueta clara. Réplica de un doc
+  de la repo gemela; el owner pidió que diga **"CARGA AUTOMÁTICA"** (no "CARGA
+  RÁPIDA" como el original) y lo demás idéntico.
+- **Hecho (`public/js/ui.js`, dentro de `_showCasinoFrame` y `_casinoChatRestoreNodes`):**
+  1. **Burbuja `#casinoSupportBubble`**: de un botón redondo verde con 🎧 pasó a
+     una columna **logo (`/images/soporte-1girox.png`, redondo, ring verde) +
+     etiqueta "⚡ CARGA AUTOMÁTICA"**. El badge de no leídos (`#casinoChatBadge`)
+     conserva su id y va en la esquina del logo. `draggable="false"` +
+     `-webkit-user-drag:none` en la img (evita el fantasma del drag nativo).
+  2. **Ícono del header del widget (`#casinoWidgetIcon`)**: ahora es el logo
+     SIEMPRE — se cambió el default estático (era 🎧) y la línea de vuelta a modo
+     asistente en `_casinoChatRestoreNodes` (era `innerHTML='🎧'`). En modo
+     soporte ya mostraba el logo; ahora coincide en ambos modos.
+- **NO tocado (ya estaba / no aplica en este repo):**
+  - **Widget abierto al entrar (cambio #3 del doc): YA EXISTÍA** — líneas ~1434-1438
+    ("panel del asistente SIEMPRE abierto al entrar", `setTimeout(openCasinoChat,250)`).
+  - **Pista de arrastre (cambio #4 del doc): NO APLICA** — este repo NO tiene la
+    burbuja arrastrable (el doc asume la gemela que ya la tiene, su #202). No se
+    agregó el hint para no anunciar algo que no existe. Si el owner quiere la
+    burbuja arrastrable, es una feature aparte a portar (no venía en el doc).
+- **Validado:** `node --check` OK (`ui.js`, `sw`). Logo `soporte-1girox.png`
+  existe (18KB). **SW → v133.** Front en Vercel se actualiza con el push.
+  PROBAR (celu, tras recargar 2 veces por el SW): entrar al casino → widget
+  abierto con el logo en el header → cerrar con la ✕ → burbuja con logo +
+  "⚡ CARGA AUTOMÁTICA" y el badge en la esquina del logo.
+
 ### 235. Eliminadas 2 features invisibles que polleaban en background bajo el casino (A); fueguito/reembolsos van por B (dormidos)
 - **Regla del owner:** si borrar del todo NO tiene riesgo y da velocidad → borrar
   (A); si hay riesgo → dejar dormido (B). Se decidió por feature, con barrido de

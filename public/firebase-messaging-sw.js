@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v132'; // v132: eliminadas features invisibles que polleaban en background bajo el casino — ruleta diaria (roulette.js, poll 30s) y bonificacion vigente (promobonus.js, poll 2min)
+const CACHE_VERSION = 'v133'; // v133: identidad de la burbuja del casino — logo de marca + etiqueta '⚡ CARGA AUTOMATICA' (en vez del auricular pelado) + logo en el header del widget
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;
