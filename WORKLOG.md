@@ -8,6 +8,31 @@
 
 ## Sesión 2026-08-25
 
+### 239. FIX del arrastre (#237): el panel no seguía a la burbuja y la tapaba
+- **Reporte owner (screencast):** al mover la burbuja, el chat seguía abriendo en el
+  mismo lugar de siempre (no se adaptaba); el panel tapaba la burbuja de cerrar; y el
+  globito "te tapa el juego" quedaba tapado. Pidió que el chat Y el texto se muevan
+  según dónde está la burbuja.
+- **Causa:** en #237 sólo anclé el panel HORIZONTALMENTE (`_bubbleSide` izq/der); el
+  drawer seguía anclado `bottom:88px` fijo → no seguía la posición vertical, y como
+  la burbuja quedaba visible detrás, el panel la tapaba.
+- **Fix (`public/js/ui.js`):**
+  - `openCasinoChat` ahora ancla el panel al **CUADRANTE** de la burbuja: lee su
+    `getBoundingClientRect` (sirve arrastrada o en su lugar default) → lado izq/der +
+    mitad arriba/abajo, y setea `top`/`bottom` + `left`/`right` en consecuencia. El
+    panel abre "desde" donde está la burbuja.
+  - **La burbuja se OCULTA (`visibility:hidden`) mientras el panel está abierto** → el
+    chat nunca la tapa; se cierra con la ✕. `closeCasinoChat` y `_casinoChatUnmount`
+    la vuelven a mostrar.
+  - `_showBubbleDragHintOnce`: el globito ahora se posiciona ARRIBA de la burbuja si
+    está en la mitad inferior, ABAJO si está en la superior (no se va de pantalla), y
+    del lado que corresponde. Se muestra al primer cierre (✕ → `toggleCasinoChat`),
+    con la burbuja ya visible.
+- **Validado:** `node --check` OK. **SW → v136.** PROBAR: arrastrar la burbuja a
+  distintas esquinas → abrir el chat → abre en esa esquina y la burbuja desaparece
+  (sin taparse) → cerrar con ✕ → vuelve la burbuja donde estaba; el globito (1ª vez)
+  aparece del lado correcto.
+
 ### 238. FIX: cada deploy en EB deslogueaba a los usuarios (verifyToken borraba el token ante 502/red)
 - **Síntoma (owner):** cada vez que hace deploy en Amazon, la sesión abierta se
   cierra y hay que re-escribir usuario + contraseña.

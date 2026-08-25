@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v135'; // v135: FIX deslogueo en cada deploy — verifyToken solo cierra sesion ante 401 real; ante 502/503/red (backend caido durante el deploy de EB) mantiene el token y reintenta
+const CACHE_VERSION = 'v136'; // v136: el panel del casino abre en el CUADRANTE de la burbuja (lado + arriba/abajo) y la burbuja se OCULTA mientras el chat esta abierto (no la tapa); la pista de arrastre se posiciona segun donde este la burbuja
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

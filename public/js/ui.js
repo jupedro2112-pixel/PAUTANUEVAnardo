@@ -1591,10 +1591,12 @@ VIP.ui._showBubbleDragHintOnce = function() {
     'border:1px solid rgba(212,175,55,0.6);border-radius:12px;padding:9px 12px;' +
     'font-size:12px;font-weight:700;line-height:1.35;z-index:8;' +
     'box-shadow:0 8px 30px rgba(0,0,0,0.6);transition:opacity 0.6s;';
-  // Del mismo lado en que está la burbuja, justo arriba de ella.
+  // Del mismo lado que la burbuja; ARRIBA de ella si está en la mitad inferior,
+  // ABAJO si está en la mitad superior (así no se va de pantalla).
   if ((r.left + r.width / 2) < window.innerWidth / 2) hint.style.left = '12px';
   else hint.style.right = '12px';
-  hint.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  if ((r.top + r.height / 2) >= window.innerHeight / 2) hint.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  else hint.style.top = (r.bottom + 8) + 'px';
   overlay.appendChild(hint);
   setTimeout(function() { hint.style.opacity = '0'; }, 6000);
   setTimeout(function() { try { hint.remove(); } catch (e) {} }, 6800);
@@ -1605,10 +1607,24 @@ VIP.ui.openCasinoChat = function() {
   const drawer = document.getElementById('casinoChatDrawer');
   if (!drawer) return;
   drawer.style.display = 'flex';
-  // Anclar el panel al MISMO lado horizontal en que quedó la burbuja (si se
-  // arrastró al borde izquierdo), así abren pegados (owner 2026-08-25).
-  if (VIP.ui._bubbleSide === 'left') { drawer.style.left = '16px'; drawer.style.right = 'auto'; }
+  // Anclar el panel al MISMO CUADRANTE que la burbuja (lado izq/der + mitad
+  // arriba/abajo) para que abra "desde" donde está, y OCULTAR la burbuja mientras
+  // el panel está abierto → el chat nunca la tapa (se cierra con la ✕). Se lee el
+  // rect real: sirve arrastrada o en su lugar default (owner 2026-08-25).
+  const _bubble = document.getElementById('casinoSupportBubble');
+  let _side = VIP.ui._bubbleSide || 'right', _bottom = true;
+  if (_bubble) {
+    const br = _bubble.getBoundingClientRect();
+    if (br.width || br.height) {
+      _side = (br.left + br.width / 2) < window.innerWidth / 2 ? 'left' : 'right';
+      _bottom = (br.top + br.height / 2) >= window.innerHeight / 2;
+    }
+    _bubble.style.visibility = 'hidden';
+  }
+  if (_side === 'left') { drawer.style.left = '16px'; drawer.style.right = 'auto'; }
   else { drawer.style.right = '16px'; drawer.style.left = 'auto'; }
+  if (_bottom) { drawer.style.bottom = 'calc(16px + env(safe-area-inset-bottom,0px))'; drawer.style.top = 'auto'; }
+  else { drawer.style.top = 'calc(16px + env(safe-area-inset-top,0px))'; drawer.style.bottom = 'auto'; }
   VIP.ui._casinoChatUnread = 0;
   const badge = document.getElementById('casinoChatBadge');
   if (badge) badge.style.display = 'none';
@@ -1626,6 +1642,9 @@ VIP.ui.closeCasinoChat = function() {
   if (VIP.ui._casinoChatPh) VIP.ui._casinoChatRestoreNodes();
   const drawer = document.getElementById('casinoChatDrawer');
   if (drawer) drawer.style.display = 'none';
+  // La burbuja vuelve a aparecer (se ocultó al abrir el panel).
+  const bubble = document.getElementById('casinoSupportBubble');
+  if (bubble) bubble.style.visibility = 'visible';
 };
 
 /** Muda el chat REAL (cabecera+mensajes+barra de escribir) adentro del panel.
@@ -1719,6 +1738,8 @@ VIP.ui._casinoChatUnmount = function() {
   VIP.ui._casinoChatRestoreNodes();
   const drawer = document.getElementById('casinoChatDrawer');
   if (drawer) drawer.style.display = 'none';
+  const bubble = document.getElementById('casinoSupportBubble');
+  if (bubble) bubble.style.visibility = 'visible';
 };
 
 // ============================================================
