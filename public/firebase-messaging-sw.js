@@ -34,7 +34,7 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v133'; // v133: identidad de la burbuja del casino — logo de marca + etiqueta '⚡ CARGA AUTOMATICA' (en vez del auricular pelado) + logo en el header del widget
+const CACHE_VERSION = 'v134'; // v134: burbuja del casino ARRASTRABLE con imán al borde (pointer events + setPointerCapture) + pista de arrastre una vez por dispositivo + panel se ancla al lado de la burbuja
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 
 // Logs por-fetch del SW (corren en CADA request). Apagados por default;

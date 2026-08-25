@@ -8,6 +8,37 @@
 
 ## Sesión 2026-08-25
 
+### 237. Portado el ARRASTRE de la burbuja del casino (lo que en #236 quedó como "no aplica")
+- **Contexto:** el doc de la tanda C daba por hecho que la burbuja ya era
+  arrastrable (feature #202 de la gemela) y NO incluía ese código. En #236 se dejó
+  pendiente. El owner pidió portarlo → implementado desde cero, alineado con el
+  checklist de verificación de la gemela (nombres y contrato idénticos para que su
+  doc de tanda C calce).
+- **Hecho (`public/js/ui.js`):**
+  - `VIP.ui._makeBubbleDraggable()`: engancha pointer events a `#casinoSupportBubble`
+    (pointerdown/move/up/**cancel** + `setPointerCapture` + `touch-action:none`).
+    Umbral **8px** para separar toque de arrastre. Al soltar, IMÁN al borde
+    horizontal más cercano (izq/der a `16px`); el alto queda donde se soltó,
+    clampeado al viewport. Usa `getBoundingClientRect`/`offsetWidth` (la burbuja es
+    una columna logo+etiqueta SIN tamaño fijo — nada hardcodeado). Se llama UNA vez
+    al crear el overlay (guard `_dragArmed`).
+  - `VIP.ui._bubbleWasDragged`: se pone en true al arrastre real y se limpia a los
+    **~400ms**; `toggleCasinoChat` arranca con `if (_bubbleWasDragged) return;` para
+    que soltar NO abra/cierre el panel por el click sintético.
+  - `VIP.ui._bubbleSide` ('left'/'right') + `_bubbleTop` → persisten en localStorage
+    (`casinoBubbleSide`/`casinoBubbleTop`); `_applyBubblePosition()` los restaura al
+    entrar. `openCasinoChat` ancla el panel al MISMO lado que la burbuja.
+  - `VIP.ui._showBubbleDragHintOnce()`: globito "✋ arrastrá la burbuja" una vez por
+    dispositivo, al PRIMER cierre del widget (guard `casinoBubbleDragHint`). Ahora SÍ
+    corresponde (antes en #236 se omitió por no existir el arrastre).
+- **Validado:** `node --check` OK. Checklist-grep de la gemela lista todo
+  (`_bubbleWasDragged`/`_bubbleSide`/`_makeBubbleDraggable`/`setPointerCapture`).
+  **SW → v134.** Front en Vercel se actualiza con el push.
+  PROBAR (celu): entrar al casino → cerrar el widget → aparece la burbuja con logo +
+  "⚡ CARGA AUTOMÁTICA" y el globito (1ª vez) → mantener apretado y arrastrar →
+  logo+etiqueta viajan juntos, se pegan al borde al soltar, y un TOQUE la abre normal
+  (el arrastre no la abre). En PC igual con el mouse (la img no fantasmea).
+
 ### 236. Identidad de la burbuja del casino: logo de marca + "⚡ CARGA AUTOMÁTICA" (réplica tanda C, adaptada)
 - **Pedido owner:** la burbuja 🎧 pelada parecía el soporte propio de la PÁGINA
   del casino → que sea el LOGO de la marca con etiqueta clara. Réplica de un doc

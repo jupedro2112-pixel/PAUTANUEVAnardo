@@ -1363,6 +1363,10 @@ VIP.ui._showCasinoFrame = function() {
       '</div>';
     document.body.appendChild(overlay);
 
+    // Burbuja ARRASTRABLE con imán al borde (owner 2026-08-25): el cliente la
+    // puede mover si le tapa el juego. Se engancha UNA vez (el overlay se cachea).
+    try { VIP.ui._makeBubbleDraggable(); } catch (e) {}
+
     // Cuando el casino termina de cargar, se esconde el "cargando" y se muestra el juego.
     const frame = overlay.querySelector('#casinoFrame');
     frame.addEventListener('load', function() {
@@ -1452,10 +1456,148 @@ VIP.ui._showCasinoFrame = function() {
 /** Abre/cierra el panel SOBRE el casino (el juego no se corta). Al abrir
  *  arranca en modo ASISTENTE (bot); el chat vivo solo aparece vía soporte. */
 VIP.ui.toggleCasinoChat = function() {
+  // Si venía de ARRASTRAR la burbuja, el click sintético que sigue al soltar NO
+  // debe abrir/cerrar el panel (owner 2026-08-25).
+  if (VIP.ui._bubbleWasDragged) return;
   const drawer = document.getElementById('casinoChatDrawer');
   if (!drawer) return;
   if (drawer.style.display === 'none' || !drawer.style.display) VIP.ui.openCasinoChat();
-  else VIP.ui.closeCasinoChat();
+  else { VIP.ui.closeCasinoChat(); VIP.ui._showBubbleDragHintOnce(); }
+};
+
+/**
+ * Hace la burbuja del casino ARRASTRABLE con imán al borde (owner 2026-08-25).
+ * Pointer events (mouse + touch), umbral de 8px para separar TOQUE de ARRASTRE,
+ * `setPointerCapture` + `touch-action:none` (no scrollea la página mientras se
+ * arrastra). Al soltar se pega al borde izq/der más cercano y guarda lado + alto
+ * en localStorage. Setea `_bubbleWasDragged` para que el click sintético del
+ * pointerup NO abra/cierre el panel; se limpia a los ~400ms. Usa
+ * getBoundingClientRect: la burbuja es una columna logo+etiqueta SIN tamaño fijo.
+ */
+VIP.ui._makeBubbleDraggable = function() {
+  const bubble = document.getElementById('casinoSupportBubble');
+  if (!bubble || bubble._dragArmed) return;
+  bubble._dragArmed = true;
+  bubble.style.touchAction = 'none';
+
+  // Restaurar posición guardada (lado + alto), si ya la movió antes.
+  VIP.ui._applyBubblePosition();
+
+  const THRESH = 8; // px para pasar de "toque" a "arrastre"
+  let startX = 0, startY = 0, origLeft = 0, origTop = 0, dragging = false, moved = false, pid = null;
+
+  function onDown(e) {
+    if (e.button != null && e.button !== 0) return; // solo botón primario
+    const r = bubble.getBoundingClientRect();
+    dragging = true; moved = false;
+    origLeft = r.left; origTop = r.top;
+    startX = e.clientX; startY = e.clientY;
+    // Fijar por left/top absolutos desde el rect actual (deja right/bottom).
+    bubble.style.left = r.left + 'px';
+    bubble.style.top = r.top + 'px';
+    bubble.style.right = 'auto';
+    bubble.style.bottom = 'auto';
+    pid = e.pointerId;
+    try { if (pid != null && bubble.setPointerCapture) bubble.setPointerCapture(pid); } catch (_) {}
+    // Con setPointerCapture los eventos del puntero llegan SIEMPRE a la burbuja,
+    // aunque el dedo/mouse salga de ella → escuchamos en la burbuja.
+    bubble.addEventListener('pointermove', onMove, { passive: false });
+    bubble.addEventListener('pointerup', onUp);
+    bubble.addEventListener('pointercancel', onUp);
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!moved && (Math.abs(dx) + Math.abs(dy)) > THRESH) { moved = true; VIP.ui._bubbleWasDragged = true; }
+    if (!moved) return;
+    e.preventDefault();
+    const bw = bubble.offsetWidth || 64, bh = bubble.offsetHeight || 84;
+    let nl = origLeft + dx, nt = origTop + dy;
+    nl = Math.max(6, Math.min(window.innerWidth - bw - 6, nl));
+    nt = Math.max(6, Math.min(window.innerHeight - bh - 6, nt));
+    bubble.style.left = nl + 'px';
+    bubble.style.top = nt + 'px';
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    bubble.removeEventListener('pointermove', onMove);
+    bubble.removeEventListener('pointerup', onUp);
+    bubble.removeEventListener('pointercancel', onUp);
+    try { if (pid != null && bubble.releasePointerCapture) bubble.releasePointerCapture(pid); } catch (_) {}
+    pid = null;
+    if (!moved) { VIP.ui._bubbleWasDragged = false; return; }
+    // Imán al borde horizontal más cercano; el alto queda donde lo soltó.
+    const r = bubble.getBoundingClientRect();
+    const side = (r.left + r.width / 2) < window.innerWidth / 2 ? 'left' : 'right';
+    const topPx = Math.max(6, Math.min(window.innerHeight - r.height - 6, r.top));
+    VIP.ui._bubbleSide = side;
+    VIP.ui._bubbleTop = topPx;
+    try {
+      localStorage.setItem('casinoBubbleSide', side);
+      localStorage.setItem('casinoBubbleTop', String(Math.round(topPx)));
+    } catch (_) {}
+    VIP.ui._applyBubblePosition();
+    // Limpiar el flag DESPUÉS del click sintético que dispara el pointerup.
+    setTimeout(function() { VIP.ui._bubbleWasDragged = false; }, 400);
+  }
+
+  bubble.addEventListener('pointerdown', onDown);
+};
+
+/** Aplica a la burbuja el lado (imán) y alto guardados; si nunca la movió, deja
+ *  el default (abajo a la derecha, del CSS inline). Clampa el alto al viewport. */
+VIP.ui._applyBubblePosition = function() {
+  const bubble = document.getElementById('casinoSupportBubble');
+  if (!bubble) return;
+  let side = VIP.ui._bubbleSide, top = VIP.ui._bubbleTop;
+  try {
+    if (side == null) side = localStorage.getItem('casinoBubbleSide') || null;
+    if (top == null) { const t = localStorage.getItem('casinoBubbleTop'); if (t != null && t !== '') top = parseInt(t, 10); }
+  } catch (_) {}
+  if (!side) return; // nunca la movió → queda en su posición default
+  VIP.ui._bubbleSide = side;
+  const bh = bubble.offsetHeight || 84;
+  if (top == null || isNaN(top)) top = window.innerHeight - bh - 24;
+  top = Math.max(6, Math.min(window.innerHeight - bh - 6, top));
+  VIP.ui._bubbleTop = top;
+  bubble.style.top = top + 'px';
+  bubble.style.bottom = 'auto';
+  if (side === 'left') { bubble.style.left = '16px'; bubble.style.right = 'auto'; }
+  else { bubble.style.right = '16px'; bubble.style.left = 'auto'; }
+};
+
+/**
+ * Pista de arrastre (una vez por dispositivo): al PRIMER cierre del widget se
+ * muestra un globito junto a la burbuja avisando que se puede arrastrar — sin
+ * esto nadie descubre que se mueve. El guard con localStorage va ANTES de crear
+ * nada; si localStorage no está (modo privado raro), no se muestra y listo.
+ */
+VIP.ui._showBubbleDragHintOnce = function() {
+  try {
+    if (localStorage.getItem('casinoBubbleDragHint')) return;
+    localStorage.setItem('casinoBubbleDragHint', '1');
+  } catch (e) { return; }
+  const overlay = document.getElementById('casinoOverlay');
+  const b = document.getElementById('casinoSupportBubble');
+  if (!overlay || !b) return;
+  const r = b.getBoundingClientRect();
+  const hint = document.createElement('div');
+  hint.textContent = '✋ ¿Te tapa el juego? Mantené apretado y arrastrá la burbuja a donde quieras';
+  hint.style.cssText =
+    'position:absolute;max-width:230px;background:rgba(13,13,26,0.95);color:#ffd700;' +
+    'border:1px solid rgba(212,175,55,0.6);border-radius:12px;padding:9px 12px;' +
+    'font-size:12px;font-weight:700;line-height:1.35;z-index:8;' +
+    'box-shadow:0 8px 30px rgba(0,0,0,0.6);transition:opacity 0.6s;';
+  // Del mismo lado en que está la burbuja, justo arriba de ella.
+  if ((r.left + r.width / 2) < window.innerWidth / 2) hint.style.left = '12px';
+  else hint.style.right = '12px';
+  hint.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  overlay.appendChild(hint);
+  setTimeout(function() { hint.style.opacity = '0'; }, 6000);
+  setTimeout(function() { try { hint.remove(); } catch (e) {} }, 6800);
 };
 
 /** Abre el panel en modo asistente (o como estaba si el soporte quedó activo). */
@@ -1463,6 +1605,10 @@ VIP.ui.openCasinoChat = function() {
   const drawer = document.getElementById('casinoChatDrawer');
   if (!drawer) return;
   drawer.style.display = 'flex';
+  // Anclar el panel al MISMO lado horizontal en que quedó la burbuja (si se
+  // arrastró al borde izquierdo), así abren pegados (owner 2026-08-25).
+  if (VIP.ui._bubbleSide === 'left') { drawer.style.left = '16px'; drawer.style.right = 'auto'; }
+  else { drawer.style.right = '16px'; drawer.style.left = 'auto'; }
   VIP.ui._casinoChatUnread = 0;
   const badge = document.getElementById('casinoChatBadge');
   if (badge) badge.style.display = 'none';
