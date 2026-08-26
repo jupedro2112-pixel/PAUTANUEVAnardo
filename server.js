@@ -3960,7 +3960,10 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     logger.info(`[landing-signup] alta ${username} campaign=${normalizedCode}${giroxOwner ? ' (key publicista)' : ''}`);
     // La landing redirige DIRECTO a enterUrl (casino); accessUrl queda como
     // fallback/compat con landings viejas.
-    res.status(201).json({ success: true, accessUrl, enterUrl, username, password });
+    // metaEventId = el MISMO event_id que usó la CAPI (reg_<id>) → la landing
+    // dispara el CompleteRegistration del navegador con este id y Meta DEDUPLICA
+    // el evento browser con el server-side (owner 2026-08-26).
+    res.status(201).json({ success: true, accessUrl, enterUrl, username, password, metaEventId: 'reg_' + newUser.id });
   } catch (error) {
     // A stdout además del logger de archivo: los 500 de este endpoint tienen que
     // verse en los logs de EB para diagnosticar (el logger winston va solo a
@@ -3969,6 +3972,25 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
     try { console.error(`[landing-signup][500] ${error.stack || error.message}`); } catch (_) {}
     res.status(500).json({ error: 'Error del servidor. Probá de nuevo.' });
   }
+});
+
+// Pixel IDs de Meta (propio + partners activos) para el PIXEL DEL NAVEGADOR de la
+// landing (owner 2026-08-26). Los pixel IDs son PÚBLICOS (viajan en cada pixel del
+// navegador), no son secreto — el TOKEN de la CAPI NUNCA se expone acá. La landing
+// (Vercel, otro origen) lo lee por CORS igual que /api/landing/signup.
+app.get('/api/meta-pixel-id', (req, res) => {
+  const isActive = (v) => {
+    const x = String(v || '').trim().toLowerCase();
+    return x && !['off', '-', 'pendiente', 'none', 'null'].includes(x);
+  };
+  const ids = [];
+  if (isActive(process.env.META_PIXEL_ID)) ids.push(String(process.env.META_PIXEL_ID).trim());
+  for (let i = 2; i <= 9; i++) {
+    const pid = process.env['META_PIXEL_ID_' + i];
+    if (isActive(pid)) ids.push(String(pid).trim());
+  }
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({ pixelIds: ids });
 });
 
 // ENTRADA DIRECTA AL CASINO desde la landing (owner 2026-08-19): el botón

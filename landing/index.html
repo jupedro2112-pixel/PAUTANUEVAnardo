@@ -236,6 +236,27 @@
   document.getElementById('bonusBig').textContent = BONUS_BIG;
   document.getElementById('bonusSub').textContent = BONUS_SUB;
 
+  // PIXEL DEL NAVEGADOR de Meta (owner 2026-08-26). Antes la landing NO tenía
+  // pixel → el asistente de Meta decía "no se encontraron píxeles" y el _fbp real
+  // no se creaba (se generaba uno sintético). Ahora se carga fbevents.js y se
+  // inicializan los Pixel IDs que sirve el backend desde SSM (propio + partners):
+  // genera el _fbp REAL, dispara PageView y permite DEDUP navegador+CAPI del
+  // CompleteRegistration (con el mismo event_id `reg_<id>`).
+  (function loadMetaPixel() {
+    try {
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      fetch(API_BASE + '/api/meta-pixel-id')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var ids = (d && d.pixelIds) || [];
+          window.__giroxPixelIds = ids;
+          ids.forEach(function (id) { try { fbq('init', id); } catch (e) {} });
+          if (ids.length) { try { fbq('track', 'PageView'); } catch (e) {} }
+        })
+        .catch(function () { /* si falla, la CAPI server-side igual manda los eventos */ });
+    } catch (e) {}
+  })();
+
   function resolveCampaign() {
     if (CAMPAIGN_CODE) return CAMPAIGN_CODE;
     var q = new URLSearchParams(location.search);
@@ -252,9 +273,10 @@
   }
   function cookie(n) { var m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; }
 
-  // ATRIBUCIÓN DE PAUTA: la cookie _fbc solo la crea el pixel de navegador de
-  // Meta, y esta landing NO tiene pixel → sin esto, el click del anuncio
-  // (?fbclid=...) se PERDÍA y la conversión no se atribuía a la campaña. Se
+  // ATRIBUCIÓN DE PAUTA: la cookie _fbc la crea el pixel de navegador, pero puede
+  // NO haber cargado aún cuando el cliente se registra (fetch async del Pixel ID).
+  // Fallback: sin esto, el click del anuncio (?fbclid=...) se PERDÍA y la
+  // conversión no se atribuía a la campaña. Se
   // construye el fbc a mano con el formato oficial (fb.1.<timestamp>.<fbclid>)
   // y el backend lo persiste en el usuario → TODOS los eventos del embudo
   // (registro, carga, retiro) viajan atribuidos al anuncio que trajo al lead.
@@ -268,10 +290,10 @@
     return null;
   }
 
-  // fbp: identificador de navegador que normalmente crea el pixel de Meta. Como
-  // esta landing NO tiene pixel, la cookie _fbp no existía → antes se mandaba
-  // VACÍO y Meta no recibía ese parámetro (bajaba la calidad de coincidencia de
-  // TODOS los eventos, ver diagnóstico 2026-08-25). Se genera uno válido
+  // fbp: identificador de navegador que crea el pixel de Meta. Ahora el pixel se
+  // carga (loadMetaPixel), pero el fetch del Pixel ID es async y puede no haber
+  // creado la cookie _fbp cuando el cliente se registra. Fallback: si _fbp no
+  // está todavía, se genera uno válido
   // (fb.1.<timestamp>.<random>) y se PERSISTE en la cookie, así se reusa el MISMO
   // valor siempre — y el pixel de la PWA lo reutiliza al entrar, correlacionándolo
   // con el navegador. Mismo criterio que fbcFromUrl(). owner 2026-08-25.
@@ -329,6 +351,14 @@
         // dispositivo que ya se registró → si vuelve a la landing NO crea otra
         // cuenta ni dispara otro evento de registro a Meta.
         try { localStorage.setItem('girox_signed', res.d.username || '1'); } catch (e) {}
+        // Registro en el NAVEGADOR con el MISMO event_id que la CAPI (reg_<id>)
+        // → Meta DEDUPLICA browser+server. fbq usa sendBeacon: sobrevive a la
+        // redirección de abajo (owner 2026-08-26).
+        try {
+          if (window.fbq && res.d.metaEventId) {
+            fbq('track', 'CompleteRegistration', { content_name: 'signup_landing' }, { eventID: res.d.metaEventId });
+          }
+        } catch (e) {}
         ctaLabel.textContent = 'Entrando';
         window.location.href = dest;
       } else {

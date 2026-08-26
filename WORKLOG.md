@@ -6,6 +6,36 @@
 >
 > **Última actualización: 2026-08-25**
 
+## Sesión 2026-08-26
+
+### 244. Pixel del navegador en la landing (usando el Pixel ID de SSM) — el publicista tenía razón
+- **Reporte:** el "Asistente de datos de anuncios Meta" en la landing decía **"No se
+  han encontrado píxeles en esta página"**. REAL: la landing NO cargaba el pixel del
+  navegador (lo que ya sabíamos — por eso el `_fbp` era sintético, #241).
+- **Aclaración importante:** el Pixel ID + Token de SSM NO estaban al pedo — se usan
+  para la **CAPI (server-side)**, que SÍ manda los eventos (el asistente de Meta no ve
+  eso, solo ve el pixel del navegador). Pero el Pixel ID **también** sirve para el
+  pixel del navegador, y ese faltaba. El owner (con razón) pidió usarlo.
+- **Hecho:**
+  - **Backend** `GET /api/meta-pixel-id` (público; los Pixel IDs no son secreto, el
+    TOKEN nunca se expone): devuelve `{ pixelIds: [propio + partners activos] }`
+    leídos de `META_PIXEL_ID` / `META_PIXEL_ID_2..9` (SSM), salteando 'off'/'-'/etc.
+  - **Backend** `/api/landing/signup`: la respuesta ahora incluye `metaEventId:
+    'reg_'+id` (el MISMO event_id que usa la CAPI) para dedup navegador↔server.
+  - **Landing** (`landing/index.html`): `loadMetaPixel()` carga `fbevents.js`, hace
+    fetch de los Pixel IDs y `fbq('init', id)` para cada uno + `fbq('track','PageView')`.
+    → genera el **`_fbp` REAL**, dispara PageView y el asistente de Meta detecta el pixel.
+    En el signup exitoso dispara `fbq('track','CompleteRegistration', …, {eventID:
+    reg_<id>})` → **Meta deduplica** con la CAPI (mismo event_id). El generador
+    sintético de `_fbp` (#241) queda solo de **respaldo** (si el pixel no cargó aún).
+- **Honestidad:** confirmado que hasta ahora el fbp era **armado** (sintético). Con
+  esto se obtiene el real. Los eventos igual llegaban por CAPI (no estaba roto), pero
+  ahora se suma la capa del navegador (mejor calidad + lo que el publicista quería ver).
+- **Validado:** `node --check` server OK; JS inline de la landing OK; sin CSP que
+  bloquee facebook.net (el `vercel.json` del root es del server, no de la landing).
+  **Requiere:** redeploy del back (endpoint + metaEventId) y de la landing (Vercel).
+  Nota entorno: `grep` seguía colgando; verificado todo con `node`.
+
 ## Sesión 2026-08-25
 
 ### 243. Chats automáticos: abrir SOLO para soporte/fallo de carga + FIX sonido fantasma + sacar Comunidad
