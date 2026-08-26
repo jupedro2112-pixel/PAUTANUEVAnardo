@@ -4,7 +4,56 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-25**
+> **Última actualización: 2026-08-26**
+
+## Sesión 2026-08-26 (tarde) — consultoría Meta Ads, sin cambios de código
+
+### 245. Plan: pixel NUEVO exclusivo del proyecto + lookalike de compradores + campaña (PENDIENTE de ejecutar)
+- **Hallazgos (Events Manager, pixel `1502367544624759` "pixel-bo-publicidad", BM
+  "BO Publicidad"):** ese pixel es el que está en SSM como **`META_PIXEL_ID` (propio)**
+  — recibe TODOS los eventos (Login/RefundClaim/WithdrawRequest/InitiateCheckout/
+  Purchase/CompleteRegistration). Es el 3er pixel que apareció en la landing en la
+  captura del publicista ⇒ **el fetch a `/api/meta-pixel-id` ya funciona en prod**
+  (redeploy con el CORS de #244 hecho). EMQ: Purchase 6.7/10 (2.113, solo Servidor,
+  1 conjunto de anuncios optimiza por él), CompleteRegistration 6.4/10 (696,
+  Navegador·Servidor ⇒ dedup landing↔CAPI andando), InitiateCheckout 7.7, resto
+  6.1–6.7. `CargaWhatsApp` 0.0/10 = evento viejo muerto (última recepción 5 días).
+- **Cobertura de parámetros del Purchase:** fbp/external_id/IP/UA 100%; **fbc 15,6%**
+  (= sólo ese % de compras llega por click de anuncio); **teléfono 84%** y email 11% ⇒
+  la mayoría de los Purchase de ese pixel NO son de la landing (la landing no pide
+  teléfono): son del registro clásico de la PWA y de OTRAS páginas del owner que
+  comparten el pixel (mismo rubro). Motivo real para separar el pixel.
+- **Decisión del owner:** crear un **pixel nuevo exclusivo** (landing + PWA + CAPI de
+  este proyecto) para tener una base limpia de compradores. Cómo: crear pixel en
+  Events Manager + token CAPI → en SSM (sa-east-1) editar `META_PIXEL_ID` y
+  `META_CAPI_ACCESS_TOKEN` (NO tocar `_2.._9`, son publicistas) → **reiniciar EB**
+  (secrets se leen al boot). Con eso migran las 3 cosas solas: PWA (placeholder en
+  `public/index.html`), CAPI y landing (vía `/api/meta-pixel-id`).
+  **PENDIENTE de código:** actualizar `FALLBACK_PIXEL_IDS` en `landing/index.html:250`
+  con el ID nuevo (hoy tiene `3626744667474255`, `1003643914735636` — partners; no
+  incluye el propio). Falta que el owner pase el ID.
+- **Audiencias (Ads Manager, cuenta BO Publicidad):** el owner creó/está creando
+  `Compradores 180d` (Purchase, 180d, pixel viejo). Ya existían `WCA_Purchasers_18…`
+  y `fbads_clientes_seed…` (esta última la creó el bot fb-ads). Siguiente: **público
+  similar AR 1%** de esa semilla → campaña objetivo Ventas, conjunto optimizando por
+  **Comprar del pixel NUEVO**, público = lookalike, excluir compradores, URL de la
+  landing con `?c=CODIGO` de una campaña nueva del panel. En 2–3 semanas (≥100
+  compras en el pixel nuevo) rehacer semilla+lookalike 100% del proyecto.
+- **Sobre el bot "fb-ads" (automatización en la nube):** NO está en este repo (acá
+  sólo está `fbAdsWebhookService`, que le POSTea registros/compras a
+  `FBADS_WEBHOOK_URL`, un túnel trycloudflare; `docs/MIGRACION-AWS.md` 2026-08-06
+  dice "fbAds no se usa más → SSM omitido"). No aparece en los repos públicos de
+  GitHub del owner. Pistas: el canal de Telegram **META ADS** ("FB Ads Bot — Vigilante
+  — ronda de control", último mensaje hoy 15:00) ⇒ el bot sigue corriendo; casi seguro
+  vive en la **Windows remota por Guacamole (`guaca.robertoremoto.win`, "Windows 11
+  Roberto")**, desde donde el owner opera Meta. Buscar ahí la carpeta del bot y si
+  tiene Claude Code (`%USERPROFILE%\.claude\projects`). Para reconectarlo al back:
+  reponer `FBADS_WEBHOOK_URL/TOKEN` en SSM + reiniciar.
+- **Mensaje al publicista (OneKey):** se le explicó que la landing no tenía el pixel
+  del NAVEGADOR (por eso el asistente decía "sin píxeles"), pero que por CAPI siempre
+  recibió CompleteRegistration + Purchase de primera carga (FTD) — retiros y cargas
+  2ª+ no se le mandan a propósito (#221). Su puntaje bajo mezcla otras fuentes.
+- Sin cambios de código en esta sesión. Sin SW bump.
 
 ## Sesión 2026-08-26
 
