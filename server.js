@@ -797,8 +797,10 @@ app.use((req, res, next) => {
   // Cloudflare, etc.) funcionen sin agregar cada uno a ALLOWED_ORIGINS ni
   // redeployar. Reflejamos el origin (no `*`) y NO mandamos Allow-Credentials:
   // la landing no usa cookies. `/api/meta-pixel-id` sirve los Pixel IDs públicos
-  // al pixel del navegador de la landing (owner 2026-08-26).
-  if (req.path === '/api/landing/signup' || req.path === '/api/meta-pixel-id') {
+  // al pixel del navegador de la landing (owner 2026-08-26). `/api/landing/touch`
+  // (last-touch #228) también es llamado cross-origin por la landing — sin esta
+  // excepción el fetch se bloqueaba en silencio (fix 2026-08-26, #247).
+  if (req.path === '/api/landing/signup' || req.path === '/api/meta-pixel-id' || req.path === '/api/landing/touch') {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

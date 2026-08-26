@@ -8,6 +8,18 @@
 
 ## Sesión 2026-08-26 (tarde)
 
+### 247. FIX CORS: `/api/landing/touch` (last-touch #228) no estaba en la excepción de CORS de la landing
+- Detectado al revisar qué hay que tocar para cambiar el dominio de la landing: la
+  landing llama `POST /api/landing/touch` cross-origin (Vercel → 1giroxauto.com), pero
+  solo `signup` y `meta-pixel-id` estaban abiertos → el touch se bloqueaba en silencio
+  (fire-and-forget) salvo que el dominio de la landing estuviera en `ALLOWED_ORIGINS`.
+  Consecuencia: la atribución last-touch (fbc/fbp del último anuncio) probablemente
+  nunca se actualizó desde la landing. Agregado a la misma excepción (sin credenciales).
+- **Dominio de la landing:** NO hay nada hardcodeado en el back — los 3 endpoints
+  públicos aceptan cualquier origen y `API_BASE` de la landing apunta al back
+  (`1giroxauto.com`), no a sí misma. Cambiar el dominio en Vercel no requiere código.
+- **Validado:** `node --check` OK. **Back necesita redeploy.**
+
 ### 246. Regla definitiva de chats: "cliente colgado ⇒ Abiertos; todo automático OK ⇒ cerrado por Sistema"
 - **Reclamo owner:** un comprobante tomado como REPETIDO iba a Cerrados y el cliente
   quedaba colgado sin agente. Regla pedida: **siempre que algo falle y el cliente quede
