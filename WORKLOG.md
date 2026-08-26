@@ -40,6 +40,14 @@
   cross-origin de la landing (Vercel → 1giroxauto.com) se bloqueaba. El link directo
   funcionaba (navegación = sin CORS) pero el `fetch()` no. Se agregó `/api/meta-pixel-id`
   al mismo caso abierto (GET público). Requiere OTRO redeploy del back.
+- **FALLBACK + CONFIRMADO ANDANDO (2026-08-26):** se agregó a la landing un respaldo con
+  los Pixel IDs (`3626744667474255`, `1003643914735636` — públicos) por si el fetch falla:
+  el pixel inicializa igual. **GOTCHA IMPORTANTE:** el owner probaba en **Tor Browser**,
+  que BLOQUEA `connect.facebook.net/fbevents.js` (y cookies de terceros) por diseño → el
+  pixel NUNCA carga ahí. Probado en Chrome limpio → **asistente de Meta muestra los 2
+  píxeles Activos con eventos. ✅** Para verificar el pixel usar navegador normal (no Tor)
+  o Events Manager. El redeploy de Amazon (CORS) queda pendiente para sincronizar con SSM
+  (hoy usa el fallback, que coincide con los IDs actuales).
 
 ## Sesión 2026-08-25
 
