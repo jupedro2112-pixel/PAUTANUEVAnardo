@@ -792,15 +792,16 @@ const _corsMw = cors({
   exposedHeaders: ['X-Total-Count', 'X-RateLimit-Remaining']
 });
 app.use((req, res, next) => {
-  // El alta por landing es un endpoint PÚBLICO sin credenciales (protegido por
-  // código de campaña + límite por IP): se abre a CUALQUIER origen para que las
-  // landings puente en dominios/hosts rotables (Vercel, Cloudflare, etc.)
-  // funcionen sin agregar cada uno a ALLOWED_ORIGINS ni redeployar. Reflejamos
-  // el origin (no `*`) y NO mandamos Allow-Credentials: la landing no usa cookies.
-  if (req.path === '/api/landing/signup') {
+  // Endpoints PÚBLICOS de la landing (sin credenciales): se abren a CUALQUIER
+  // origen para que las landings puente en dominios/hosts rotables (Vercel,
+  // Cloudflare, etc.) funcionen sin agregar cada uno a ALLOWED_ORIGINS ni
+  // redeployar. Reflejamos el origin (no `*`) y NO mandamos Allow-Credentials:
+  // la landing no usa cookies. `/api/meta-pixel-id` sirve los Pixel IDs públicos
+  // al pixel del navegador de la landing (owner 2026-08-26).
+  if (req.path === '/api/landing/signup' || req.path === '/api/meta-pixel-id') {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Vary', 'Origin');
-    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
