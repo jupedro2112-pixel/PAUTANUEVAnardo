@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v44'; // v44: mensajes de sistema INTERNOS (adminOnly) en VERDE con etiqueta '🔒 INTERNO'; los automáticos que el cliente sí recibió, naranja con 🤖
+const CACHE_VERSION = 'v45'; // v45: FIX sonido fantasma (solo suena con mensajes REALES del cliente, no los de sistema) + sacada la seccion Comunidad (derivar + pestana + alertas)
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;
 
 // Only pre-cache stable assets (icons rarely change).

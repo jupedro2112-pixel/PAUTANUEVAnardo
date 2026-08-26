@@ -1941,6 +1941,23 @@ function _comprobanteMatchesMovement(comprobante, movement, cfg) {
 // para que un nuevo comprobante pueda reintentar. Pasado el tope, lo deja en 'error'
 // (carga manual). El comprobante vuelve a 'pending' para no quedar consumido.
 const HGCASH_MAX_CHARGE_ATTEMPTS = 3;
+// Reabre el chat de un cliente a ABIERTOS y avisa al panel — se usa cuando la
+// auto-carga NO se hizo sola (falló, bajo mínimo, posible duplicado) y necesita
+// que un agente cargue a mano (owner 2026-08-25). Idempotente y fire-and-forget:
+// nunca rompe el flujo de carga.
+async function _reopenChatForManualCharge(userId, username) {
+  try {
+    await ChatStatus.findOneAndUpdate(
+      { userId },
+      { userId, username, status: 'open', category: 'cargas', closedAt: null, closedBy: null, lastMessageAt: new Date() },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+    notifyAdmins('chat_moved', { userId, to: 'open', by: 'sistema' });
+  } catch (e) {
+    logger.warn(`[hgcash] no se pudo abrir el chat para carga manual (${userId}): ${e.message}`);
+  }
+}
+
 async function hgcashHandleChargeFailure(movement, comprobante, errMsg, dataDesc, user) {
   let attempts = (movement.chargeAttempts || 0) + 1;
   try {
@@ -1956,6 +1973,8 @@ async function hgcashHandleChargeFailure(movement, comprobante, errMsg, dataDesc
   await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'pending' } });
   if (user) {
     const prefijo = terminal ? `Se agotaron los ${HGCASH_MAX_CHARGE_ATTEMPTS} intentos automáticos. ` : '';
+    // La auto-carga falló → el chat va a ABIERTOS para que un agente cargue a mano.
+    await _reopenChatForManualCharge(user.id, user.username);
     await _emitAdminOnlyChatNote(user.id, user.username,
       `🏦 MATCH hgcash — ${dataDesc}\n⚠️ La AUTO-CARGA FALLÓ en la plataforma (${errMsg || 's/detalle'}). ${prefijo}Cargá MANUAL a este usuario por el mismo monto: al hacerlo se marca como usado (no se duplica).`);
   }
@@ -2237,6 +2256,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
       $set: { matchStatus: 'shadow_matched', matchedUserId: user.id, matchedUsername: user.username, matchedComprobanteId: comprobante.id }
     });
     await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'shadow_matched', matchedMovementId: movement.movementId } });
+    await _reopenChatForManualCharge(user.id, user.username);
     await _emitAdminOnlyChatNote(user.id, user.username,
       `🏦 MATCH hgcash (MODO SOMBRA) — ${dataDesc}\n✅ La transferencia coincide con el comprobante. Lista para cargar (auto-carga DESACTIVADA — cargá vos).`);
     logger.info(`[hgcash] shadow match user=${user.username} amount=$${amount} movement=${movement.movementId}`);
@@ -2255,6 +2275,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
       await BankMovement.updateOne({ movementId: movement.movementId },
         { $set: { matchStatus: 'needs_review', matchedUserId: user.id, matchedUsername: user.username, matchedComprobanteId: comprobante.id, chargeError: `monto $${Number(amount)} menor al mínimo $${minCharge}` } });
       await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'needs_review', matchedMovementId: movement.movementId } });
+      await _reopenChatForManualCharge(user.id, user.username);
       await _emitAdminOnlyChatNote(user.id, user.username,
         `🏦 ✅ Comprobante CORRECTO (${dataDesc}) — PERO el monto es menor al mínimo de carga ($${minCharge.toLocaleString('es-AR')}). NO se cargó automático.\n👉 Pedile al cliente que envíe la diferencia para llegar al mínimo y cargá la suma a mano.`);
       logger.info(`[hgcash] bajo mínimo user=${user.username} $${amount} < $${minCharge} mov=${movement.movementId}`);
@@ -2313,6 +2334,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
         await BankMovement.updateOne({ movementId: movement.movementId },
           { $set: { matchStatus: 'needs_review', matchedUserId: user.id, matchedUsername: user.username, matchedComprobanteId: comprobante.id, chargeError: `posible duplicado: ya hubo carga de $${Number(amount)} hace <${guardMin}min` } });
         await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'needs_review' } });
+        await _reopenChatForManualCharge(user.id, user.username);
         await _emitAdminOnlyChatNote(user.id, user.username,
           `🏦 ⚠️ POSIBLE DUPLICADO — a este cliente ya se le cargó $${Number(amount).toLocaleString('es-AR')} hace pocos minutos. NO se cargó automático.\nVerificá si son DOS transferencias REALES (dos comprobantes con N° distinto) y, si corresponde, cargá a mano.`);
         logger.warn(`[hgcash] HOLD posible duplicado user=${user.username} $${amount} mov=${movement.movementId}`);
@@ -3490,11 +3512,13 @@ app.post('/api/auth/register', authLimiter, registerIpLimiter, async (req, res) 
     // CORREGIDO: El mensaje de bienvenida se envía desde el cliente (app.js) con el formato actualizado incluyendo CBU
     // No enviamos mensaje de bienvenida desde el servidor para evitar duplicados y usar el formato correcto
 
-    // Crear chat status
+    // Crear chat status. Nace CERRADO (owner 2026-08-25): el registro es
+    // automático → el chat aparece recién cuando el cliente pide soporte o falla
+    // un comprobante. La bienvenida/CBU se crean igual (mensajes de sistema).
     await ChatStatus.create({
       userId: userId,
       username: username,
-      status: 'open',
+      status: 'closed',
       category: 'cargas',
       lastMessageAt: new Date()
     });
@@ -3673,7 +3697,7 @@ app.post('/api/auth/register-quick', authLimiter, registerIpLimiter, async (req,
     await ChatStatus.create({
       userId,
       username,
-      status: 'open',
+      status: 'closed', // nace cerrado (registro automático) — ver nota en /register
       category: 'cargas',
       lastMessageAt: new Date()
     });
@@ -4108,11 +4132,11 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           // Los usuarios importados pueden usar la app con su contraseña inicial.
         });
 
-        // Crear chat status
+        // Crear chat status. Nace CERRADO (registro/auto-create automático).
         await ChatStatus.create({
           userId: userId,
           username: gxUser.username,
-          status: 'open',
+          status: 'closed',
           category: 'cargas'
         });
 
@@ -6944,12 +6968,16 @@ app.post('/api/messages/send', authMiddleware, async (req, res) => {
       );
     }
     
-    // Si es usuario enviando mensaje, reabrir chat solo si estaba cerrado (no si está en pagos)
-    if (req.user.role === 'user') {
-      await ChatStatus.findOneAndUpdate(
+    // Solo los mensajes de TEXTO del cliente (SOPORTE) reabren el chat. Las
+    // imágenes (comprobantes) NO reabren: la auto-carga hgcash reabre si falla.
+    if (req.user.role === 'user' && type === 'text') {
+      const reopened = await ChatStatus.findOneAndUpdate(
         { userId: req.user.userId, status: 'closed' },
         { status: 'open', assignedTo: null, closedAt: null, closedBy: null }
       );
+      if (reopened) {
+        notifyAdmins('chat_moved', { userId: req.user.userId, to: 'open', by: 'soporte' });
+      }
     }
 
     // SLA: si el cliente escribió, arrancar el reloj de demora de respuesta
@@ -9367,12 +9395,17 @@ io.on('connection', (socket) => {
             { userId: targetUserId, username: chatUsername, lastMessageAt: new Date() },
             { upsert: true, setDefaultsOnInsert: true }
           );
-          // Solo los mensajes del usuario reabren el chat si estaba cerrado.
-          if (!isAdminRole) {
-            await ChatStatus.findOneAndUpdate(
+          // Solo los mensajes de TEXTO del cliente (chat de SOPORTE) reabren el
+          // chat. Las IMÁGENES (comprobantes) NO reabren: si la auto-carga hgcash
+          // falla, ese flujo reabre por su cuenta (owner 2026-08-25).
+          if (!isAdminRole && type === 'text') {
+            const reopened = await ChatStatus.findOneAndUpdate(
               { userId: targetUserId, status: 'closed' },
               { status: 'open', closedAt: null, closedBy: null }
             );
+            if (reopened) {
+              notifyAdmins('chat_moved', { userId: targetUserId, to: 'open', by: 'soporte' });
+            }
           }
           // SLA: reloj de demora de respuesta. Si responde un agente, resolvemos
           // (y registramos si superó el umbral); si escribe el cliente, arrancamos.
@@ -9779,6 +9812,20 @@ async function initializeData() {
     }
   } catch (e) {
     logger.error(`[startup-migration] Falló limpieza one-shot de mustChangePassword: ${e.message}`);
+  }
+
+  // Migración COMUNIDAD removida (owner 2026-08-25): se eliminó la pestaña y la
+  // derivación de Comunidad. Los chats que hayan quedado en status:'comunidad' no
+  // aparecerían en NINGUNA pestaña → se pasan a 'open' (Abiertos). Idempotente y
+  // barata (tras la 1ª corrida no matchea nada; ya no se crean nuevos).
+  try {
+    const rCom = await ChatStatus.updateMany(
+      { status: 'comunidad' },
+      { $set: { status: 'open' } }
+    );
+    if (rCom.modifiedCount) logger.info(`[startup-migration] comunidad→open: movidos ${rCom.modifiedCount} chats a Abiertos`);
+  } catch (e) {
+    logger.error(`[startup-migration] Falló migración comunidad→open: ${e.message}`);
   }
 
   // 🔒 One-shot de SEGURIDAD (2026-08-06): neutralizar las cuentas importadas

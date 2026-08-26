@@ -8,6 +8,40 @@
 
 ## Sesión 2026-08-25
 
+### 243. Chats automáticos: abrir SOLO para soporte/fallo de carga + FIX sonido fantasma + sacar Comunidad
+- **Pedido owner (screencast + texto):** el chat del panel se abría por cualquier
+  cosa (comprobantes que se cargan solos, registros). Debe abrir SOLO cuando hace
+  falta un agente. Y sonaba la notificación constantemente sin mensajes nuevos.
+- **Decisiones que delegó en mí:** (1) registro nace en Cerrados; (2) conservo los
+  tags de usuario "Comunidad/NO Comunidad" y el canal de Telegram (son otra cosa,
+  anti-spam del bono); (3) "falla de carga que abre el chat" = fallo de plataforma +
+  modo sombra + bajo mínimo + posible duplicado (NO el duplicado real ya acreditado).
+- **Apertura de chats (`server.js`):**
+  - Reapertura por mensaje del cliente (socket `send_message` y HTTP `/messages/send`):
+    ahora reabre a 'open' **solo si `type==='text'`** (chat de SOPORTE). La IMAGEN
+    (comprobante) NO reabre. Emite `chat_moved` al reabrir.
+  - Distinción soporte vs comprobante: en el flujo nuevo el chat vivo solo se alcanza
+    por "Hablar con soporte" → texto = soporte, imagen = comprobante. Limpio.
+  - hgcash: cuando la auto-carga NO se hizo (fallo, modo sombra, bajo mínimo, posible
+    duplicado) → helper `_reopenChatForManualCharge()` reabre a Abiertos + `chat_moved`.
+    El éxito NO abre nada (queda cerrado). El duplicado REAL ya acreditado NO abre.
+  - Registro nace CERRADO: `/auth/register`, `/auth/register-quick`, `/auth/login`
+    auto-create pasan de `status:'open'` a `'closed'` (la bienvenida/CBU se crean igual).
+  - Retiro → Pagos: ya funcionaba (`status:'payments'` + notify), SIN cambios.
+- **FIX sonido fantasma (`admin.js` `handleNewMessage`):** el sonido/badge/notif del
+  navegador ahora suenan **solo con mensajes REALES del cliente** (`!isFromAdmin &&
+  !isSystemMessage`). Antes sonaba por CADA mensaje automático de sistema (bienvenida,
+  CBU, confirmación de carga, notas internas hgcash) de todos los usuarios → sonido
+  constante sin que entrara nada. `isFromAdmin`/`isSystemMessage` ya se calculaban.
+- **Sacar Comunidad (`admin.js`):** `bumpComunidadAlert()` → no-op (mata sonido/badge/
+  toast de comunidad); botón "Derivar a Comunidad" siempre oculto; pestaña Comunidad
+  siempre oculta. **Migración** en initializeData: `ChatStatus status:'comunidad' →
+  'open'` (idempotente) para que esos chats no queden invisibles. Se conservan: rol
+  staff `comunidad`, tags de usuario "Comunidad/NO Comunidad", config canal Telegram.
+- **Validado:** `node --check` OK (server.js, admin.js, admin-sw). **admin-sw → v45.**
+  Requiere **redeploy del back** (lógica de chats + migración) y estáticos del panel.
+  ⚠️ Nota entorno: `grep` colgaba en esta sesión; se verificó todo con `node`.
+
 ### 242. Panel: mensajes de sistema INTERNOS (adminOnly) en VERDE con etiqueta "🔒 INTERNO" (réplica #198 del original)
 - **Problema:** en el chat del panel TODOS los mensajes de sistema salían naranjas
   iguales → no se distinguía cuáles le LLEGARON al cliente (automáticos) de los solo

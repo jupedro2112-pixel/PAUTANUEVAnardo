@@ -620,14 +620,14 @@ function setupRoleBasedUI() {
         if (tabPayments) tabPayments.style.display = 'none';
         if (tabOpen) tabOpen.style.display = 'flex';
         if (tabClosed) tabClosed.style.display = 'flex';
-        if (tabComunidad) tabComunidad.style.display = 'flex';
+        if (tabComunidad) tabComunidad.style.display = 'none'; // COMUNIDAD REMOVIDA (owner 2026-08-25)
         currentTab = 'open';
     } else {
         // Admin general ve todo (incluida Comunidad)
         if (tabOpen) tabOpen.style.display = 'flex';
         if (tabClosed) tabClosed.style.display = 'flex';
         if (tabPayments) tabPayments.style.display = 'flex';
-        if (tabComunidad) tabComunidad.style.display = 'flex';
+        if (tabComunidad) tabComunidad.style.display = 'none'; // COMUNIDAD REMOVIDA (owner 2026-08-25)
     }
     
     // Depositor y withdrawer pueden ver "Usuarios" pero NO pueden exportar CSV
@@ -1136,26 +1136,10 @@ let _lastComunidadAlertAt = 0; // throttle del aviso sonoro/toast
 // suma al badge si es un chat nuevo + sonido/toast/notificación (con throttle).
 //   userId: el cliente; kind: 'derive' (derivación) | 'activity' (re-escribió).
 function bumpComunidadAlert(userId, kind) {
-    const isNew = !userId || !_comunidadSeenUsers.has(userId);
-    if (userId) _comunidadSeenUsers.add(userId);
-    if (isNew) {
-        comunidadAlertCount++;
-        renderComunidadBadge();
-    }
-    // El aviso ruidoso se limita a 1 cada 3s para no spamear si llegan varios
-    // mensajes seguidos, pero el badge siempre se actualiza al instante.
-    const now = Date.now();
-    if (now - _lastComunidadAlertAt < 3000) return;
-    _lastComunidadAlertAt = now;
-    try { playNotificationSound(); } catch (_) {}
-    const isActivity = kind === 'activity';
-    showToast(isActivity
-        ? '🔔 Un cliente de COMUNIDAD respondió — revisá la pestaña Comunidad'
-        : '🔔 Nuevo chat en COMUNIDAD — entrá a la pestaña Comunidad', 'info');
-    try {
-        showBrowserNotification('🔔 Comunidad',
-            isActivity ? 'Un cliente de Comunidad respondió' : 'Derivaron un chat a la sección Comunidad', '');
-    } catch (_) {}
+    // COMUNIDAD REMOVIDA (owner 2026-08-25): no-op. Se conserva la firma para no
+    // romper a los llamadores (chat_moved→comunidad, comunidad_activity), pero ya
+    // NO suena ni muestra badge/toast/notificación.
+    return;
 }
 
 // Al entrar a la pestaña Comunidad: limpiar el aviso.
@@ -1198,15 +1182,8 @@ function updateActionButtonsByTab() {
         btnPayments.style.display = '';
         btnPayments.innerHTML = '<span class="icon icon-exchange"></span> Enviar a Pagos';
         btnPayments.onclick = sendToPayments;
-        if (btnCommunity) {
-            if (currentTab === 'open' && canDeriveCommunity) {
-                btnCommunity.style.display = '';
-                btnCommunity.innerHTML = '<span class="icon icon-users"></span> Derivar a Comunidad';
-                btnCommunity.onclick = sendToCommunity;
-            } else {
-                btnCommunity.style.display = 'none';
-            }
-        }
+        // COMUNIDAD REMOVIDA (owner 2026-08-25): el botón "Derivar a Comunidad" ya no se muestra.
+        if (btnCommunity) btnCommunity.style.display = 'none';
     }
 }
 
@@ -1522,24 +1499,30 @@ function handleNewMessage(data) {
     if (selectedUserId && chatUserId === selectedUserId) {
         addMessageToChat(message, isFromAdmin || isSystemMessage);
         markMessagesAsRead(selectedUserId);
-        playNotificationSound();
+        // Sonido SOLO para mensajes REALES del cliente (no los automáticos de
+        // sistema/adminOnly ni los de otros admins) — evita el sonido fantasma.
+        if (!isFromAdmin && !isSystemMessage) playNotificationSound();
         scrollToBottom();
         setTimeout(scrollToBottom, 100);
         // También actualizar conversación en la lista (mover al tope y actualizar preview)
         updateConversationInList(message);
     } else {
-        // Mensaje de otro chat - actualizar lista y mostrar notificación
-        incrementUnreadCount();
-        playNotificationSound();
-        // Mostrar notificación del navegador
-        const senderName = message.senderUsername || 'Usuario';
-        const messagePreview = message.type === 'image' ? '📸 Imagen' : message.type === 'video' ? '🎥 Video' : (message.content?.substring(0, 50) + '...');
-        showBrowserNotification(
-            `💬 Nuevo mensaje de ${senderName}`,
-            messagePreview,
-            '/favicon.ico'
-        );
-        // Actualizar conversación en la lista en tiempo real (sin HTTP call)
+        // Notificar (sonido + badge + aviso del navegador) SOLO ante mensajes
+        // REALES del cliente. Los automáticos de sistema/adminOnly y los de otros
+        // admins NO suenan — ESA era la causa del "sonido constante sin que entre
+        // ningún mensaje nuevo" (owner 2026-08-25).
+        if (!isFromAdmin && !isSystemMessage) {
+            incrementUnreadCount();
+            playNotificationSound();
+            const senderName = message.senderUsername || 'Usuario';
+            const messagePreview = message.type === 'image' ? '📸 Imagen' : message.type === 'video' ? '🎥 Video' : (message.content?.substring(0, 50) + '...');
+            showBrowserNotification(
+                `💬 Nuevo mensaje de ${senderName}`,
+                messagePreview,
+                '/favicon.ico'
+            );
+        }
+        // Actualizar conversación en la lista en tiempo real (siempre, sin HTTP call)
         updateConversationInList(message);
     }
 }
