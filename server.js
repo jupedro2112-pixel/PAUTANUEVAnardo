@@ -1792,9 +1792,12 @@ async function analyzeComprobanteFromMessage({ userId, username, content, messag
           duplicateOfComprobanteId: original.id || null
         });
       } catch (_) {}
+      // Regla owner 2026-08-26: si el comprobante NO se carga solo, el cliente
+      // queda colgado → el chat va a ABIERTOS para que un agente lo resuelva.
+      await _reopenChatForManualCharge(userId, username);
       if (sameUser) {
         await _emitAdminOnlyChatNote(userId, username,
-          `🧾 Comprobante REPETIDO (${dataDesc}). El propio cliente ya lo había enviado antes. Revisá antes de cargar.`);
+          `🧾 Comprobante REPETIDO (${dataDesc}). El propio cliente ya lo había enviado antes. NO se cargó automático — revisá si ya está acreditado y respondele.`);
       } else {
         await _emitAdminOnlyChatNote(userId, username,
           `🚨 COMPROBANTE YA UTILIZADO POR: @${original.username || original.userId}\n${dataDesc}\n⚠️ Ya lo había enviado otro usuario. NO cargar sin verificar.`);
@@ -1943,9 +1946,10 @@ function _comprobanteMatchesMovement(comprobante, movement, cfg) {
 // (carga manual). El comprobante vuelve a 'pending' para no quedar consumido.
 const HGCASH_MAX_CHARGE_ATTEMPTS = 3;
 // Reabre el chat de un cliente a ABIERTOS y avisa al panel — se usa cuando la
-// auto-carga NO se hizo sola (falló, bajo mínimo, posible duplicado) y necesita
-// que un agente cargue a mano (owner 2026-08-25). Idempotente y fire-and-forget:
-// nunca rompe el flujo de carga.
+// auto-carga NO se hizo sola (falló, bajo mínimo, posible/real duplicado, repetido
+// por IA, ambiguo, sin transferencia detectada, hgcash apagado) y necesita que un
+// agente actúe (owner 2026-08-25/26: "si el cliente queda colgado → Abiertos").
+// Idempotente y fire-and-forget: nunca rompe el flujo de carga.
 async function _reopenChatForManualCharge(userId, username) {
   try {
     await ChatStatus.findOneAndUpdate(
@@ -1957,6 +1961,42 @@ async function _reopenChatForManualCharge(userId, username) {
   } catch (e) {
     logger.warn(`[hgcash] no se pudo abrir el chat para carga manual (${userId}): ${e.message}`);
   }
+}
+
+// Cierra por SISTEMA un chat que está en ABIERTOS cuando el flujo automático
+// terminó bien (carga hgcash acreditada) y ya no hace falta un agente (owner
+// 2026-08-26: "si es todo automático, el chat se cierra y aparece 'chat cerrado
+// por sistema'"). Sólo toca chats en 'open' (Pagos/Comunidad/cerrados quedan
+// como están). Deja el mismo mensaje interno que el cierre manual y avisa al
+// panel con `chat_closed`. Si el cliente vuelve a escribir, se reabre solo.
+async function _closeChatBySystem(userId, username, reason) {
+  try {
+    const closed = await ChatStatus.findOneAndUpdate(
+      { userId, status: 'open' },
+      { $set: { status: 'closed', assignedTo: null, closedAt: new Date(), closedBy: 'sistema', updatedAt: new Date() } },
+      { new: true }
+    );
+    if (!closed) return false;
+    await Message.create({
+      id: uuidv4(), senderId: 'admin', senderUsername: 'Sistema', senderRole: 'admin',
+      receiverId: userId, receiverRole: 'user',
+      content: `Chat cerrado por: Sistema (${reason}). Puedes seguir respondiendo si el usuario escribe. El chat se reabrirá automáticamente si el cliente envía un mensaje.`,
+      type: 'system', adminOnly: true, read: true, timestamp: new Date()
+    });
+    notifyAdmins('chat_closed', { userId, by: 'Sistema', adminId: 'sistema', isPaymentsTab: false });
+    logger.info(`[chat] cerrado por sistema user=${username || userId} (${reason})`);
+    return true;
+  } catch (e) {
+    logger.warn(`[chat] no se pudo cerrar por sistema (${userId}): ${e.message}`);
+    return false;
+  }
+}
+
+// Marca un comprobante como "ya alertado" para que el barrido de colgados
+// (_runStaleComprobanteSweep) no vuelva a abrir el chat por el mismo comprobante.
+async function _markComprobanteAlerted(comprobanteId) {
+  if (!comprobanteId) return;
+  try { await Comprobante.updateOne({ id: comprobanteId }, { $set: { staleAlertedAt: new Date() } }); } catch (_) {}
 }
 
 async function hgcashHandleChargeFailure(movement, comprobante, errMsg, dataDesc, user) {
@@ -1971,7 +2011,7 @@ async function hgcashHandleChargeFailure(movement, comprobante, errMsg, dataDesc
   } catch (_) {}
   const terminal = attempts >= HGCASH_MAX_CHARGE_ATTEMPTS;
   await BankMovement.updateOne({ movementId: movement.movementId }, { $set: { matchStatus: terminal ? 'error' : 'pending' } });
-  await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'pending' } });
+  await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'pending', staleAlertedAt: new Date() } });
   if (user) {
     const prefijo = terminal ? `Se agotaron los ${HGCASH_MAX_CHARGE_ATTEMPTS} intentos automáticos. ` : '';
     // La auto-carga falló → el chat va a ABIERTOS para que un agente cargue a mano.
@@ -2306,8 +2346,11 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
         await BankMovement.updateOne({ movementId: movement.movementId },
           { $set: { matchStatus: 'duplicate', matchedUserId: user.id, matchedUsername: user.username, matchedComprobanteId: comprobante.id, chargeError: `duplicado: coelsa ${chargeKey} ya acreditada` } });
         await Comprobante.updateOne({ id: comprobante.id }, { $set: { bankMatchStatus: 'duplicate' } });
+        // El cliente mandó un comprobante y NO ve una carga nueva → queda colgado:
+        // a ABIERTOS para que el agente le explique que ya estaba acreditado.
+        await _reopenChatForManualCharge(user.id, user.username);
         await _emitAdminOnlyChatNote(user.id, user.username,
-          `🏦 ⚠️ Movimiento DUPLICADO de la misma transferencia (coelsa ${chargeKey}) — NO se cargó de nuevo (ya estaba acreditado).`);
+          `🏦 ⚠️ Movimiento DUPLICADO de la misma transferencia (coelsa ${chargeKey}) — NO se cargó de nuevo (ya estaba acreditado). Avisale al cliente.`);
         logger.warn(`[hgcash] DUPLICADO bloqueado coelsa=${chargeKey} user=${user.username} mov=${movement.movementId}`);
         return;
       }
@@ -2453,6 +2496,9 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     await maybeSendRecoveryMessage(user);
 
     await _emitAdminOnlyChatNote(user.id, user.username, `🏦 ✅ CARGA AUTOMÁTICA hgcash — ${dataDesc}. Acreditado.`);
+    // Todo automático y OK → no hace falta agente: el chat se cierra por Sistema
+    // (si estaba en Abiertos, p.ej. por un intento fallido anterior).
+    await _closeChatBySystem(user.id, user.username, 'carga automática acreditada');
     _emitHgcashUpdate('cargado');
     logger.info(`[hgcash] auto-carga OK user=${user.username} amount=$${amount} movement=${movement.movementId}`);
   } catch (e) {
@@ -2515,9 +2561,15 @@ async function hgcashMatchFromMovement(movement) {
 // movimiento entrante que coincida por MONTO + NOMBRE de origen + ventana de tiempo.
 async function hgcashMatchFromComprobante(comprobante) {
   try {
-    const cfg = await getHgcashConfig();
-    if (!cfg.enabled) return;
     if (!comprobante || !comprobante.isComprobante || comprobante.autoCharged) return;
+    const cfg = await getHgcashConfig();
+    if (!cfg.enabled) {
+      // Banco automático APAGADO → toda carga es manual: el comprobante necesita
+      // un agente sí o sí → ABIERTOS ya mismo (no esperar al barrido).
+      await _markComprobanteAlerted(comprobante.id);
+      await _reopenChatForManualCharge(comprobante.userId, comprobante.username);
+      return;
+    }
 
     // Buscamos un movimiento entrante que corresponda (por N° de transacción/coelsa,
     // o por nombre de origen + destino). NO dependemos de la config de cuenta: el
@@ -2537,6 +2589,8 @@ async function hgcashMatchFromComprobante(comprobante) {
     }
     if (matches.length > 1) {
       logger.warn(`[hgcash] AMBIGUO: ${matches.length} movimientos coinciden con comprobante ${comprobante.id}. No se auto-carga.`);
+      await _markComprobanteAlerted(comprobante.id);
+      await _reopenChatForManualCharge(comprobante.userId, comprobante.username);
       await _emitAdminOnlyChatNote(comprobante.userId, comprobante.username,
         `🏦 Hay ${matches.length} transferencias que coinciden con este comprobante (mismo monto y nombre en la ventana). Verificá y cargá a mano.`);
       return;
@@ -18087,6 +18141,60 @@ async function _pollPayingPayouts() {
 }
 setTimeout(function () { _pollPayingPayouts(); }, 90 * 1000);
 setInterval(function () { _pollPayingPayouts(); }, 45 * 1000);
+
+// ============================================================
+// BARRIDO DE COMPROBANTES COLGADOS (owner 2026-08-26)
+// ----------------------------------------------------------------
+// Un comprobante válido que a los N minutos (HGCASH_STALE_MIN, default 5) sigue
+// SIN carga (no llegó la transferencia al banco con API, fue a un banco sin API,
+// los datos no matchearon, etc.) = cliente colgado → el chat va a ABIERTOS con
+// una nota interna. Los casos que ya reabrieron por su cuenta (fallo, sombra,
+// bajo mínimo, duplicado, ambiguo, hgcash apagado) quedan marcados
+// (`staleAlertedAt` / bankMatchStatus) y NO se repiten. Multi-instancia: claim
+// atómico por comprobante (staleAlertedAt null → fecha) → una sola alerta.
+// Si el agente ya cargó a mano después del comprobante, no se abre nada.
+// ============================================================
+function _hgcashStaleMinutes() {
+  const v = Number(process.env.HGCASH_STALE_MIN);
+  return v > 0 ? v : 5;
+}
+// Sólo comprobantes posteriores al arranque de ESTE proceso: un deploy no debe
+// abrir de golpe chats por comprobantes viejos que los agentes ya atendieron.
+const _STALE_SWEEP_BOOT_AT = new Date();
+async function _runStaleComprobanteSweep() {
+  try {
+    const minutes = _hgcashStaleMinutes();
+    const now = Date.now();
+    const stale = await Comprobante.find({
+      isComprobante: true,
+      status: { $in: ['unique', 'no_key'] },
+      autoCharged: { $ne: true },
+      bankMatchStatus: { $in: ['none', 'pending'] },
+      resolution: null,
+      staleAlertedAt: null,
+      createdAt: { $gte: _STALE_SWEEP_BOOT_AT, $lt: new Date(now - minutes * 60 * 1000) }
+    }).sort({ createdAt: 1 }).limit(50).lean();
+    for (const c of stale) {
+      const claimed = await Comprobante.findOneAndUpdate(
+        { id: c.id, staleAlertedAt: null }, { $set: { staleAlertedAt: new Date() } }, { new: true }
+      );
+      if (!claimed || !c.userId) continue;
+      // ¿Ya se le cargó (manual o auto) desde que mandó el comprobante? → resuelto, no abrir.
+      const dep = await Transaction.findOne({ userId: c.userId, type: 'deposit', timestamp: { $gte: c.createdAt } }).lean();
+      if (dep) continue;
+      const montoStr = c.amount ? `$${Number(c.amount).toLocaleString('es-AR')}` : 's/monto';
+      const opStr = c.operationNumber ? `op. N°${c.operationNumber}` : 's/N° operación';
+      await _reopenChatForManualCharge(c.userId, c.username);
+      await _emitAdminOnlyChatNote(c.userId, c.username,
+        `⏳ Comprobante SIN CARGA después de ${minutes} min (${opStr} · ${montoStr}). No se detectó la transferencia en el banco automático (todavía no acreditó, fue a un banco sin API o los datos no coinciden). Revisá y cargá a mano.`);
+      logger.info(`[comprobante] colgado ${minutes}min user=${c.username} ${opStr} ${montoStr} → chat a Abiertos`);
+    }
+  } catch (err) {
+    logger.warn('[comprobante] barrido de colgados error: ' + err.message);
+  }
+}
+setTimeout(function () { _runStaleComprobanteSweep(); }, 120 * 1000);
+setInterval(function () { _runStaleComprobanteSweep(); }, 60 * 1000);
 
 
 // ============================================================

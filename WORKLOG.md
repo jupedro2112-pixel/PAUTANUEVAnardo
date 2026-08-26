@@ -6,7 +6,43 @@
 >
 > **Última actualización: 2026-08-26**
 
-## Sesión 2026-08-26 (tarde) — consultoría Meta Ads, sin cambios de código
+## Sesión 2026-08-26 (tarde)
+
+### 246. Regla definitiva de chats: "cliente colgado ⇒ Abiertos; todo automático OK ⇒ cerrado por Sistema"
+- **Reclamo owner:** un comprobante tomado como REPETIDO iba a Cerrados y el cliente
+  quedaba colgado sin agente. Regla pedida: **siempre que algo falle y el cliente quede
+  colgado → Abiertos**; si todo fue automático (CBU, registro, auto-carga hgcash OK) →
+  el chat se cierra y aparece "chat cerrado por sistema".
+- **Huecos que había (server.js):** (1) comprobante REPETIDO por IA → sólo nota interna,
+  chat cerrado; (2) duplicado REAL por coelsa → ídem (#243 lo dejó así a propósito; ahora
+  se abre porque el cliente mandó un comprobante y no ve carga nueva); (3) match AMBIGUO
+  → sólo nota; (4) comprobante **sin transferencia detectada** (banco sin API, todavía no
+  acreditó, datos que no matchean) → NADIE abría nunca; (5) hgcash APAGADO → el
+  comprobante ni se miraba; (6) auto-carga OK no cerraba un chat que estaba abierto.
+- **Hecho:**
+  - `_reopenChatForManualCharge` ahora se llama también en: IA-repetido (mismo u otro
+    usuario), duplicado coelsa, ambiguo, hgcash apagado (`hgcashMatchFromComprobante`
+    chequea `enabled` DESPUÉS de validar el comprobante y abre al toque).
+  - **Barrido `_runStaleComprobanteSweep`** (cada 60s): comprobante válido
+    (`unique`/`no_key`), sin `autoCharged`, `bankMatchStatus` none/pending, sin
+    resolución, creado hace ≥ `HGCASH_STALE_MIN` min (default **5**, env) y **posterior
+    al boot** → claim atómico en `Comprobante.staleAlertedAt` (campo NUEVO) → si no hubo
+    ningún depósito al usuario desde el comprobante → chat a Abiertos + nota interna
+    "⏳ Comprobante SIN CARGA después de N min…". Los casos que ya abrieron por su cuenta
+    marcan `staleAlertedAt` (`_markComprobanteAlerted`) para no duplicar la alerta.
+  - **`_closeChatBySystem(userId, username, reason)`**: cierra SOLO si está en 'open'
+    (Pagos/Comunidad intactos), `closedBy:'sistema'`, mensaje interno idéntico al cierre
+    manual ("Chat cerrado por: Sistema (carga automática acreditada)…") y socket
+    `chat_closed` → el panel lo mueve a Cerrados en vivo. Se llama al final de la
+    auto-carga hgcash exitosa. Si el cliente escribe texto, se reabre solo (como siempre).
+- **Decisión de diseño (nota):** el cierre por sistema se aplica aunque el chat esté
+  abierto por un texto de soporte previo — el escenario típico es "ya transferí,
+  cargame" que la auto-carga resuelve; si el cliente vuelve a escribir, reabre.
+- **Validado:** `node --check` OK (server.js, Comprobante.js). Sin cambios de front ni
+  SW. **Back necesita redeploy.** PROBAR: (a) reenviar el mismo comprobante → chat a
+  Abiertos con nota "REPETIDO"; (b) comprobante a un banco sin API → a los 5 min pasa a
+  Abiertos con "SIN CARGA"; (c) carga automática OK con el chat abierto → se cierra solo
+  con "Chat cerrado por: Sistema".
 
 ### 245. Plan: pixel NUEVO exclusivo del proyecto + lookalike de compradores + campaña (PENDIENTE de ejecutar)
 - **Hallazgos (Events Manager, pixel `1502367544624759` "pixel-bo-publicidad", BM

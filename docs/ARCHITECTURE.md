@@ -578,6 +578,24 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   3 veces (la reference estable impide que el reintento duplique la carga).
   **Fan-out** (#94): reenvía el webhook crudo+firma a autoreembolsos.com
   (`HGCASH_FANOUT_URL`, 'off' para apagar).
+- **Regla de APERTURA/CIERRE de chats (owner 2026-08-25/26, #243/#246):** el chat
+  va a **Abiertos** SOLO cuando hace falta un agente; si todo fue automático, queda o
+  vuelve a **Cerrado**. Concretamente:
+  - Reabre a Abiertos (`_reopenChatForManualCharge` + socket `chat_moved` by 'sistema'):
+    texto del cliente (soporte); auto-carga FALLIDA; modo sombra; bajo mínimo; posible
+    duplicado (<8min); duplicado REAL por coelsa; comprobante REPETIDO por IA (mismo u
+    otro usuario); match AMBIGUO; hgcash APAGADO (toda carga es manual); y comprobante
+    **sin carga a los N min** (`_runStaleComprobanteSweep`, `HGCASH_STALE_MIN`=5) — cubre
+    banco sin API / transferencia que nunca llegó / datos que no matchean.
+  - NO abre: imagen del cliente por sí sola; registro (nace cerrado); pedido de CBU;
+    carga automática OK.
+  - **Cierra por Sistema** (`_closeChatBySystem`, solo si estaba en 'open'; Pagos/
+    Comunidad no se tocan): auto-carga hgcash acreditada → mensaje interno "Chat
+    cerrado por: Sistema (carga automática acreditada)" + socket `chat_closed`.
+  - Anti-repetición del barrido: `Comprobante.staleAlertedAt` (claim atómico) + los
+    casos que ya reabrieron lo marcan (`_markComprobanteAlerted`) o cambian
+    `bankMatchStatus`. Sólo comprobantes posteriores al boot del proceso (un deploy no
+    abre chats viejos). Si hubo un depósito al usuario después del comprobante, no abre.
 - **Retiro self-service**: `POST /api/withdrawal/request` — exige phoneVerified, lock
   anti-doble, chequeo de saldo (UX), dedup 10min → crea PendingPayout
   (`deductAtPay:true`, SIN descontar) → mueve el chat a Pagos. El AGENTE confirma:
@@ -760,6 +778,7 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
 | `_runBonusStrategy` | 10 min | **APAGADO** (`BONUS_STRATEGY_DISABLED=true`) | step en StrategyEnrollment |
 | `_runDueSchedules` (ScheduledNotif) | 60 s | activo | lastRunAt |
 | `_pollPayingPayouts` | 45 s | activo (confirma pagos si el webhook no llegó) | handlePayoutStatusWebhook idempotente |
+| `_runStaleComprobanteSweep` | 60 s | activo (comprobante sin carga a los `HGCASH_STALE_MIN` min → chat a Abiertos) | claim atómico `Comprobante.staleAlertedAt` + sólo post-boot |
 | `_runVipTick` (niveles VIP) | 30 min | activo (se apaga desde el panel: Config → "Niveles VIP", flag `vip_levels_disabled` en Config, SOLO admin general — sin cache a propósito para que aplique al instante en todas las instancias) | buckets con `$set` idempotente + bono con reference `vip-lvl-*` (la plataforma dedupe) |
 | `_runVipSweepCheck` (sweep VIP) | 1 h (corre a las 05 ART) | activo | claim atómico por día en Config (`vip_sweep_day`) → instancia única |
 | `_runFcmPrune` | 24 h | activo | flag anti-overlap en memoria |

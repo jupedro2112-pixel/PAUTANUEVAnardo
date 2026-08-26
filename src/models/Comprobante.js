@@ -73,6 +73,9 @@ const comprobanteSchema = new mongoose.Schema({
   resolution: { type: String, enum: [null, 'accepted', 'rejected'], default: null, index: true },
   resolvedBy: { type: String, default: null },   // username del agente
   resolvedAt: { type: Date, default: null },
+  // Barrido de "colgados" (server.js _runStaleComprobanteSweep): fecha en que se
+  // abrió el chat por este comprobante (o se decidió no hacerlo). null = pendiente.
+  staleAlertedAt: { type: Date, default: null, index: true },
 
   // Meta
   model: { type: String, default: null },        // modelo de IA que lo analizó
