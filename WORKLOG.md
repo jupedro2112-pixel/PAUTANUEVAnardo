@@ -35,6 +35,11 @@
   bloquee facebook.net (el `vercel.json` del root es del server, no de la landing).
   **Requiere:** redeploy del back (endpoint + metaEventId) y de la landing (Vercel).
   Nota entorno: `grep` seguía colgando; verificado todo con `node`.
+- **FIX CORS (2026-08-26, tras probar):** el pixel no cargaba porque `/api/meta-pixel-id`
+  NO estaba en la excepción de CORS (solo lo estaba `/api/landing/signup`) → el fetch
+  cross-origin de la landing (Vercel → 1giroxauto.com) se bloqueaba. El link directo
+  funcionaba (navegación = sin CORS) pero el `fetch()` no. Se agregó `/api/meta-pixel-id`
+  al mismo caso abierto (GET público). Requiere OTRO redeploy del back.
 
 ## Sesión 2026-08-25
 
