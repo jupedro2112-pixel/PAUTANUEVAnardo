@@ -585,9 +585,9 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
     texto del cliente (soporte); auto-carga FALLIDA; modo sombra; bajo mínimo; posible
     duplicado (<8min); duplicado REAL por coelsa; comprobante REPETIDO por IA (mismo u
     otro usuario); match AMBIGUO; hgcash APAGADO (toda carga es manual); y comprobante
-    verificado **sin transferencia que coincida**: timer corto en la instancia
-    (`_scheduleNoMatchAlert`, `HGCASH_NOMATCH_GRACE_SEC`=60) → si a los 60s sigue sin
-    carga abre; el barrido `_runStaleComprobanteSweep` (`HGCASH_STALE_MIN`=5) queda de
+    verificado **sin transferencia que coincida**: abre **al instante**
+    (`_scheduleNoMatchAlert`; `HGCASH_NOMATCH_GRACE_SEC`=0, >0 = margen opcional con
+    timer en la instancia); el barrido `_runStaleComprobanteSweep` (`HGCASH_STALE_MIN`=5) queda de
     red de seguridad (reinicios). Ambos pasan por `_alertStaleComprobante` (claim
     atómico `staleAlertedAt`). Cubre banco sin API / transferencia que nunca llegó /
     datos que no matchean.

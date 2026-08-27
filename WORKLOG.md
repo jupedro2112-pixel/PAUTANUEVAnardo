@@ -24,6 +24,13 @@
   `_alertStaleComprobante` → queda como red de seguridad si la instancia que procesó
   el comprobante se reinicia antes del timer. Una sola alerta por comprobante (claim).
 - **Validado:** `node --check` OK. **Back necesita redeploy.**
+- **AJUSTE (owner, misma sesión): SIN espera.** "Es mucho 60 segundos, tiene que
+  matchear al toque; si no matchea por X motivo que pase a Abiertos". Ahora el default
+  es `HGCASH_NOMATCH_GRACE_SEC=0` → si al recibir el comprobante no hay transferencia
+  que coincida, el chat va a Abiertos EN EL MOMENTO (nota "⏳ … sin transferencia al
+  recibirlo"). Si el movimiento llega después y la auto-carga entra, cierra por Sistema
+  (#246). Consecuencia aceptada: un comprobante enviado segundos ANTES de que el banco
+  avise abre y se cierra solo enseguida. Un valor > 0 en la env vuelve al margen.
 
 ### 248. FIX: cuenta creada desde la LANDING seguía naciendo en Abiertos (el #243 no cubría ese camino)
 - **Reporte owner (captura, gxcarlos599/PWAUTO):** chat en Abiertos con solo el mensaje

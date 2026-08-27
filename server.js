@@ -2587,10 +2587,12 @@ async function hgcashMatchFromComprobante(comprobante) {
     );
     if (matches.length === 0) {
       logger.info(`[hgcash] comprobante SIN movimiento aún: $${comprobante.amount} op=${comprobante.operationNumber || '-'} de "${comprobante.originHolder || '?'}" — ${candidates.length} movimientos pendientes en ventana`);
-      // Todavía no llegó el movimiento (el webhook lo matcheará si llega). Si en
-      // HGCASH_NOMATCH_GRACE_SEC (default 60s) sigue sin carga → el cliente está
-      // colgado → chat a ABIERTOS (owner 2026-08-27: 5 min era demasiado).
-      _scheduleNoMatchAlert(comprobante.id);
+      // No hay transferencia que coincida → el cliente está colgado → chat a
+      // ABIERTOS AL TOQUE (owner 2026-08-27: "tiene que matchear al toque; si no,
+      // que lo haga el agente"). Si el movimiento llega después y la auto-carga
+      // entra, el chat se cierra por Sistema. HGCASH_NOMATCH_GRACE_SEC > 0 permite
+      // un margen opcional (default 0 = inmediato).
+      await _scheduleNoMatchAlert(comprobante.id);
       return;
     }
     if (matches.length > 1) {
@@ -18211,17 +18213,21 @@ async function _alertStaleComprobante(comprobanteId, waitedLabel) {
   }
 }
 
-// Timer CORTO tras un comprobante verificado sin movimiento que coincida:
-// HGCASH_NOMATCH_GRACE_SEC (default 60s) de margen para que llegue el webhook del
-// banco; si no llegó, abre el chat. Vive en la instancia que procesó el
-// comprobante; si esa instancia se reinicia, el barrido de 5 min lo cubre.
+// Comprobante verificado sin movimiento que coincida → alerta. Por default
+// INMEDIATA (HGCASH_NOMATCH_GRACE_SEC=0, decisión owner 2026-08-27). Si se
+// configura un margen > 0, espera ese tiempo (timer en la instancia; si se
+// reinicia antes, el barrido de 5 min lo cubre).
 function _hgcashNoMatchGraceSec() {
   const v = Number(process.env.HGCASH_NOMATCH_GRACE_SEC);
-  return v >= 0 ? v : 60;
+  return v > 0 ? v : 0;
 }
-function _scheduleNoMatchAlert(comprobanteId) {
+async function _scheduleNoMatchAlert(comprobanteId) {
   try {
     const sec = _hgcashNoMatchGraceSec();
+    if (sec === 0) {
+      await _alertStaleComprobante(comprobanteId, 'sin transferencia al recibirlo');
+      return;
+    }
     const t = setTimeout(() => {
       _alertStaleComprobante(comprobanteId, `${sec}s sin transferencia`).catch(() => {});
     }, sec * 1000);
