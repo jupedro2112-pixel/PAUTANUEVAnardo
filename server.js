@@ -3958,6 +3958,14 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
       registrationUserAgent: (req.get('User-Agent') || '').slice(0, 500) || null
     });
 
+    // ChatStatus nace CERRADO (registro automático, owner 2026-08-25). Antes este
+    // alta NO creaba ChatStatus y lo terminaba creando /api/messages/welcome con
+    // un upsert → nacía 'open' (default del schema) y el chat aparecía en
+    // Abiertos con solo el registro (bug reportado 2026-08-27, #248).
+    try {
+      await ChatStatus.create({ userId: newUser.id, username: newUser.username, status: 'closed', category: 'cargas', lastMessageAt: new Date() });
+    } catch (e) { logger.warn(`[landing] no se pudo crear ChatStatus cerrado para ${newUser.username}: ${e.message}`); }
+
     // Meta CAPI + webhook fb-ads: conversión de registro (misma que register-quick).
     // event_id ESTABLE por usuario (`reg_<id>`): si este alta se reintenta (doble
     // request por timeout, reintento del front), Meta DEDUPLICA por event_id y
@@ -5978,9 +5986,11 @@ app.post('/api/messages/welcome', authMiddleware, async (req, res) => {
     // agente no vería al cliente cuando escriba.
     const _welcomeUser = await User.findOne({ id: userId }).select('acquisitionSource').lean();
     if (_welcomeUser && _welcomeUser.acquisitionSource === 'landing') {
+      // Si no existe, nace CERRADO ($setOnInsert): la bienvenida es automática,
+      // no abre chats. Si ya existe, no se toca el status.
       await ChatStatus.findOneAndUpdate(
         { userId },
-        { userId, username, lastMessageAt: new Date() },
+        { $set: { userId, username, lastMessageAt: new Date() }, $setOnInsert: { status: 'closed', category: 'cargas' } },
         { upsert: true }
       );
       return res.json({ success: true, skipped: 'landing' });
@@ -6042,10 +6052,12 @@ app.post('/api/messages/welcome', authMiddleware, async (req, res) => {
     // Crear/actualizar el ChatStatus recién ahora — cuando el usuario ingresa y
     // recibe la bienvenida. Los usuarios creados (por publisher_admin o admin)
     // que nunca ingresaron NO tienen ChatStatus, así que no aparecen como chats
-    // vacíos en el panel. lastMessageAt=now hace que el chat aparezca arriba.
+    // vacíos en el panel. lastMessageAt=now hace que el chat aparezca arriba
+    // (en Cerrados: la bienvenida es automática → nace 'closed' vía $setOnInsert;
+    // si ya existía, el status no se toca — regla owner 2026-08-25/27).
     await ChatStatus.findOneAndUpdate(
       { userId },
-      { userId, username, lastMessageAt: new Date() },
+      { $set: { userId, username, lastMessageAt: new Date() }, $setOnInsert: { status: 'closed', category: 'cargas' } },
       { upsert: true }
     );
 

@@ -8,6 +8,22 @@
 
 ## Sesión 2026-08-26 (tarde)
 
+### 248. FIX: cuenta creada desde la LANDING seguía naciendo en Abiertos (el #243 no cubría ese camino)
+- **Reporte owner (captura, gxcarlos599/PWAUTO):** chat en Abiertos con solo el mensaje
+  de credenciales del registro.
+- **Causa:** #243 puso `status:'closed'` en `/auth/register`, `/auth/register-quick` y el
+  auto-create del login, pero **`/api/landing/signup` NO creaba ChatStatus**. Lo creaba
+  después `/api/messages/welcome` con un `findOneAndUpdate(..., {upsert:true})` que sólo
+  seteaba `lastMessageAt` → el doc nacía con el **default del schema `status:'open'`**.
+  El mismo upsert existe en la bienvenida normal (usuarios creados por admin/publicista
+  que entran por primera vez) → también nacían abiertos.
+- **Fix (server.js):** (1) `/api/landing/signup` crea el ChatStatus **cerrado** al dar
+  de alta; (2) los DOS upserts de `/api/messages/welcome` usan `$set` + `$setOnInsert:
+  {status:'closed', category:'cargas'}` → si el doc no existe nace cerrado; si existe,
+  no se toca el status (un chat abierto por soporte sigue abierto).
+- **Validado:** `node --check` OK. **Back necesita redeploy.** Los chats que ya quedaron
+  abiertos por este bug se cierran a mano (Cerrar Chat); no se migran.
+
 ### 247. FIX CORS: `/api/landing/touch` (last-touch #228) no estaba en la excepción de CORS de la landing
 - Detectado al revisar qué hay que tocar para cambiar el dominio de la landing: la
   landing llama `POST /api/landing/touch` cross-origin (Vercel → 1giroxauto.com), pero
