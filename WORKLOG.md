@@ -80,11 +80,15 @@
 
 ### 245. Plan: pixel NUEVO exclusivo del proyecto + lookalike de compradores + campaña (PENDIENTE de ejecutar)
 - **Hallazgos (Events Manager, pixel `1502367544624759` "pixel-bo-publicidad", BM
-  "BO Publicidad"):** ese pixel es el que está en SSM como **`META_PIXEL_ID` (propio)**
-  — recibe TODOS los eventos (Login/RefundClaim/WithdrawRequest/InitiateCheckout/
-  Purchase/CompleteRegistration). Es el 3er pixel que apareció en la landing en la
-  captura del publicista ⇒ **el fetch a `/api/meta-pixel-id` ya funciona en prod**
-  (redeploy con el CORS de #244 hecho). EMQ: Purchase 6.7/10 (2.113, solo Servidor,
+  "BO Publicidad"):** ⚠️ **CORRECCIÓN 2026-08-27:** `GET /api/meta-pixel-id` en prod
+  devuelve `["3626744667474255","1003643914735636","1502367544624759"]` y el endpoint
+  lista PRIMERO `META_PIXEL_ID` → el **propio de ESTE proyecto es `3626744667474255`**;
+  `1502…` es `META_PIXEL_ID_3` (slot de partner: desde acá sólo recibe registro + FTD).
+  Los Login/RefundClaim/WithdrawRequest que se ven en `1502…` vienen de los OTROS clones
+  del owner (mismo código, mismos nombres de evento — autoreembolsos/VIPCARGASANTINO),
+  donde ese pixel sí es el propio. Eso explica el teléfono 84% (esos clones piden SMS).
+  ⇒ Para el "pixel limpio de la landing" hay que mirar/cambiar `META_PIXEL_ID`
+  (`3626…`), no `1502…`. El fetch a `/api/meta-pixel-id` funciona en prod (confirmado). EMQ: Purchase 6.7/10 (2.113, solo Servidor,
   1 conjunto de anuncios optimiza por él), CompleteRegistration 6.4/10 (696,
   Navegador·Servidor ⇒ dedup landing↔CAPI andando), InitiateCheckout 7.7, resto
   6.1–6.7. `CargaWhatsApp` 0.0/10 = evento viejo muerto (última recepción 5 días).
