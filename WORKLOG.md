@@ -19,6 +19,12 @@
   públicos aceptan cualquier origen y `API_BASE` de la landing apunta al back
   (`1giroxauto.com`), no a sí misma. Cambiar el dominio en Vercel no requiere código.
 - **Validado:** `node --check` OK. **Back necesita redeploy.**
+- **Dominio nuevo de la landing (2026-08-27): `grupogirox.com`** (comprado en Vercel,
+  asignado al proyecto `girox-nard-onuevoo-w4of`, cuenta `ro-bersantino`). Verificado
+  desde afuera: HTTPS 200, sirve la landing, `API_BASE` → `1giroxauto.com`. El
+  `girox-nard-onuevoo-w4of.vercel.app` sigue activo en paralelo. ⚠️ `www.grupogirox.com`
+  resuelve pero SIN certificado (no se agregó al proyecto) → agregar en Vercel Domains
+  con redirect al apex. Pendiente: verificar dominio en Meta Business + URL en anuncios.
 
 ### 246. Regla definitiva de chats: "cliente colgado ⇒ Abiertos; todo automático OK ⇒ cerrado por Sistema"
 - **Reclamo owner:** un comprobante tomado como REPETIDO iba a Cerrados y el cliente
