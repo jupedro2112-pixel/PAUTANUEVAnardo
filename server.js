@@ -2587,7 +2587,11 @@ async function hgcashMatchFromComprobante(comprobante) {
     );
     if (matches.length === 0) {
       logger.info(`[hgcash] comprobante SIN movimiento aún: $${comprobante.amount} op=${comprobante.operationNumber || '-'} de "${comprobante.originHolder || '?'}" — ${candidates.length} movimientos pendientes en ventana`);
-      return; // todavía no llegó el movimiento; el webhook lo matcheará al llegar
+      // Todavía no llegó el movimiento (el webhook lo matcheará si llega). Si en
+      // HGCASH_NOMATCH_GRACE_SEC (default 60s) sigue sin carga → el cliente está
+      // colgado → chat a ABIERTOS (owner 2026-08-27: 5 min era demasiado).
+      _scheduleNoMatchAlert(comprobante.id);
+      return;
     }
     if (matches.length > 1) {
       logger.warn(`[hgcash] AMBIGUO: ${matches.length} movimientos coinciden con comprobante ${comprobante.id}. No se auto-carga.`);
@@ -18175,6 +18179,56 @@ function _hgcashStaleMinutes() {
 // Sólo comprobantes posteriores al arranque de ESTE proceso: un deploy no debe
 // abrir de golpe chats por comprobantes viejos que los agentes ya atendieron.
 const _STALE_SWEEP_BOOT_AT = new Date();
+// Abre el chat por un comprobante que sigue SIN carga. Claim atómico
+// (staleAlertedAt null → fecha) → una sola alerta por comprobante aunque lo
+// disparen el timer corto y el barrido, o varias instancias. Si el comprobante
+// ya fue tomado por el banco automático (bankMatchStatus ≠ none/pending: sombra,
+// needs_review, duplicado, cargado…) o hubo un depósito al usuario después del
+// comprobante → no abre (ya está resuelto o ya lo abrió el otro camino).
+async function _alertStaleComprobante(comprobanteId, waitedLabel) {
+  try {
+    const c = await Comprobante.findOne({ id: comprobanteId }).lean();
+    if (!c || !c.userId || !c.isComprobante) return false;
+    if (c.autoCharged || c.resolution) return false;
+    if (!['none', 'pending'].includes(c.bankMatchStatus || 'none')) return false;
+    if (!['unique', 'no_key'].includes(c.status)) return false;
+    const claimed = await Comprobante.findOneAndUpdate(
+      { id: c.id, staleAlertedAt: null }, { $set: { staleAlertedAt: new Date() } }, { new: true }
+    );
+    if (!claimed) return false;
+    const dep = await Transaction.findOne({ userId: c.userId, type: 'deposit', timestamp: { $gte: c.createdAt } }).lean();
+    if (dep) return false;
+    const montoStr = c.amount ? `$${Number(c.amount).toLocaleString('es-AR')}` : 's/monto';
+    const opStr = c.operationNumber ? `op. N°${c.operationNumber}` : 's/N° operación';
+    await _reopenChatForManualCharge(c.userId, c.username);
+    await _emitAdminOnlyChatNote(c.userId, c.username,
+      `⏳ Comprobante SIN CARGA AUTOMÁTICA (${waitedLabel}) — ${opStr} · ${montoStr}. La transferencia no apareció en el banco automático (todavía no acreditó, fue a un banco sin API o los datos no coinciden). Revisá y cargá a mano.`);
+    logger.info(`[comprobante] colgado (${waitedLabel}) user=${c.username} ${opStr} ${montoStr} → chat a Abiertos`);
+    return true;
+  } catch (e) {
+    logger.warn(`[comprobante] alerta de colgado falló (${comprobanteId}): ${e.message}`);
+    return false;
+  }
+}
+
+// Timer CORTO tras un comprobante verificado sin movimiento que coincida:
+// HGCASH_NOMATCH_GRACE_SEC (default 60s) de margen para que llegue el webhook del
+// banco; si no llegó, abre el chat. Vive en la instancia que procesó el
+// comprobante; si esa instancia se reinicia, el barrido de 5 min lo cubre.
+function _hgcashNoMatchGraceSec() {
+  const v = Number(process.env.HGCASH_NOMATCH_GRACE_SEC);
+  return v >= 0 ? v : 60;
+}
+function _scheduleNoMatchAlert(comprobanteId) {
+  try {
+    const sec = _hgcashNoMatchGraceSec();
+    const t = setTimeout(() => {
+      _alertStaleComprobante(comprobanteId, `${sec}s sin transferencia`).catch(() => {});
+    }, sec * 1000);
+    if (t.unref) t.unref();
+  } catch (_) {}
+}
+
 async function _runStaleComprobanteSweep() {
   try {
     const minutes = _hgcashStaleMinutes();
@@ -18189,19 +18243,7 @@ async function _runStaleComprobanteSweep() {
       createdAt: { $gte: _STALE_SWEEP_BOOT_AT, $lt: new Date(now - minutes * 60 * 1000) }
     }).sort({ createdAt: 1 }).limit(50).lean();
     for (const c of stale) {
-      const claimed = await Comprobante.findOneAndUpdate(
-        { id: c.id, staleAlertedAt: null }, { $set: { staleAlertedAt: new Date() } }, { new: true }
-      );
-      if (!claimed || !c.userId) continue;
-      // ¿Ya se le cargó (manual o auto) desde que mandó el comprobante? → resuelto, no abrir.
-      const dep = await Transaction.findOne({ userId: c.userId, type: 'deposit', timestamp: { $gte: c.createdAt } }).lean();
-      if (dep) continue;
-      const montoStr = c.amount ? `$${Number(c.amount).toLocaleString('es-AR')}` : 's/monto';
-      const opStr = c.operationNumber ? `op. N°${c.operationNumber}` : 's/N° operación';
-      await _reopenChatForManualCharge(c.userId, c.username);
-      await _emitAdminOnlyChatNote(c.userId, c.username,
-        `⏳ Comprobante SIN CARGA después de ${minutes} min (${opStr} · ${montoStr}). No se detectó la transferencia en el banco automático (todavía no acreditó, fue a un banco sin API o los datos no coinciden). Revisá y cargá a mano.`);
-      logger.info(`[comprobante] colgado ${minutes}min user=${c.username} ${opStr} ${montoStr} → chat a Abiertos`);
+      await _alertStaleComprobante(c.id, `${minutes} min`);
     }
   } catch (err) {
     logger.warn('[comprobante] barrido de colgados error: ' + err.message);

@@ -8,6 +8,23 @@
 
 ## Sesión 2026-08-26 (tarde)
 
+### 249. Comprobante sin transferencia: el chat abre a los 60 s (no a los 5 min)
+- **Reporte owner (gxlaura729):** comprobante verificado 17:32, hgcash no tenía ningún
+  movimiento que coincida (ni falló ni cargó), el chat quedó cerrado y recién a las
+  17:37 lo abrió el barrido de 5 min (#246). "Si la auto-carga no funcionó, tiene que
+  pasar a Abiertos" — 5 min de cliente colgado es demasiado.
+- **Fix (server.js):** en el no-match de `hgcashMatchFromComprobante` se programa
+  `_scheduleNoMatchAlert(id)` → `setTimeout` de `HGCASH_NOMATCH_GRACE_SEC` (default
+  **60 s**, margen para que llegue el webhook del banco) → `_alertStaleComprobante`:
+  relee el comprobante y, si sigue sin carga (bankMatchStatus none/pending, sin
+  autoCharged, sin depósito posterior al usuario) → claim `staleAlertedAt` + Abiertos +
+  nota "⏳ Comprobante SIN CARGA AUTOMÁTICA (60s sin transferencia)…". Si la
+  transferencia llega después y la auto-carga entra, se cierra por Sistema (#246).
+- Refactor: el barrido de 5 min (`_runStaleComprobanteSweep`) ahora usa el mismo
+  `_alertStaleComprobante` → queda como red de seguridad si la instancia que procesó
+  el comprobante se reinicia antes del timer. Una sola alerta por comprobante (claim).
+- **Validado:** `node --check` OK. **Back necesita redeploy.**
+
 ### 248. FIX: cuenta creada desde la LANDING seguía naciendo en Abiertos (el #243 no cubría ese camino)
 - **Reporte owner (captura, gxcarlos599/PWAUTO):** chat en Abiertos con solo el mensaje
   de credenciales del registro.
