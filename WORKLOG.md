@@ -8,6 +8,46 @@
 
 ## Sesión 2026-08-28
 
+### 251. Ruleta de bienvenida: legible, premio reabrible, nota interna siempre, cash con rollover directo, % consumido en TODOS los caminos
+- **Pedido owner (captura del widget):** (1) las etiquetas de la rueda se leían mal y se
+  pisaban con el botón; (2) el resultado aparecía una vez y desaparecía → poder volver a
+  verlo / sacar captura; (3) a veces en interno no se veía qué premio ganó; (4) premio en
+  SALDO → cargar directo con el rollover configurado; (5) premio en % → marcar en interno,
+  y que lo consuma la carga automática (aplica y marca usado) o la manual (si el agente no
+  cargó bonus se aplica solo y marca usado; si el agente cargó bonus, se sigue el suyo y
+  se marca usado igual).
+- **Widget (`public/js/ui.js`):** rueda 220px, etiquetas HORIZONTALES centradas en cada
+  porción (trigonometría), 12px, sombra, salto de línea; contra-rotan durante el giro y
+  quedan derechas al parar. Nuevo estado `roulette-prize` ("🎡 Mi premio de la ruleta"):
+  premio grande + estado (acreditado con rollover xN / pendiente para la próxima carga /
+  ya aplicado el <fecha>) + fecha del giro + hint de captura. El botón aparece en el
+  inicio cada vez que ya giró (status cacheado por sesión, `_wrStatus`); tras girar se
+  ofrece "🎡 Ver mi premio". **SW → v137.**
+- **Backend cash:** el premio en saldo pasa de `creditUserBalance`+`multiplier` (iba por
+  `/bonus`, que queda "a reclamar" y pisa bonos) a **`depositToUser` con `multiplier`**
+  (como el fueguito): jugable ya, retirable tras apostar rollover × premio. Rollover = el
+  del premio en la card del panel o, si es 0, el global del fueguito (configurable en el
+  panel). Misma reference `vip-wroul-<userId>`. Nota interna SIEMPRE (también si la
+  acreditación falla: "…FALLÓ, el giro se liberó").
+- **Backend %:** helpers `claimWelcomeRoulettePercent(userId, usedBy)` /
+  `revertWelcomeRoulettePercent`. Se usan en: carga manual sin bonus (ya existía, ahora
+  por helper + nota "aplicado X% = $Y, USADO"); **auto-carga hgcash** (NUEVO: prioridad
+  sobre el bono de 1ª carga, revert si falla, nota); carga manual CON bonus del agente
+  (NUEVO: marca usado + nota "se sigue el bonus del agente"); y **panel** (NUEVO
+  `POST /api/admin/welcome-roulette/user/:userId/use`). Nota del giro en % ahora explica
+  al agente exactamente qué va a pasar en cada caso.
+- **Panel (`admin.js`, `index.html`):** banner `#chatRouletteBanner` bajo el de promo:
+  amarillo = PENDIENTE X% (+ botón "✓ Marcar usado"), azul = saldo acreditado (rollover),
+  gris = ya usado (fecha + por quién). Se carga al abrir el chat y se refresca tras cada
+  carga manual. `GET /api/admin/welcome-roulette/user/:userId`. **admin-sw → v46.**
+- **`GET /api/welcome-roulette/status`** ahora devuelve `prize` completo (label, type,
+  value, status, rolloverX, spunAt, usedAt).
+- **Validado:** `node --check` OK (server.js, ui.js, admin.js, ambos SW). **Back necesita
+  redeploy**; front/panel con el push (SW bump). PROBAR: girar → etiquetas legibles y
+  derechas al parar → resultado + "Ver mi premio" → volver al inicio → botón "Mi premio"
+  → pantalla reabrible. Panel: banner amarillo con el %; carga manual sin bonus → se aplica
+  y el banner pasa a gris; carga con bonus → gris igual; auto-carga hgcash → gris + nota.
+
 ### 250. Pixels por PUBLICISTA: cada partner recibe solo SU tráfico (navegador + CAPI)
 - **Problema (owner):** la landing inicializaba los 3 pixels a la vez → cada
   `fbq('track')` (PageView, CompleteRegistration) iba a los TRES → cada publicista

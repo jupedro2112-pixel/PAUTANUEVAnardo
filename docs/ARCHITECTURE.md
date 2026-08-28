@@ -577,6 +577,18 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   **no carga fbevents.js** (ningún pixel). La landing manda `c` = `resolveCampaign()`
   (`?p=`/`?campaign=`/segmento de path); sin fallback. El pixel propio recibe alta/FTD/
   todo por CAPI únicamente. Cambiar el alcance = editar SSM + reiniciar.
+- **Ruleta de bienvenida (#214, rehecha #251 2026-08-28).** Una vez por cuenta; premio
+  ponderado server-side. **Cash** → `depositToUser` con `multiplier` (rollover del premio,
+  o si es 0 el global del fueguito `getFireRolloverMultiplier`) — NO `/bonus`; reference
+  `vip-wroul-<userId>`. **Percent** → queda `pending` y lo consumen, con reserva atómica
+  `claimWelcomeRoulettePercent(userId, usedBy)` / `revertWelcomeRoulettePercent`: (a) la
+  carga manual SIN bonus del agente (prioridad sobre bono de 1ª carga), (b) la **auto-carga
+  hgcash** (`usedBy:'auto-hgcash'`, prioridad sobre bono de 1ª carga), (c) la carga manual
+  CON bonus del agente lo marca usado sin sumarlo, (d) botón "Marcar usado" del panel.
+  Cada camino deja nota adminOnly 🎡. `GET /api/welcome-roulette/status` devuelve `prize`
+  completo → el widget tiene la pantalla **"🎡 Mi premio de la ruleta"** (estado
+  `roulette-prize`, reabrible desde el inicio). Panel: banner `#chatRouletteBanner`
+  (`GET/POST /api/admin/welcome-roulette/user/:userId[/use]`).
 - **AUTO-CARGA hgcash** (`POST /api/hgcash/webhook`, firma HMAC sobre rawBody,
   fail-closed en prod): guarda BankMovement → matching contra Comprobantes por
   monto + (N° operación==coelsa/externalID, o nombre de origen + destino consistente)

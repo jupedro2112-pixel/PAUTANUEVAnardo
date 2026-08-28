@@ -1893,6 +1893,8 @@ async function selectConversation(userId, username) {
 
     // Bono de carga vigente del cliente (lo activó una notificación).
     loadChatPromoBonus(username);
+    // Premio de la RULETA de bienvenida (pendiente / usado / acreditado).
+    loadChatRouletteBanner(userId);
 
     // Reset banner de bloqueo y botones hasta que loadUserInfo confirme el estado
     if (elements.chatBlockedBanner) elements.chatBlockedBanner.style.display = 'none';
@@ -3438,6 +3440,8 @@ async function handleDeposit() {
         
         // Update balance display
         loadUserInfo(selectedUserId);
+        // El premio de la ruleta pudo consumirse con esta carga → refrescar el banner.
+        try { loadChatRouletteBanner(selectedUserId); } catch (e) {}
         
         // Reload messages to show deposit notification
         loadMessages(selectedUserId);
@@ -11223,6 +11227,61 @@ async function loadChatPromoBonus(username) {
     } catch (e) {
         el.style.display = 'none';
     }
+}
+
+// =========================================================================
+// RULETA DE BIENVENIDA — banner en el chat (owner 2026-08-28: que en interno
+// siempre se vea qué premio le salió y en qué estado está).
+// =========================================================================
+async function loadChatRouletteBanner(userId) {
+    const el = document.getElementById('chatRouletteBanner');
+    if (!el) return;
+    el.style.display = 'none';
+    el.innerHTML = '';
+    if (!userId) return;
+    try {
+        const r = await authFetch('/api/admin/welcome-roulette/user/' + encodeURIComponent(userId));
+        const j = await r.json();
+        const p = j && j.prize;
+        if (!p) return;
+        const fmt = (x) => { try { return new Date(x).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
+        let bg = 'linear-gradient(90deg,#5b3fb0,#3f2a80)', titulo = '', sub = '', btn = '';
+        if (p.type === 'cash') {
+            titulo = 'RULETA: ganó ' + escapeHtml(p.label || ('$' + p.value)) + ' — SALDO acreditado automático';
+            sub = (p.rolloverX > 0 ? 'rollover x' + p.rolloverX : 'sin rollover') + (p.spunAt ? ' · giró el ' + fmt(p.spunAt) : '') + ' · no hay que hacer nada';
+            bg = 'linear-gradient(90deg,#2f6f8f,#1f4f6a)';
+        } else if (p.status === 'pending') {
+            titulo = 'RULETA PENDIENTE: ' + p.value + '% EXTRA en su próxima carga';
+            sub = 'Carga automática o carga SIN bonus → se aplica solo y queda usado. Si cargás bonus a mano → se usa el tuyo y se marca usado.' + (p.spunAt ? ' · giró el ' + fmt(p.spunAt) : '');
+            bg = 'linear-gradient(90deg,#b8860b,#8a6508)';
+            btn = '<button onclick="markChatRouletteUsed(\'' + escapeHtml(String(userId)) + '\')" style="background:#fff;color:#7a5a08;border:none;border-radius:7px;padding:6px 11px;font-weight:800;font-size:11.5px;cursor:pointer;">✓ Marcar usado</button>';
+        } else {
+            titulo = 'RULETA: ganó ' + escapeHtml(p.label || (p.value + '%')) + ' — ya USADO';
+            sub = (p.usedAt ? 'aplicado el ' + fmt(p.usedAt) : '') + (p.usedBy ? ' por ' + escapeHtml(p.usedBy) : '');
+            bg = 'rgba(120,120,120,0.25)';
+        }
+        el.style.display = '';
+        el.style.padding = '8px 14px';
+        el.style.fontSize = '12px';
+        el.style.borderBottom = '1px solid rgba(0,0,0,0.30)';
+        el.style.background = bg;
+        el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">' +
+            '<span style="font-size:18px;">🎡</span>' +
+            '<div style="flex:1;min-width:120px;"><strong style="font-size:13px;">' + titulo + '</strong>' +
+            '<div style="font-size:11px;opacity:0.9;">' + sub + '</div></div>' + btn + '</div>';
+    } catch (e) {
+        el.style.display = 'none';
+    }
+}
+
+async function markChatRouletteUsed(userId) {
+    if (!confirm('¿Marcar el premio de la ruleta como USADO? El cliente no lo va a tener más.')) return;
+    try {
+        const r = await authFetch('/api/admin/welcome-roulette/user/' + encodeURIComponent(userId) + '/use', { method: 'POST' });
+        const j = await r.json();
+        if (j.success) { showToast('Premio de ruleta marcado como usado', 'success'); loadChatRouletteBanner(userId); }
+        else showToast(j.error || 'Error', 'error');
+    } catch (e) { showToast('Error de conexión', 'error'); }
 }
 
 async function markChatPromoBonusUsed(id) {

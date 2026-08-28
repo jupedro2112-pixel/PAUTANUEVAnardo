@@ -1819,6 +1819,11 @@ VIP.ui.casinoBotGo = function(state) {
     return;
   }
 
+  if (state === 'roulette-prize') {
+    VIP.ui._renderRoulettePrize();
+    return;
+  }
+
   if (state === 'info') {
     area.innerHTML = '';
     VIP.ui._botMsg(
@@ -2240,16 +2245,74 @@ VIP.ui.casinoBotSupport = function() {
 // SERVER (spin), el cliente solo ve la animación caer en el segmento premiado.
 // ============================================================
 VIP.ui._maybeOfferWelcomeRoulette = function() {
-  if (VIP.ui._wrOffered) return; // una vez por sesión de widget
+  // El status se pide UNA vez por sesión de widget y se cachea; cada vez que se
+  // vuelve al inicio se re-muestra lo que corresponda: la oferta de girar, o
+  // el acceso a "Mi premio" si ya giró (owner 2026-08-28: poder volver a verlo).
+  const show = function(d) {
+    if (!d) return;
+    if (d.canSpin) {
+      VIP.ui._botMsg('🎁 <b>¡Tenés una RULETA DE BIENVENIDA!</b><br>Girá y ganá tu premio 🎡');
+      VIP.ui._botRow(VIP.ui._botBtn('🎡 ¡GIRAR LA RULETA!', 'VIP.ui.casinoBotGo(\'roulette\')', true));
+    } else if (d.alreadySpun && d.prize) {
+      VIP.ui._botRow(VIP.ui._botBtn('🎡 Mi premio de la ruleta', 'VIP.ui.casinoBotGo(\'roulette-prize\')', false));
+    }
+  };
+  if (VIP.ui._wrOffered) { show(VIP.ui._wrStatus); return; }
   fetch(`${VIP.config.API_URL}/api/welcome-roulette/status`, {
     headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
   }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
-    if (!d || !d.canSpin) return;
+    if (!d) return;
     VIP.ui._wrOffered = true;
+    VIP.ui._wrStatus = d;
     VIP.ui._wrSegments = (d.segments || []).map(function(s) { return s.label; });
-    const b = VIP.ui._botMsg('🎁 <b>¡Tenés una RULETA DE BIENVENIDA!</b><br>Girá y ganá tu premio 🎡');
-    VIP.ui._botRow(VIP.ui._botBtn('🎡 ¡GIRAR LA RULETA!', 'VIP.ui.casinoBotGo(\'roulette\')', true));
+    show(d);
   }).catch(function() {});
+};
+
+/** Pantalla "Mi premio": qué le salió, en qué estado está, y desde cuándo.
+ *  Queda accesible siempre (para verlo de nuevo o sacar captura). */
+VIP.ui._renderRoulettePrize = function() {
+  const area = document.getElementById('casinoBotArea');
+  if (!area) return;
+  area.innerHTML = '';
+  VIP.ui._botMsg('⏳ Buscando tu premio…');
+  fetch(`${VIP.config.API_URL}/api/welcome-roulette/status`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    area.innerHTML = '';
+    const p = d && d.prize;
+    if (!p) {
+      VIP.ui._botMsg('🎡 Todavía no giraste la ruleta.');
+      if (d && d.canSpin) VIP.ui._botRow(VIP.ui._botBtn('🎡 ¡GIRAR LA RULETA!', 'VIP.ui.casinoBotGo(\'roulette\')', true));
+      return;
+    }
+    VIP.ui._wrStatus = d;
+    const fmt = function(x) { try { return new Date(x).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
+    let estado = '';
+    if (p.type === 'cash') {
+      estado = '💰 <b>Acreditado en tu saldo</b>' + (p.rolloverX > 0 ? ' — para retirarlo tenés que apostar ' + p.rolloverX + ' veces el premio.' : '.');
+    } else if (p.status === 'pending') {
+      estado = '⏳ <b>Pendiente</b> — se te suma automáticamente en tu <b>próxima carga</b> (' + _wrEsc(String(p.value)) + '% extra).';
+    } else {
+      estado = '✅ <b>Ya aplicado</b>' + (p.usedAt ? ' el ' + fmt(p.usedAt) : '') + ' en una carga.';
+    }
+    VIP.ui._botMsg(
+      '<div style="text-align:center;padding:6px 0;">' +
+        '<div style="font-size:13px;opacity:.85;">🎡 Tu premio de la ruleta</div>' +
+        '<div style="font-size:26px;font-weight:900;color:#ffd700;margin:6px 0;text-shadow:0 1px 3px rgba(0,0,0,.6);">' + _wrEsc(p.label || '') + '</div>' +
+        '<div style="font-size:13px;line-height:1.35;">' + estado + '</div>' +
+        (p.spunAt ? '<div style="font-size:11px;opacity:.7;margin-top:8px;">Giraste el ' + fmt(p.spunAt) + '</div>' : '') +
+        '<div style="font-size:11px;opacity:.7;margin-top:4px;">📸 Podés sacar captura de esta pantalla cuando quieras.</div>' +
+      '</div>');
+    if (p.type === 'percent' && p.status === 'pending') {
+      VIP.ui._botRow(VIP.ui._botBtn('💳 Cargar ahora y usarlo', "VIP.ui.casinoBotGo('deposit')", true));
+    }
+    VIP.ui._botRow(VIP.ui._botBtn('↩️ Volver', "VIP.ui.casinoBotGo('home')", false));
+  }).catch(function() {
+    area.innerHTML = '';
+    VIP.ui._botMsg('No pude cargar tu premio. Probá de nuevo.');
+    VIP.ui._botRow(VIP.ui._botBtn('↩️ Volver', "VIP.ui.casinoBotGo('home')", false));
+  });
 };
 
 /** Dibuja la ruleta (segmentos) y el botón GIRAR. */
@@ -2266,21 +2329,29 @@ VIP.ui._renderRoulette = function() {
     const a0 = (360 / n) * i, a1 = (360 / n) * (i + 1);
     stops += colors[i % colors.length] + ' ' + a0 + 'deg ' + a1 + 'deg' + (i < n - 1 ? ',' : '');
   }
+  // Etiquetas LEGIBLES (owner 2026-08-28): cada una centrada en su porción,
+  // horizontal, con sombra y salto de línea (antes iban rotadas por el radio y
+  // se pisaban con el botón). Tamaño de rueda 220px. Al girar, las etiquetas
+  // contra-rotan (clase wrLbl) para quedar derechas cuando la rueda para.
+  const R = 110, rr = 64;
   let labels = '';
   for (let i = 0; i < n; i++) {
     const ang = (360 / n) * i + (360 / n) / 2;
-    labels += '<div style="position:absolute;left:50%;top:50%;transform-origin:0 0;' +
-      'transform:rotate(' + ang + 'deg) translate(78px,-8px);font-size:9px;font-weight:800;color:#fff;' +
-      'white-space:nowrap;">' + _wrEsc(segs[i] || '') + '</div>';
+    const rad = ang * Math.PI / 180;
+    const x = R + rr * Math.sin(rad), y = R - rr * Math.cos(rad);
+    labels += '<div class="wrLbl" style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;' +
+      'transform:translate(-50%,-50%);width:78px;text-align:center;font-size:12px;line-height:1.15;font-weight:900;' +
+      'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' +
+      _wrEsc(segs[i] || '') + '</div>';
   }
   const wrap = VIP.ui._botMsg(
     '<div style="text-align:center;">' +
-      '<div style="position:relative;width:200px;height:200px;margin:6px auto 12px;">' +
-        '<div style="position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:3;' +
-          'width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;' +
-          'border-top:18px solid #ffd700;"></div>' +
-        '<div id="wrWheel" style="width:200px;height:200px;border-radius:50%;position:relative;' +
-          'background:conic-gradient(' + stops + ');box-shadow:0 6px 22px rgba(0,0,0,0.5),inset 0 0 0 4px #ffd70055;' +
+      '<div style="position:relative;width:220px;height:220px;margin:8px auto 18px;">' +
+        '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);z-index:3;' +
+          'width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;' +
+          'border-top:20px solid #ffd700;filter:drop-shadow(0 2px 2px rgba(0,0,0,.5));"></div>' +
+        '<div id="wrWheel" style="width:220px;height:220px;border-radius:50%;position:relative;' +
+          'background:conic-gradient(' + stops + ');box-shadow:0 6px 22px rgba(0,0,0,0.5),inset 0 0 0 4px #ffd70088;' +
           'transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' + labels + '</div>' +
       '</div>' +
       '<button type="button" id="wrSpinBtn" onclick="VIP.ui.casinoRouletteSpin()" ' +
@@ -2316,15 +2387,28 @@ VIP.ui.casinoRouletteSpin = function() {
       const segMid = (360 / n) * idx + (360 / n) / 2;
       const target = 360 * 5 + (360 - segMid);
       if (wheel) wheel.style.transform = 'rotate(' + target + 'deg)';
+      // Las etiquetas contra-rotan lo mismo → quedan derechas al parar.
+      try {
+        document.querySelectorAll('#wrWheel .wrLbl').forEach(function(el) {
+          el.style.transform = 'translate(-50%,-50%) rotate(' + (-target) + 'deg)';
+        });
+      } catch (e) {}
       setTimeout(function() {
         const p = res.d.prize || {};
         VIP.ui._playChime();
+        // Guardar el resultado para "Mi premio" (se puede volver a ver siempre).
+        VIP.ui._wrStatus = { enabled: true, canSpin: false, alreadySpun: true, prize: {
+          label: p.label, type: p.type, value: p.value, rolloverX: p.rolloverX || 0,
+          status: p.type === 'cash' ? 'credited' : 'pending', spunAt: new Date().toISOString(), usedAt: null
+        } };
         if (p.type === 'cash' && p.credited) {
-          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>💰 Ya está ACREDITADO en tu saldo. ¡A jugar! 🎰');
+          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>💰 Ya está ACREDITADO en tu saldo. ¡A jugar! 🎰' +
+            (p.rolloverX > 0 ? '<br><span style="font-size:11px;opacity:.8;">Para retirarlo, apostá ' + p.rolloverX + ' veces el premio.</span>' : ''));
         } else {
           VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>Se te aplica en tu <b>PRÓXIMA CARGA</b> — cargá y lo sumamos automáticamente. 💪');
         }
-        VIP.ui._botRow(VIP.ui._botBtn('💳 Cargar ahora', "VIP.ui.casinoBotGo('deposit')", true));
+        VIP.ui._botMsg('<span style="font-size:11px;opacity:.8;">📸 Lo podés volver a ver cuando quieras desde <b>🎡 Mi premio de la ruleta</b> en el inicio.</span>');
+        VIP.ui._botRow(VIP.ui._botBtn('💳 Cargar ahora', "VIP.ui.casinoBotGo('deposit')", true) + VIP.ui._botBtn('🎡 Ver mi premio', "VIP.ui.casinoBotGo('roulette-prize')", false));
       }, 4400);
     })
     .catch(function() {
