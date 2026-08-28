@@ -42,6 +42,13 @@
   carga manual. `GET /api/admin/welcome-roulette/user/:userId`. **admin-sw → v46.**
 - **`GET /api/welcome-roulette/status`** ahora devuelve `prize` completo (label, type,
   value, status, rolloverX, spunAt, usedAt).
+- **AJUSTE (owner, misma sesión): la ruleta abre en OVERLAY a PANTALLA COMPLETA**, no
+  dentro del chat. `_renderRoulette` crea `#wrOverlay` (fixed, inset 0, z-index máximo,
+  fondo negro .9) con la rueda de hasta **360 px** (86vw / 46vh), etiquetas 12–16 px,
+  botón GIRAR grande y ✕. El resultado se muestra en el mismo overlay (`#wrResult`) con
+  "💳 Cargar ahora" (cierra y va a depositar) y "Cerrar" (cierra y vuelve al inicio,
+  donde queda "🎡 Mi premio"). Copia del resultado en el hilo del asistente.
+  `VIP.ui.casinoRouletteClose(silent)`. **SW → v138.**
 - **Validado:** `node --check` OK (server.js, ui.js, admin.js, ambos SW). **Back necesita
   redeploy**; front/panel con el push (SW bump). PROBAR: girar → etiquetas legibles y
   derechas al parar → resultado + "Ver mi premio" → volver al inicio → botón "Mi premio"

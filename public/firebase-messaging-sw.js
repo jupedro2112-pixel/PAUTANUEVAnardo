@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v137'; // v137: ruleta de bienvenida legible (etiquetas derechas, rueda 220px) + pantalla "Mi premio" reabrible + resultado con rollover
+const CACHE_VERSION = 'v138'; // v138: ruleta de bienvenida en OVERLAY a pantalla completa (rueda ~340px, resultado y botones ahi mismo) + pantalla "Mi premio" reabrible
+// v137: ruleta legible dentro del chat (reemplazada por el overlay)
 // v136: // v136: el panel del casino abre en el CUADRANTE de la burbuja (lado + arriba/abajo) y la burbuja se OCULTA mientras el chat esta abierto (no la tapa); la pista de arrastre se posiciona segun donde este la burbuja
 const CACHE_NAME = 'sala-juegos-fcm-' + CACHE_VERSION;
 

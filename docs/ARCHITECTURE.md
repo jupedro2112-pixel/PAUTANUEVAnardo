@@ -587,7 +587,9 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   CON bonus del agente lo marca usado sin sumarlo, (d) botón "Marcar usado" del panel.
   Cada camino deja nota adminOnly 🎡. `GET /api/welcome-roulette/status` devuelve `prize`
   completo → el widget tiene la pantalla **"🎡 Mi premio de la ruleta"** (estado
-  `roulette-prize`, reabrible desde el inicio). Panel: banner `#chatRouletteBanner`
+  `roulette-prize`, reabrible desde el inicio). La rueda en sí abre en **overlay a
+  pantalla completa** (`#wrOverlay`, `_renderRoulette` / `casinoRouletteClose`), no en el
+  área del chat. Panel: banner `#chatRouletteBanner`
   (`GET/POST /api/admin/welcome-roulette/user/:userId[/use]`).
 - **AUTO-CARGA hgcash** (`POST /api/hgcash/webhook`, firma HMAC sobre rawBody,
   fail-closed en prod): guarda BankMovement → matching contra Comprobantes por

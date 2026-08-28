@@ -2315,50 +2315,68 @@ VIP.ui._renderRoulettePrize = function() {
   });
 };
 
-/** Dibuja la ruleta (segmentos) y el botón GIRAR. */
+/** Dibuja la ruleta en un OVERLAY a pantalla completa (owner 2026-08-28: que
+ *  tape toda la pantalla, no solo el chat). Por encima del casino y del widget.
+ *  El resultado se muestra en el mismo overlay; al cerrar vuelve al inicio del
+ *  asistente (donde queda "🎡 Mi premio de la ruleta"). */
 VIP.ui._renderRoulette = function() {
-  const area = document.getElementById('casinoBotArea');
-  if (!area) return;
-  area.innerHTML = '';
+  VIP.ui.casinoRouletteClose(true);
   const segs = VIP.ui._wrSegments || [];
   const n = Math.max(1, segs.length);
-  // Ruleta por conic-gradient (colores alternados) + etiquetas alrededor.
+  const S = Math.max(240, Math.min(Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.46)), 360));
+  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.36);
+  const fs = S >= 320 ? 16 : (S >= 280 ? 14 : 12);
   const colors = ['#128c4a', '#0f7a3d', '#1aa356', '#0c6234'];
   let stops = '';
   for (let i = 0; i < n; i++) {
     const a0 = (360 / n) * i, a1 = (360 / n) * (i + 1);
     stops += colors[i % colors.length] + ' ' + a0 + 'deg ' + a1 + 'deg' + (i < n - 1 ? ',' : '');
   }
-  // Etiquetas LEGIBLES (owner 2026-08-28): cada una centrada en su porción,
-  // horizontal, con sombra y salto de línea (antes iban rotadas por el radio y
-  // se pisaban con el botón). Tamaño de rueda 220px. Al girar, las etiquetas
-  // contra-rotan (clase wrLbl) para quedar derechas cuando la rueda para.
-  const R = 110, rr = 64;
   let labels = '';
   for (let i = 0; i < n; i++) {
     const ang = (360 / n) * i + (360 / n) / 2;
     const rad = ang * Math.PI / 180;
     const x = R + rr * Math.sin(rad), y = R - rr * Math.cos(rad);
     labels += '<div class="wrLbl" style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;' +
-      'transform:translate(-50%,-50%);width:78px;text-align:center;font-size:12px;line-height:1.15;font-weight:900;' +
+      'transform:translate(-50%,-50%);width:' + lw + 'px;text-align:center;font-size:' + fs + 'px;line-height:1.15;font-weight:900;' +
       'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' +
       _wrEsc(segs[i] || '') + '</div>';
   }
-  const wrap = VIP.ui._botMsg(
-    '<div style="text-align:center;">' +
-      '<div style="position:relative;width:220px;height:220px;margin:8px auto 18px;">' +
-        '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);z-index:3;' +
-          'width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;' +
-          'border-top:20px solid #ffd700;filter:drop-shadow(0 2px 2px rgba(0,0,0,.5));"></div>' +
-        '<div id="wrWheel" style="width:220px;height:220px;border-radius:50%;position:relative;' +
-          'background:conic-gradient(' + stops + ');box-shadow:0 6px 22px rgba(0,0,0,0.5),inset 0 0 0 4px #ffd70088;' +
-          'transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' + labels + '</div>' +
-      '</div>' +
+  const ov = document.createElement('div');
+  ov.id = 'wrOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.9);display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;padding:18px 16px;box-sizing:border-box;font-family:inherit;overflow:auto;';
+  ov.innerHTML =
+    '<button type="button" onclick="VIP.ui.casinoRouletteClose()" aria-label="Cerrar" ' +
+      'style="position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.14);' +
+      'color:#fff;font-size:20px;font-weight:900;cursor:pointer;">✕</button>' +
+    '<div style="color:#ffd700;font-size:22px;font-weight:900;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6);">🎡 RULETA DE BIENVENIDA</div>' +
+    '<div style="color:#fff;opacity:.85;font-size:14px;margin:4px 0 16px;text-align:center;">Girás una sola vez. ¡Suerte!</div>' +
+    '<div style="position:relative;width:' + S + 'px;height:' + S + 'px;margin-bottom:18px;flex:none;">' +
+      '<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);z-index:3;width:0;height:0;' +
+        'border-left:14px solid transparent;border-right:14px solid transparent;border-top:24px solid #ffd700;' +
+        'filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));"></div>' +
+      '<div id="wrWheel" style="width:' + S + 'px;height:' + S + 'px;border-radius:50%;position:relative;' +
+        'background:conic-gradient(' + stops + ');box-shadow:0 10px 34px rgba(0,0,0,.7),inset 0 0 0 5px #ffd700aa;' +
+        'transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' + labels + '</div>' +
+    '</div>' +
+    '<div id="wrResult" style="color:#fff;text-align:center;font-size:15px;line-height:1.35;max-width:360px;"></div>' +
+    '<div id="wrActions" style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px;margin-top:6px;">' +
       '<button type="button" id="wrSpinBtn" onclick="VIP.ui.casinoRouletteSpin()" ' +
-        'style="width:100%;background:#ffd700;color:#3a2c00;border:none;border-radius:14px;padding:14px;' +
-        'font-size:16px;font-weight:900;cursor:pointer;">🎡 GIRAR</button>' +
-    '</div>');
-  if (wrap) { wrap.className = 'cwB'; }
+        'style="width:100%;background:#ffd700;color:#3a2c00;border:none;border-radius:16px;padding:16px;' +
+        'font-size:19px;font-weight:900;cursor:pointer;box-shadow:0 6px 18px rgba(255,215,0,.35);">🎡 GIRAR</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  VIP.ui._wrOverlayOpen = true;
+};
+
+/** Cierra el overlay de la ruleta. Si no es un cierre "silencioso", vuelve al
+ *  inicio del asistente (donde está "🎡 Mi premio de la ruleta"). */
+VIP.ui.casinoRouletteClose = function(silent) {
+  const ov = document.getElementById('wrOverlay');
+  if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  VIP.ui._wrOverlayOpen = false;
+  if (!silent) { try { VIP.ui.casinoBotGo('home'); } catch (e) {} }
 };
 
 function _wrEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -2401,14 +2419,29 @@ VIP.ui.casinoRouletteSpin = function() {
           label: p.label, type: p.type, value: p.value, rolloverX: p.rolloverX || 0,
           status: p.type === 'cash' ? 'credited' : 'pending', spunAt: new Date().toISOString(), usedAt: null
         } };
-        if (p.type === 'cash' && p.credited) {
-          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>💰 Ya está ACREDITADO en tu saldo. ¡A jugar! 🎰' +
-            (p.rolloverX > 0 ? '<br><span style="font-size:11px;opacity:.8;">Para retirarlo, apostá ' + p.rolloverX + ' veces el premio.</span>' : ''));
-        } else {
-          VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>Se te aplica en tu <b>PRÓXIMA CARGA</b> — cargá y lo sumamos automáticamente. 💪');
+        const isCash = p.type === 'cash' && p.credited;
+        const detalle = isCash
+          ? '💰 Ya está <b>ACREDITADO</b> en tu saldo. ¡A jugar! 🎰' +
+            (p.rolloverX > 0 ? '<br><span style="font-size:12px;opacity:.8;">Para retirarlo, apostá ' + p.rolloverX + ' veces el premio.</span>' : '')
+          : 'Se te aplica en tu <b>PRÓXIMA CARGA</b> — cargá y lo sumamos automáticamente. 💪';
+        // Resultado en el overlay (pantalla completa).
+        const rEl = document.getElementById('wrResult');
+        if (rEl) {
+          rEl.innerHTML = '<div style="font-size:14px;opacity:.85;">🎉 ¡Ganaste!</div>' +
+            '<div style="font-size:30px;font-weight:900;color:#ffd700;margin:4px 0 8px;text-shadow:0 2px 6px rgba(0,0,0,.6);">' + _wrEsc(p.label) + '</div>' +
+            '<div>' + detalle + '</div>' +
+            '<div style="font-size:12px;opacity:.75;margin-top:10px;">📸 Sacá captura si querés. Lo podés volver a ver desde <b>🎡 Mi premio</b> en el asistente.</div>';
         }
-        VIP.ui._botMsg('<span style="font-size:11px;opacity:.8;">📸 Lo podés volver a ver cuando quieras desde <b>🎡 Mi premio de la ruleta</b> en el inicio.</span>');
-        VIP.ui._botRow(VIP.ui._botBtn('💳 Cargar ahora', "VIP.ui.casinoBotGo('deposit')", true) + VIP.ui._botBtn('🎡 Ver mi premio', "VIP.ui.casinoBotGo('roulette-prize')", false));
+        const aEl = document.getElementById('wrActions');
+        if (aEl) {
+          aEl.innerHTML =
+            '<button type="button" onclick="VIP.ui.casinoRouletteClose(true);VIP.ui.casinoBotGo(\'deposit\')" ' +
+              'style="width:100%;background:#ffd700;color:#3a2c00;border:none;border-radius:16px;padding:15px;font-size:18px;font-weight:900;cursor:pointer;">💳 Cargar ahora</button>' +
+            '<button type="button" onclick="VIP.ui.casinoRouletteClose()" ' +
+              'style="width:100%;background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:16px;padding:13px;font-size:15px;font-weight:800;cursor:pointer;">Cerrar</button>';
+        }
+        // Copia en el hilo del asistente (queda en el historial del widget).
+        VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>' + detalle);
       }, 4400);
     })
     .catch(function() {
