@@ -16,6 +16,17 @@
 //   META_CAPI_ACCESS_TOKEN_2      — Access Token CAPI del partner
 //   META_TEST_EVENT_CODE_2        — (opcional) su código de Test Events para verificar
 //
+// ALCANCE POR PUBLICISTA (owner 2026-08-28): cada slot de partner puede llevar
+//   META_PIXEL_PUBLISHER_N — a quién pertenece ese pixel: nombre del publicista
+//                            (Campaign.publisher) y/o códigos de campaña, separados
+//                            por coma, sin distinguir mayúsculas. Ej: `OneKey` o
+//                            `OneKey,PWAUTO`. Con esto el slot recibe SOLO los
+//                            eventos de usuarios de ESE publicista (y el pixel del
+//                            navegador de la landing solo se inicializa para sus
+//                            campañas). Un slot SIN publicista asignado se comporta
+//                            como antes (recibe todo) — así nada se rompe hasta
+//                            asignarlo.
+//
 // Si no hay ningún pixel configurado, el módulo queda en no-op (warning una vez).
 // Nunca lanza ni bloquea el flujo de negocio: errores se loguean como warning.
 // ============================================
@@ -54,10 +65,86 @@ function _capiDestinations() {
     const pid = process.env['META_PIXEL_ID_' + i];
     const tok = process.env['META_CAPI_ACCESS_TOKEN_' + i];
     if (_capiActive(pid) && _capiActive(tok)) {
-      dests.push({ label: 'partner' + i, pixelId: pid, token: tok, testCode: process.env['META_TEST_EVENT_CODE_' + i] });
+      dests.push({
+        label: 'partner' + i, pixelId: pid, token: tok, testCode: process.env['META_TEST_EVENT_CODE_' + i],
+        scope: _parseScope(process.env['META_PIXEL_PUBLISHER_' + i])
+      });
     }
   }
   return dests;
+}
+
+// META_PIXEL_PUBLISHER_N → lista normalizada (minúsculas, sin espacios) de
+// publicistas y/o códigos de campaña. [] = sin asignar (recibe todo).
+function _parseScope(v) {
+  if (!_capiActive(v)) return [];
+  return String(v).split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+}
+function _scopeAllows(dest, scope) {
+  if (!dest.scope || !dest.scope.length) return true; // slot sin asignar → todo
+  if (!scope) return false;                            // asignado, evento sin dueño → no
+  const pub = scope.publisher ? String(scope.publisher).trim().toLowerCase() : '';
+  const code = scope.campaignCode ? String(scope.campaignCode).trim().toLowerCase() : '';
+  return (pub && dest.scope.includes(pub)) || (code && dest.scope.includes(code));
+}
+
+// ---- Resolución del "dueño" de un evento (publicista + campaña) ----
+// Lookup lazy (los modelos ya están registrados por el server). Cache corto para
+// no pegarle a Mongo en cada evento. Orden para el usuario: última campaña por
+// la que volvió (last-touch #228) → campaña de alta → campaña dueña de la key.
+const _campaignPubCache = new Map(); // code → { publisher, ts }
+const CAMPAIGN_CACHE_MS = 5 * 60 * 1000;
+async function _publisherOfCampaign(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return null;
+  const hit = _campaignPubCache.get(c);
+  if (hit && Date.now() - hit.ts < CAMPAIGN_CACHE_MS) return hit.publisher;
+  let publisher = null;
+  try {
+    const Campaign = require('../models/Campaign');
+    const doc = await Campaign.findOne({ code: c }).select('publisher').lean();
+    publisher = doc && doc.publisher ? String(doc.publisher) : null;
+  } catch (_) {}
+  _campaignPubCache.set(c, { publisher, ts: Date.now() });
+  return publisher;
+}
+// Devuelve { publisher, campaignCode } o null. Acepta opts.publisher /
+// opts.campaignCode explícitos (evita el lookup) o resuelve por el usuario.
+async function resolveEventScope(userInfo, opts) {
+  const o = opts || {};
+  if (o.publisher || o.campaignCode) {
+    const publisher = o.publisher || await _publisherOfCampaign(o.campaignCode);
+    return { publisher: publisher || null, campaignCode: o.campaignCode || null };
+  }
+  const userId = userInfo && userInfo.externalId != null ? String(userInfo.externalId) : null;
+  if (!userId) return null;
+  try {
+    const User = require('../models/User');
+    const u = await User.findOne({ id: userId }).select('lastTouchCampaign acquisitionCampaign giroxOwnerCampaign').lean();
+    if (!u) return null;
+    const code = u.lastTouchCampaign || u.acquisitionCampaign || u.giroxOwnerCampaign || null;
+    if (!code) return null;
+    return { publisher: await _publisherOfCampaign(code), campaignCode: code };
+  } catch (_) { return null; }
+}
+
+// Pixel IDs para el pixel del NAVEGADOR de la landing según la campaña del
+// visitante: el propio siempre + los partners cuyo alcance incluye a esa
+// campaña/publicista + los partners SIN asignar (compatibilidad). Sin campaña
+// (tráfico orgánico) → propio + sin asignar.
+async function pixelIdsForCampaign(campaignCode) {
+  const scope = campaignCode
+    ? { publisher: await _publisherOfCampaign(campaignCode), campaignCode: String(campaignCode).trim() }
+    : null;
+  const ids = [];
+  if (_capiActive(process.env.META_PIXEL_ID)) ids.push(String(process.env.META_PIXEL_ID).trim());
+  for (let i = 2; i <= 9; i++) {
+    const pid = process.env['META_PIXEL_ID_' + i];
+    if (!_capiActive(pid)) continue;
+    const dest = { scope: _parseScope(process.env['META_PIXEL_PUBLISHER_' + i]) };
+    if (_scopeAllows(dest, scope)) ids.push(String(pid).trim());
+  }
+  return ids;
 }
 
 function isConfigured() {
@@ -212,9 +299,14 @@ async function sendEvent(eventName, userInfo, customData, options) {
   const opts = options || {};
 
   // Filtro por destino: el pixel propio recibe TODO; los de partner solo alta +
-  // primera carga. Si un evento no va para ningún destino, no se manda nada.
+  // primera carga (#221) Y solo de usuarios de SU publicista/campaña (#250, si el
+  // slot tiene META_PIXEL_PUBLISHER_N). Si un evento no va para ningún destino,
+  // no se manda nada. El scope se resuelve una sola vez (y solo si hay algún
+  // partner con alcance asignado, para no consultar Mongo al pedo).
+  const _needScope = allDests.some((d) => d.label !== 'propio' && d.scope && d.scope.length);
+  const scope = _needScope ? await resolveEventScope(userInfo, opts) : null;
   const dests = allDests.filter((d) =>
-    d.label === 'propio' ? true : _partnerAllows(eventName, opts)
+    d.label === 'propio' ? true : (_partnerAllows(eventName, opts) && _scopeAllows(d, scope))
   );
   if (!dests.length) {
     return { sent: false, reason: 'filtered_for_all_destinations' };
@@ -349,5 +441,7 @@ module.exports = {
   sendEvent,
   track,
   buildAdvancedMatching,
-  valueCategory
+  valueCategory,
+  pixelIdsForCampaign,
+  resolveEventScope
 };

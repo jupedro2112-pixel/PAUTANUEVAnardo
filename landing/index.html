@@ -243,11 +243,12 @@
   // genera el _fbp REAL, dispara PageView y permite DEDUP navegador+CAPI del
   // CompleteRegistration (con el mismo event_id `reg_<id>`).
   (function loadMetaPixel() {
-    // RESPALDO: Pixel IDs públicos (NO son secreto — viajan en cada pixel del
-    // navegador). Si el fetch a SSM falla (CORS/red/adblocker del endpoint), el
-    // pixel igual inicializa con estos. La fuente PRIMARIA sigue siendo SSM vía
-    // /api/meta-pixel-id (se mantiene al día si cambian los pixels).
-    var FALLBACK_PIXEL_IDS = ['3626744667474255', '1003643914735636'];
+    // RESPALDO: SOLO el pixel PROPIO (público, no es secreto). Si el fetch falla
+    // (CORS/red/adblocker), inicializa con este. Los pixels de PUBLICISTAS ya no
+    // van acá: los decide el backend según la campaña del visitante
+    // (/api/meta-pixel-id?c=CODIGO → propio + el del publicista de ESA campaña),
+    // así cada publicista ve en su pixel solo su tráfico (2026-08-28).
+    var FALLBACK_PIXEL_IDS = ['3626744667474255'];
     var _inited = false;
     function initPixels(ids) {
       if (_inited || !ids || !ids.length) return;
@@ -258,7 +259,9 @@
     }
     try {
       !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-      fetch(API_BASE + '/api/meta-pixel-id')
+      var _pixCampaign = '';
+      try { _pixCampaign = resolveCampaign() || ''; } catch (e) {}
+      fetch(API_BASE + '/api/meta-pixel-id' + (_pixCampaign ? ('?c=' + encodeURIComponent(_pixCampaign)) : ''))
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var ids = (d && d.pixelIds && d.pixelIds.length) ? d.pixelIds : FALLBACK_PIXEL_IDS;

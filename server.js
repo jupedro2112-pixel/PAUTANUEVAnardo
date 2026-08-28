@@ -3983,7 +3983,7 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
       'CompleteRegistration',
       { externalId: newUser.id, fbc: metaFbc, fbp: metaFbp },
       { content_name: 'signup_landing', status: true, campaign_code: normalizedCode, publisher: campaign.publisher },
-      { req, eventId: 'reg_' + newUser.id }
+      { req, eventId: 'reg_' + newUser.id, publisher: campaign.publisher, campaignCode: normalizedCode }
     );
     try { fbAdsWebhook.notify('CompleteRegistration', newUser); } catch (_) {}
 
@@ -4049,19 +4049,22 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
 // landing (owner 2026-08-26). Los pixel IDs son PÚBLICOS (viajan en cada pixel del
 // navegador), no son secreto — el TOKEN de la CAPI NUNCA se expone acá. La landing
 // (Vercel, otro origen) lo lee por CORS igual que /api/landing/signup.
-app.get('/api/meta-pixel-id', (req, res) => {
-  const isActive = (v) => {
-    const x = String(v || '').trim().toLowerCase();
-    return x && !['off', '-', 'pendiente', 'none', 'null'].includes(x);
-  };
-  const ids = [];
-  if (isActive(process.env.META_PIXEL_ID)) ids.push(String(process.env.META_PIXEL_ID).trim());
-  for (let i = 2; i <= 9; i++) {
-    const pid = process.env['META_PIXEL_ID_' + i];
-    if (isActive(pid)) ids.push(String(pid).trim());
+// `?c=CODIGO` (campaña del visitante, la landing lo manda): devuelve el pixel
+// propio + SOLO los partners cuyo alcance (META_PIXEL_PUBLISHER_N) incluye a esa
+// campaña/publicista (+ los sin asignar). Sin `c` → propio + sin asignar. Así
+// cada publicista ve en su pixel solo SU tráfico (owner 2026-08-28, #250).
+app.get('/api/meta-pixel-id', async (req, res) => {
+  try {
+    const raw = String((req.query && req.query.c) || '').trim();
+    const code = /^[A-Za-z0-9_-]{3,40}$/.test(raw) ? raw.toUpperCase() : '';
+    const ids = await metaCapi.pixelIdsForCampaign(code);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ pixelIds: ids, campaign: code || null });
+  } catch (e) {
+    const isActive = (v) => { const x = String(v || '').trim().toLowerCase(); return x && !['off', '-', 'pendiente', 'none', 'null'].includes(x); };
+    const ids = isActive(process.env.META_PIXEL_ID) ? [String(process.env.META_PIXEL_ID).trim()] : [];
+    res.json({ pixelIds: ids, campaign: null });
   }
-  res.set('Cache-Control', 'public, max-age=300');
-  res.json({ pixelIds: ids });
 });
 
 // ENTRADA DIRECTA AL CASINO desde la landing (owner 2026-08-19): el botón
@@ -20784,7 +20787,8 @@ if (process.env.VERCEL) {
         const tok = process.env['META_CAPI_ACCESS_TOKEN_' + i];
         if (_capiOn(pid) && _capiOn(tok)) {
           const tc = process.env['META_TEST_EVENT_CODE_' + i];
-          _partnerBits.push(`partner${i}=OK ${String(pid).slice(0, 6)}…${_capiOn(tc) ? ` (test ${tc})` : ''}`);
+          const sc = process.env['META_PIXEL_PUBLISHER_' + i];
+          _partnerBits.push(`partner${i}=OK ${String(pid).slice(0, 6)}…${_capiOn(tc) ? ` (test ${tc})` : ''}${_capiOn(sc) ? ` [solo: ${sc}]` : ' [sin asignar → recibe todo]'}`);
         } else if (pid || tok) {
           _partnerBits.push(`partner${i}=placeholder`);
         }

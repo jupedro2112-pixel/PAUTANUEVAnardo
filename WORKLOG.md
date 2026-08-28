@@ -4,7 +4,39 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-26**
+> **Última actualización: 2026-08-28**
+
+## Sesión 2026-08-28
+
+### 250. Pixels por PUBLICISTA: cada partner recibe solo SU tráfico (navegador + CAPI)
+- **Problema (owner):** la landing inicializaba los 3 pixels a la vez → cada
+  `fbq('track')` (PageView, CompleteRegistration) iba a los TRES → cada publicista
+  veía el volumen total de la landing y los registros de sus competidores. La CAPI
+  igual: alta + FTD a todos los partners sin filtrar por campaña.
+- **Decisión:** pixel propio siempre + SOLO el pixel del publicista de la campaña del
+  visitante/usuario. Configurable por SSM, sin código:
+  `META_PIXEL_PUBLISHER_N` = nombre del publicista (tal cual `Campaign.publisher`, sin
+  distinguir mayúsculas) y/o códigos de campaña, separados por coma. Ej:
+  `META_PIXEL_PUBLISHER_2=OneKey`, `META_PIXEL_PUBLISHER_3=BO Publicidad,PWAUTO`.
+  **Slot sin asignar = comportamiento anterior (recibe todo)** → nada se rompe hasta
+  que el owner cargue los valores.
+- **CAPI (`metaCapiService`):** `_capiDestinations` lee el alcance por slot;
+  `resolveEventScope(userInfo, opts)` resuelve el dueño del evento (explícito por
+  `opts.publisher/campaignCode`, o por usuario: `lastTouchCampaign` → `acquisitionCampaign`
+  → `giroxOwnerCampaign` → `Campaign.publisher`, cache 5 min); `_scopeAllows` filtra.
+  Solo consulta Mongo si hay algún partner con alcance asignado. El signup de la landing
+  pasa `publisher`/`campaignCode` explícitos.
+- **Navegador:** `GET /api/meta-pixel-id?c=CODIGO` → `pixelIdsForCampaign(code)`. La
+  landing manda `c=resolveCampaign()` (ojo: el parámetro de campaña de la landing es
+  `?p=CODIGO`, `?campaign=` o `/CODIGO` en el path — NO `?c=`; `c` es solo el query del
+  endpoint). Fallback de la landing: SOLO el propio `3626744667474255`.
+- **Boot log** `[MetaCAPI] pixels:` muestra por partner `[solo: …]` o
+  `[sin asignar → recibe todo]`.
+- **Validado:** `node --check` server + servicio; JS inline de la landing parsea.
+  **Requiere redeploy del back + cargar `META_PIXEL_PUBLISHER_N` en SSM + reiniciar.**
+  La landing (Vercel) se actualiza con el push. PROBAR: abrir la landing con `?p=CODIGO`
+  de OneKey en Chrome → el asistente de Meta debe mostrar 2 pixels (propio + OneKey);
+  sin código → solo el propio (+ los sin asignar).
 
 ## Sesión 2026-08-26 (tarde)
 

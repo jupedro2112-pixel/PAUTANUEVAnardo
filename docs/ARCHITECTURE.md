@@ -565,6 +565,17 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   Consume PromoBonus vigente y movimiento hgcash
   pendiente del mismo monto (`hgcashConsumeOnManualDeposit`). Mensajes `/sys_deposit*`,
   `/sys_reminder`, `/sys_install_app`, `/sys_recover_100`.
+- **Meta: alcance por publicista (#250, 2026-08-28).** Slots `META_PIXEL_ID_N` +
+  `META_CAPI_ACCESS_TOKEN_N` (2..9) llevan opcionalmente `META_PIXEL_PUBLISHER_N` =
+  publicista (`Campaign.publisher`) y/o códigos de campaña, separados por coma. Con eso:
+  (a) **CAPI** (`metaCapiService.sendEvent`): el partner recibe solo alta + FTD (#221) **y
+  solo de usuarios de ese publicista** — el dueño del evento se resuelve por
+  `opts.publisher/campaignCode` o por el usuario (`lastTouchCampaign → acquisitionCampaign
+  → giroxOwnerCampaign` → `Campaign.publisher`, cache 5 min); (b) **pixel del navegador**:
+  `GET /api/meta-pixel-id?c=CODIGO` → `pixelIdsForCampaign` = propio + partners con ese
+  alcance (+ los SIN asignar, que siguen recibiendo todo por compatibilidad). La landing
+  manda `c` = `resolveCampaign()` (`?p=`/`?campaign=`/segmento de path). El fallback de
+  la landing es SOLO el pixel propio. Cambiar el alcance = editar SSM + reiniciar.
 - **AUTO-CARGA hgcash** (`POST /api/hgcash/webhook`, firma HMAC sobre rawBody,
   fail-closed en prod): guarda BankMovement → matching contra Comprobantes por
   monto + (N° operación==coelsa/externalID, o nombre de origen + destino consistente)
