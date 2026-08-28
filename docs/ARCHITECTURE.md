@@ -572,10 +572,11 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   solo de usuarios de ese publicista** — el dueño del evento se resuelve por
   `opts.publisher/campaignCode` o por el usuario (`lastTouchCampaign → acquisitionCampaign
   → giroxOwnerCampaign` → `Campaign.publisher`, cache 5 min); (b) **pixel del navegador**:
-  `GET /api/meta-pixel-id?c=CODIGO` → `pixelIdsForCampaign` = propio + partners con ese
-  alcance (+ los SIN asignar, que siguen recibiendo todo por compatibilidad). La landing
-  manda `c` = `resolveCampaign()` (`?p=`/`?campaign=`/segmento de path). El fallback de
-  la landing es SOLO el pixel propio. Cambiar el alcance = editar SSM + reiniciar.
+  `GET /api/meta-pixel-id?c=CODIGO` → `pixelIdsForCampaign` = **SOLO** los partners con
+  ese alcance asignado (ni el propio ni los sin asignar). Sin código → `[]` y la landing
+  **no carga fbevents.js** (ningún pixel). La landing manda `c` = `resolveCampaign()`
+  (`?p=`/`?campaign=`/segmento de path); sin fallback. El pixel propio recibe alta/FTD/
+  todo por CAPI únicamente. Cambiar el alcance = editar SSM + reiniciar.
 - **AUTO-CARGA hgcash** (`POST /api/hgcash/webhook`, firma HMAC sobre rawBody,
   fail-closed en prod): guarda BankMovement → matching contra Comprobantes por
   monto + (N° operación==coelsa/externalID, o nombre de origen + destino consistente)

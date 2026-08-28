@@ -30,8 +30,17 @@
   landing manda `c=resolveCampaign()` (ojo: el parámetro de campaña de la landing es
   `?p=CODIGO`, `?campaign=` o `/CODIGO` en el path — NO `?c=`; `c` es solo el query del
   endpoint). Fallback de la landing: SOLO el propio `3626744667474255`.
+- **AJUSTE (owner, misma sesión): en el NAVEGADOR, con código → SOLO el pixel de ese
+  publicista; sin código → NINGÚN pixel.** `pixelIdsForCampaign` ya no incluye el propio
+  ni los slots sin asignar; con lista vacía la landing ni carga `fbevents.js` (el
+  `CompleteRegistration` del navegador ya estaba guardado con `window.fbq &&`, no rompe).
+  Sin fallback hardcodeado. El pixel propio queda **solo por CAPI** (registro, FTD y el
+  resto server-side) — deja de recibir PageView de la landing; la PWA (`public/index.html`)
+  sigue cargando el propio como siempre. La CAPI para partners no cambia: alta + FTD,
+  solo de su publicista.
 - **Boot log** `[MetaCAPI] pixels:` muestra por partner `[solo: …]` o
-  `[sin asignar → recibe todo]`.
+  `[sin asignar → recibe todo]` (eso aplica a la CAPI; al navegador un slot sin asignar
+  NO va).
 - **Validado:** `node --check` server + servicio; JS inline de la landing parsea.
   **Requiere redeploy del back + cargar `META_PIXEL_PUBLISHER_N` en SSM + reiniciar.**
   La landing (Vercel) se actualiza con el push. PROBAR: abrir la landing con `?p=CODIGO`
