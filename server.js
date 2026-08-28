@@ -5148,7 +5148,11 @@ async function platformSessionHandler(req, res) {
     res.json({
       success: true,
       redirectUrl: session.redirectUrl,
-      platformUrl: girox.getPlayUrl()
+      platformUrl: girox.getPlayUrl(),
+      // URL de LOGOUT del casino (SSM `GIROX_PLAY_LOGOUT_URL`, opcional): la PWA la
+      // carga en el iframe ANTES del SSO para matar la sesión del usuario anterior
+      // en el mismo celular (#252). null = no se conoce → se carga el SSO directo.
+      logoutUrl: process.env.GIROX_PLAY_LOGOUT_URL || null
     });
   } catch (error) {
     logger.error(`Error en platform session (SSO): ${error.message}`);
@@ -16317,6 +16321,7 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
     res.json({
       token: jwtToken,
       casinoUrl,
+      casinoLogoutUrl: process.env.GIROX_PLAY_LOGOUT_URL || null,
       user: { id: user.id, username: user.username, role: user.role, mustChangePassword: forcePwd }
     });
   } catch (error) {

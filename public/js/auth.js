@@ -666,6 +666,16 @@ VIP.auth = (function () {
             });
             const data = await response.json();
             if (response.ok && data.token) {
+                // Si en este dispositivo había OTRA sesión viva (socket/usuario
+                // anterior), cerrarla ANTES de asumir la nueva (#252): el socket
+                // viejo seguía autenticado como el usuario anterior y los mensajes
+                // salían a nombre de él.
+                if (VIP.state.socket || VIP.state.currentUser) {
+                    try { VIP.socket.stopMessagePolling(); } catch (e) {}
+                    VIP.state.currentUser = null;
+                    VIP.state.socketAuthed = false;
+                }
+                if (data.casinoLogoutUrl) VIP.state._casinoLogoutUrl = data.casinoLogoutUrl;
                 VIP.state.currentToken = data.token;
                 localStorage.setItem('userToken', data.token);
                 // Casino YA, sin esperar verifyToken (que corre en paralelo y
@@ -714,10 +724,17 @@ VIP.auth = (function () {
             }
         } catch (e) { /* ignore */ }
 
+        // Cerrar el casino embebido y matar la sesión de 1girox del dispositivo
+        // (#252): si no, el iframe quedaba con el usuario anterior y el próximo
+        // login mostraba chat de B con casino de A. También resetea _casinoOpen
+        // para que el próximo login vuelva a pedir el SSO.
+        try { if (VIP.ui._killCasinoSession) VIP.ui._killCasinoSession(); } catch (e) {}
+        try { if (VIP.ui.closeCasinoFrame) VIP.ui.closeCasinoFrame(); } catch (e) {}
         VIP.socket.stopMessagePolling();
         VIP.ui.stopBalancePolling();
         VIP.state.currentToken = null;
         VIP.state.currentUser = null;
+        VIP.state.socketAuthed = false;
         VIP.state.sessionPassword = '';
         localStorage.removeItem('userToken');
         // El fcmToken local también se borra para que la sesión siguiente

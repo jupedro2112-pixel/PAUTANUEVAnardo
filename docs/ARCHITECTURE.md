@@ -725,6 +725,19 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
     derecha (`_casinoChatMount`, flag `_landingCasinoChat`). Si el SSO adelantado
     falla, la respuesta viene sin `casinoUrl` y el front cae al camino normal
     (`enterCasino()` → `POST /api/platform/session`).
+- **Cambio de cuenta en el mismo celular (#252, 2026-08-28).** El widget del casino
+  muestra "👤 Estás como X" + botón **"🔄 Cambiar de cuenta / Salir"** (`VIP.ui.casinoLogout`
+  → `handleLogout`). `handleLogout` ahora también cierra el casino embebido
+  (`closeCasinoFrame`, resetea `_casinoOpen`) y mata la sesión de 1girox del dispositivo
+  (`_killCasinoSession`: iframe oculto con `GIROX_PLAY_LOGOUT_URL`). Toda carga del SSO pasa
+  por `_loadCasinoUrlFresh(url)`: si se conoce la URL de logout, primero la navega en el
+  iframe (borra la cookie de 1girox) y al `load`/1500ms carga el SSO. El canje del
+  access-link cierra la sesión previa (socket/usuario) antes de asumir la nueva. **SSM
+  opcional: `GIROX_PLAY_LOGOUT_URL`** (URL a la que navega "cerrar sesión" en 1girox); sin
+  ella el SSO se carga directo (como antes) y se depende de que 1girox pise la sesión.
+  Causa del bug: no había logout alcanzable en el formato casino → la gente cambiaba de
+  usuario ADENTRO de 1girox (chat de A, casino de B), y al revés el login de la PWA no
+  tocaba la cookie del iframe (casino de A, chat de B).
 - **SLA demoras**: reloj en ChatStatus (`delayClockOnUserMessage`/`delayClockResolve`);
   responder (mensaje/comando/carga/retiro/CBU) o cerrar lo resuelve; sobre-umbral →
   ChatDelay. Reporte `GET /api/admin/chat-delays` (solo admin).

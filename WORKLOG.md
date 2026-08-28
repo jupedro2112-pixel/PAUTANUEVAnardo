@@ -8,6 +8,42 @@
 
 ## Sesión 2026-08-28
 
+### 252. FIX: chat y casino con usuarios DISTINTOS en el mismo celular (cambio de cuenta)
+- **Reporte (cliente + owner, screencast):** "cierro sesión de gxmoises100 y entro con
+  gxmoises200 pero en soporte llego como gxmoises100"; y al revés en la prueba del owner:
+  panel = gxmoisesprueba954, casino embebido = otro usuario (saldo $1.500).
+- **Causas (dos, encadenadas):**
+  1. En el formato casino **no había forma de cerrar sesión de la PWA**: el botón de
+     logout quedó en el `#mainMenu` del dashboard viejo, tapado por el overlay. Entonces
+     el cliente "cierra sesión" **adentro de 1girox** y entra ahí con otro usuario →
+     casino = B, PWA/chat = A.
+  2. El logout/login de la PWA **no tocaba el iframe de 1girox**: `handleLogout` no
+     llamaba `closeCasinoFrame` (`_casinoOpen` quedaba true → el próximo login NO volvía
+     a pedir SSO por el guard `!_casinoOpen`) y, aun pidiéndolo, el SSO caía sobre la
+     cookie viva del usuario anterior → casino = A, chat = B. El canje del access-link
+     tampoco cerraba un socket previo (seguía autenticado como el usuario anterior).
+- **Fix (`ui.js`, `auth.js`, `server.js`):**
+  - Widget, inicio del asistente: "👤 Estás como **X**" + botón **"🔄 Cambiar de cuenta /
+    Salir"** (`VIP.ui.casinoLogout` → confirm → `handleLogout`).
+  - `handleLogout`: `_killCasinoSession()` (iframe oculto con la URL de logout de 1girox)
+    + `closeCasinoFrame()` (resetea `_casinoOpen`) + `socketAuthed=false`.
+  - `_loadCasinoUrlFresh(url)`: TODA carga del SSO (enterCasino / enterCasinoWithUrl)
+    primero navega la URL de logout en el iframe (si la hay) y al `load` o 1500 ms
+    carga el SSO; el listener `load` del iframe ignora ese load intermedio
+    (`_casinoLogoutLoading`).
+  - Access-link: si había socket/usuario previo → `stopMessagePolling` + reset antes de
+    asumir el token nuevo.
+  - Back: `POST /api/platform/session` devuelve `logoutUrl` y `/api/auth/access-link`
+    `casinoLogoutUrl`, ambos desde **SSM `GIROX_PLAY_LOGOUT_URL`** (nuevo, opcional).
+- **PENDIENTE owner:** averiguar la URL exacta a la que va "Cerrar sesión" en 1girox
+  (abrir el casino, cerrar sesión ahí y copiar la URL) y cargarla en SSM como
+  `GIROX_PLAY_LOGOUT_URL` + reiniciar. Sin eso, el fix 1 (botón Salir) ya evita el
+  caso del cliente, pero el caso "casino con cookie vieja" depende de que 1girox pise
+  la sesión con el SSO nuevo.
+- **Validado:** `node --check` OK (server.js, ui.js, auth.js, SW). **SW → v139.** Back
+  necesita redeploy (logoutUrl); el front sale con el push. PROBAR: entrar con A →
+  Salir desde el widget → login con B → el casino abre como B y el chat como B.
+
 ### 251. Ruleta de bienvenida: legible, premio reabrible, nota interna siempre, cash con rollover directo, % consumido en TODOS los caminos
 - **Pedido owner (captura del widget):** (1) las etiquetas de la rueda se leían mal y se
   pisaban con el botón; (2) el resultado aparecía una vez y desaparecía → poder volver a

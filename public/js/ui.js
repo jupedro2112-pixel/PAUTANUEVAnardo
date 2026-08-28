@@ -927,13 +927,10 @@ VIP.ui.enterCasino = async function() {
     const data = await response.json();
 
     if (response.ok && data.success && data.redirectUrl) {
-      const frame = document.getElementById('casinoFrame');
-      if (frame) frame.src = data.redirectUrl;
-
-      // Red de seguridad: si el iframe NO carga en 12s (conexión al casino
-      // bloqueada), se ofrece abrirlo aparte. Si carga bien, el `load` la
-      // cancela → sin cartel (owner 2026-08-21).
-      VIP.ui._armCasinoEscape();
+      if (data.logoutUrl) VIP.state._casinoLogoutUrl = data.logoutUrl;
+      // Carga "fresca": primero mata la sesión anterior de 1girox en el iframe
+      // (si conocemos su URL de logout) y recién después el SSO (#252).
+      VIP.ui._loadCasinoUrlFresh(data.redirectUrl);
       return;
     }
 
@@ -956,10 +953,66 @@ VIP.ui.enterCasinoWithUrl = function(url) {
   if (!url) return VIP.ui.enterCasino();
   VIP.ui.closePlatformModal();
   VIP.ui._showCasinoFrame();
+  VIP.ui._loadCasinoUrlFresh(url);
+};
+
+/**
+ * Carga el SSO en el iframe del casino matando ANTES la sesión anterior de
+ * 1girox (#252, 2026-08-28). Problema real: en un mismo celular, si el usuario A
+ * ya tenía sesión en 1girox (cookie del iframe) y la PWA pasa al usuario B, el
+ * link SSO de B podía caer sobre la sesión viva de A → casino = A, chat = B.
+ * Si el back nos dio la URL de logout (SSM `GIROX_PLAY_LOGOUT_URL`), primero se
+ * navega ahí (borra la cookie), y al `load` (o a los 1500ms, lo que ocurra
+ * primero) se carga el SSO. Sin URL de logout, va el SSO directo como antes.
+ */
+VIP.ui._loadCasinoUrlFresh = function(url) {
   const frame = document.getElementById('casinoFrame');
-  if (frame) frame.src = url;
-  // Red de seguridad: aviso "abrir aparte" solo si el iframe no carga en 12s.
-  VIP.ui._armCasinoEscape();
+  if (!frame) return;
+  const lo = VIP.state._casinoLogoutUrl;
+  let done = false;
+  const go = function() {
+    if (done) return;
+    done = true;
+    VIP.ui._casinoLogoutLoading = false;
+    frame.src = url;
+    // Red de seguridad: aviso "abrir aparte" solo si el iframe no carga en 12s.
+    VIP.ui._armCasinoEscape();
+  };
+  if (!lo || VIP.ui._casinoSessionKilled) { VIP.ui._casinoSessionKilled = false; go(); return; }
+  VIP.ui._casinoLogoutLoading = true;
+  const onLo = function() { frame.removeEventListener('load', onLo); go(); };
+  frame.addEventListener('load', onLo);
+  frame.src = lo;
+  setTimeout(go, 1500);
+};
+
+/** Mata la sesión de 1girox del dispositivo cargando su URL de logout en un
+ *  iframe OCULTO (no toca el casino visible). Best-effort; si no hay URL, nada. */
+VIP.ui._killCasinoSession = function() {
+  const lo = VIP.state._casinoLogoutUrl;
+  if (!lo) return;
+  try {
+    let f = document.getElementById('casinoLogoutFrame');
+    if (!f) {
+      f = document.createElement('iframe');
+      f.id = 'casinoLogoutFrame';
+      f.setAttribute('aria-hidden', 'true');
+      f.style.cssText = 'position:absolute;width:0;height:0;border:0;opacity:0;pointer-events:none;';
+      document.body.appendChild(f);
+    }
+    f.src = lo;
+    VIP.ui._casinoSessionKilled = true;
+  } catch (e) {}
+};
+
+/** "Cambiar de cuenta" desde el widget (#252): cierra el casino, mata la sesión
+ *  de 1girox y hace el logout de la PWA → pantalla de login. Antes NO había forma
+ *  de cerrar sesión en el formato casino (el botón quedó en el menú viejo, tapado),
+ *  y la gente cambiaba de usuario ADENTRO de 1girox → chat de A, casino de B. */
+VIP.ui.casinoLogout = function() {
+  if (!confirm('¿Cerrar sesión para entrar con otra cuenta?')) return;
+  try { VIP.ui.casinoRouletteClose(true); } catch (e) {}
+  try { if (VIP.auth && VIP.auth.handleLogout) VIP.auth.handleLogout(); } catch (e) {}
 };
 
 /**
@@ -1371,6 +1424,7 @@ VIP.ui._showCasinoFrame = function() {
     const frame = overlay.querySelector('#casinoFrame');
     frame.addEventListener('load', function() {
       if (!frame.src) return; // el load inicial del iframe vacío no cuenta
+      if (VIP.ui._casinoLogoutLoading) return; // el load de la URL de logout tampoco (#252)
       const status = document.getElementById('casinoFrameStatus');
       if (status) status.style.display = 'none';
       frame.style.display = 'block';
@@ -1809,6 +1863,17 @@ VIP.ui.casinoBotGo = function(state) {
     // el saludo. Volver de cualquier flujo = las opciones siguen a la vista.
     VIP.ui._botMsg('👋 ¡Hola! Soy el <b>asistente de cargas automáticas</b>.<br>' +
       'Elegí una opción acá arriba: <b>depositar</b>, <b>retirar</b> o hablar con <b>soporte</b>.');
+    // Identidad SIEMPRE visible + salida limpia (#252): así el cliente sabe con
+    // qué usuario está chateando y puede cambiar de cuenta SIN hacerlo adentro
+    // de 1girox (que dejaba chat y casino con usuarios distintos).
+    try {
+      const _u = (VIP.state.currentUser && VIP.state.currentUser.username) || '';
+      if (_u) {
+        VIP.ui._botMsg('<span style="font-size:12px;opacity:.85;">👤 Estás como <b>' + _wrEsc(_u) + '</b>. ' +
+          '¿Es otra tu cuenta? Cerrá sesión acá y entrá con la correcta (no cambies de usuario dentro del casino).</span>');
+        VIP.ui._botRow(VIP.ui._botBtn('🔄 Cambiar de cuenta / Salir', 'VIP.ui.casinoLogout()', false));
+      }
+    } catch (e) {}
     // Ofrecer la RULETA DE BIENVENIDA si está habilitada y no la giró (1 vez).
     VIP.ui._maybeOfferWelcomeRoulette();
     return;
