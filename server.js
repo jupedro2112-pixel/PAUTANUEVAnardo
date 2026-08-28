@@ -4049,10 +4049,10 @@ app.post('/api/landing/signup', landingIpLimiter, async (req, res) => {
 // landing (owner 2026-08-26). Los pixel IDs son PÚBLICOS (viajan en cada pixel del
 // navegador), no son secreto — el TOKEN de la CAPI NUNCA se expone acá. La landing
 // (Vercel, otro origen) lo lee por CORS igual que /api/landing/signup.
-// `?c=CODIGO` (campaña del visitante, la landing lo manda): devuelve el pixel
-// propio + SOLO los partners cuyo alcance (META_PIXEL_PUBLISHER_N) incluye a esa
-// campaña/publicista (+ los sin asignar). Sin `c` → propio + sin asignar. Así
-// cada publicista ve en su pixel solo SU tráfico (owner 2026-08-28, #250).
+// `?c=CODIGO` (campaña del visitante, la landing lo manda): devuelve SOLO el/los
+// pixel(s) del publicista de esa campaña (META_PIXEL_PUBLISHER_N). Sin `c` →
+// lista vacía (la landing no carga pixel). El propio NO va al navegador (owner
+// 2026-08-28, #250): cada publicista ve en su pixel solo SU tráfico.
 app.get('/api/meta-pixel-id', async (req, res) => {
   try {
     const raw = String((req.query && req.query.c) || '').trim();
@@ -4061,9 +4061,7 @@ app.get('/api/meta-pixel-id', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
     res.json({ pixelIds: ids, campaign: code || null });
   } catch (e) {
-    const isActive = (v) => { const x = String(v || '').trim().toLowerCase(); return x && !['off', '-', 'pendiente', 'none', 'null'].includes(x); };
-    const ids = isActive(process.env.META_PIXEL_ID) ? [String(process.env.META_PIXEL_ID).trim()] : [];
-    res.json({ pixelIds: ids, campaign: null });
+    res.json({ pixelIds: [], campaign: null });
   }
 });
 

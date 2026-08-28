@@ -128,20 +128,21 @@ async function resolveEventScope(userInfo, opts) {
   } catch (_) { return null; }
 }
 
-// Pixel IDs para el pixel del NAVEGADOR de la landing según la campaña del
-// visitante: el propio siempre + los partners cuyo alcance incluye a esa
-// campaña/publicista + los partners SIN asignar (compatibilidad). Sin campaña
-// (tráfico orgánico) → propio + sin asignar.
+// Pixel IDs para el pixel del NAVEGADOR de la landing (owner 2026-08-28):
+//   - con código de campaña → SOLO los pixels de partner cuyo META_PIXEL_PUBLISHER_N
+//     incluye a ese publicista/campaña (ni el propio ni los sin asignar);
+//   - sin código (orgánico) → NINGUNO (la landing no carga pixel).
+// El pixel PROPIO no va al navegador: recibe registro/compra por CAPI igual.
 async function pixelIdsForCampaign(campaignCode) {
-  const scope = campaignCode
-    ? { publisher: await _publisherOfCampaign(campaignCode), campaignCode: String(campaignCode).trim() }
-    : null;
+  const code = String(campaignCode || '').trim();
+  if (!code) return [];
+  const scope = { publisher: await _publisherOfCampaign(code), campaignCode: code };
   const ids = [];
-  if (_capiActive(process.env.META_PIXEL_ID)) ids.push(String(process.env.META_PIXEL_ID).trim());
   for (let i = 2; i <= 9; i++) {
     const pid = process.env['META_PIXEL_ID_' + i];
     if (!_capiActive(pid)) continue;
     const dest = { scope: _parseScope(process.env['META_PIXEL_PUBLISHER_' + i]) };
+    if (!dest.scope.length) continue; // sin asignar → no va al navegador
     if (_scopeAllows(dest, scope)) ids.push(String(pid).trim());
   }
   return ids;
