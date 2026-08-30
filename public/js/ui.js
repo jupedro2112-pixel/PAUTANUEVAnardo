@@ -83,11 +83,24 @@ VIP.ui = (function () {
     // ---- Screen switching ----
 
     function showLoginScreen() {
+        // Sacar el splash de arranque (#253): acá SÍ hay que ver el login.
+        try { document.documentElement.classList.remove('casino-boot'); } catch (e) {}
         document.getElementById('loginScreen').classList.remove('hidden');
         document.getElementById('chatScreen').classList.add('hidden');
     }
 
     function showChatScreen() {
+        // Splash de arranque (#253): para roles que NO van al casino se saca ya;
+        // para clientes, lo saca _showCasinoFrame al abrir el casino. Red de
+        // seguridad: si a los 4s el casino no abrió (modal de cambio de clave,
+        // error de SSO, etc.), se saca igual para no dejar la pantalla tapada.
+        try {
+            const _role = VIP.state.currentUser && VIP.state.currentUser.role;
+            if (_role && _role !== 'user') document.documentElement.classList.remove('casino-boot');
+            else setTimeout(function () {
+                try { if (!VIP.ui._casinoOpen) document.documentElement.classList.remove('casino-boot'); } catch (e) {}
+            }, 4000);
+        } catch (e) {}
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('chatScreen').classList.remove('hidden');
         const _username = VIP.state.currentUser?.username || 'Usuario';
@@ -1449,6 +1462,8 @@ VIP.ui._showCasinoFrame = function() {
   clearTimeout(VIP.ui._casinoEscapeTimer);
 
   overlay.style.display = 'flex';
+  // El casino ya tapa todo → fuera el splash de arranque (#253).
+  try { document.documentElement.classList.remove('casino-boot'); } catch (e) {}
   // Bloquea el scroll del fondo mientras el casino está abierto.
   document.body.style.overflow = 'hidden';
   VIP.ui._casinoOpen = true;

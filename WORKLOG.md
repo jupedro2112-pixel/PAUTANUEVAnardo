@@ -4,7 +4,29 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-28**
+> **Última actualización: 2026-08-30**
+
+## Sesión 2026-08-30
+
+### 253. Sin "flash" del login al recargar con sesión (splash oscuro hasta que abre el casino)
+- **Video del owner (bug.mp4, DevTools 320px "Fast 4G"):** cada recarga mostraba medio
+  segundo la pantalla violeta de login aunque el token fuera válido, y después negro
+  hasta que el casino cargaba. (En el mismo video también está el caso #252 — casino con
+  usuario viejo tras crear otra cuenta — que ya está arreglado en código y espera
+  redeploy + `GIROX_PLAY_LOGOUT_URL`.)
+- **Causa:** la clase `casino-boot` (esconde `#loginScreen` desde el primer frame) solo
+  se ponía al entrar por link de la landing; en una recarga normal el login se veía hasta
+  que `verifyToken` respondía.
+- **Fix:** `index.html` `<head>`: la clase también se pone si hay `userToken` en
+  localStorage. Nuevo splash `html.casino-boot body::after` ("🎰 Entrando al casino…",
+  z-index 99990, debajo del casino 99999 y de la pantalla de credenciales 99998).
+  `ui.js`: `showLoginScreen` saca la clase (token inválido / logout → sí se ve el login);
+  `_showCasinoFrame` la saca al mostrar el overlay; `showChatScreen` la saca de inmediato
+  para roles ≠ user y, para clientes, a los 4 s si el casino no abrió (red de seguridad:
+  modal de cambio de clave, SSO caído, etc.). **SW → v140.**
+- **Validado:** `node --check` OK (ui.js, SW). Solo front (se sirve desde el back → sale
+  con el próximo redeploy). PROBAR: logueado, F5 → fondo oscuro "Entrando al casino…" →
+  casino, sin ver el login; logout → login normal; token inválido → login normal.
 
 ## Sesión 2026-08-28
 
