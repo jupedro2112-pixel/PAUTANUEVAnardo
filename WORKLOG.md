@@ -67,6 +67,18 @@
   responde 429 "Recién actualizaste. Esperá N segundos" y el widget lo muestra como
   toast. El auto-refresh de 60 s sigue yendo por cache (no gasta rate limit).
   **SW → v144.**
+- **AJUSTE 4 — ANTI-REGALO del cashback (análisis de agujeros con el owner):**
+  la base pasa a ser el **MENOR de tres netos** (cada uno con sus cobros descontados):
+  pérdida de HOY, de la SEMANA en curso (lunes ART→hoy) y de los **últimos 30 días**.
+  Cierra el caso "carga 100k, gana hasta 1M, pierde el millón otro día" (cobraría 5%
+  del millón; ahora cobra 5% de los 100k reales) incluso cruzando el borde de semana.
+  3 consultas de stats por evaluación (mismo cache 90s, Promise.all). Además:
+  **carrera de doble reclamo cerrada** — los reclamos `pending` también descuentan de
+  la base y un guard aborta si hay otro reclamo del mismo usuario creado hace <20s.
+  Riesgo residual documentado (inherente a todo cashback): pareja de cuentas apostando
+  opuesto — contenido por 5% chico + tope diario + rollover + alerta MULTICUENTA del
+  panel; monitorear notas internas de cashback. Bonos regalados que se pierden inflan
+  el netwin (aceptado, igual que el reembolso semanal de siempre).
 - **Validado:** `node --check` OK (server.js, ui.js, admin.js, User.js, CashbackClaim,
   DailyRouletteSpin, ambos SW); divs del panel balanceados. **Requiere deploy** (el
   owner lo va a probar primero en Render). AMBAS features vienen APAGADAS por default:

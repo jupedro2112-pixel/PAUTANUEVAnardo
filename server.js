@@ -11852,30 +11852,73 @@ async function _cashbackPaidBetween(userId, fromDate, toDate) {
   ]);
   return (agg && agg[0] && agg[0].total) || 0;
 }
+// Lunes 00:00 ART de la semana en curso (para el tope semanal del cashback).
+function _cashbackWeekStartART() {
+  const k = _rouletteDateKeyART(); // YYYY-MM-DD de HOY en ART (hoisted, mismo archivo)
+  const noon = new Date(`${k}T12:00:00-03:00`);
+  const dow = noon.getUTCDay(); // 0=dom … 6=sáb (a las 15:00 UTC el día ART coincide)
+  const daysSinceMonday = (dow + 6) % 7;
+  return new Date(new Date(`${k}T00:00:00-03:00`).getTime() - daysSinceMonday * 86400000);
+}
 // Estado del cashback de HOY para un usuario. fresh=true → netwin sin cache
-// (para la RECLAMACIÓN). Devuelve null si no se pudo leer el netwin.
+// (para la RECLAMACIÓN).
+// ⚠️ ANTI-REGALO (owner 2026-09-01): la base es el MENOR de tres netos, cada uno
+// con sus cobros descontados — (a) pérdida de HOY, (b) pérdida de la SEMANA en
+// curso (lunes→hoy), (c) pérdida de los ÚLTIMOS 30 DÍAS. Así el que venía
+// GANANDO (hoy, esta semana o este mes) y devuelve esas ganancias no cobra
+// cashback por plata que nunca fue suya: gana $900k el sábado y pierde $1M el
+// lunes → el neto de 30 días es $100k y el cashback sale de ahí, no del millón.
+// Los reclamos PENDIENTES también descuentan (cierra la carrera de doble click).
 async function _cashbackStateToday(userId, username, opts) {
   const cfg = await getInstantCashbackConfig();
   if (!cfg.enabled || !(cfg.pct > 0)) return { enabled: false };
+  const fresh = !!(opts && opts.fresh);
   const today = periodRanges.getTodayRangeArgentinaEpoch();
-  const fromDate = new Date(today.fromEpoch * 1000);
-  const toDate = new Date(today.toEpoch * 1000);
-  const netRes = await girox.getPlayerStats(username, fromDate, toDate, 'cashback', { fresh: !!(opts && opts.fresh) });
-  if (!netRes.success) return { enabled: true, error: netRes.error || 'stats_failed' };
-  const netLoss = Math.max(0, Number(netRes.casinoNetwin) || 0);
-  const paidAgg = await CashbackClaim.aggregate([
-    { $match: { userId: String(userId), dateKey: today.dateStr, status: 'credited' } },
-    { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+  const dayFrom = new Date(today.fromEpoch * 1000);
+  const dayTo = new Date(today.toEpoch * 1000);
+  const weekFrom = _cashbackWeekStartART();
+  const monthFrom = new Date(dayFrom.getTime() - 29 * 86400000);
+
+  const [dayRes, weekRes, monthRes] = await Promise.all([
+    girox.getPlayerStats(username, dayFrom, dayTo, 'cashback-dia', { fresh }),
+    girox.getPlayerStats(username, weekFrom, dayTo, 'cashback-semana', { fresh }),
+    girox.getPlayerStats(username, monthFrom, dayTo, 'cashback-30d', { fresh })
   ]);
-  const paidToday = (paidAgg && paidAgg[0] && paidAgg[0].total) || 0;
-  // Base real = pérdida del día MENOS lo ya cobrado (si perdió el bonus, no
-  // genera cashback nuevo; si no lo jugó todavía, resta igual — conservador).
-  let reclamable = Math.floor(Math.max(0, (cfg.pct / 100) * (netLoss - paidToday) - paidToday));
+  if (!dayRes.success || !weekRes.success || !monthRes.success) {
+    return { enabled: true, error: (dayRes.error || weekRes.error || monthRes.error) || 'stats_failed' };
+  }
+  const lossDay = Math.max(0, Number(dayRes.casinoNetwin) || 0);
+  const lossWeek = Math.max(0, Number(weekRes.casinoNetwin) || 0);
+  const lossMonth = Math.max(0, Number(monthRes.casinoNetwin) || 0);
+
+  // Cobrado (pendiente + acreditado) en cada ventana.
+  const _paid = async (from) => {
+    const agg = await CashbackClaim.aggregate([
+      { $match: { userId: String(userId), status: { $in: ['pending', 'credited'] }, createdAt: { $gte: from, $lte: new Date() } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    return (agg && agg[0] && agg[0].total) || 0;
+  };
+  const paidTodayAgg = await CashbackClaim.aggregate([
+    { $match: { userId: String(userId), dateKey: today.dateStr, status: { $in: ['pending', 'credited'] } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } }
+  ]);
+  const paidToday = (paidTodayAgg && paidTodayAgg[0] && paidTodayAgg[0].total) || 0;
+  const paidWeek = await _paid(weekFrom);
+  const paidMonth = await _paid(monthFrom);
+
+  // Disponible por ventana: pct × (pérdida − cobrado) − cobrado. La base final
+  // es el MENOR de las tres (nunca se paga por pérdida que netea ganancias).
+  const availDay = (cfg.pct / 100) * (lossDay - paidToday) - paidToday;
+  const availWeek = (cfg.pct / 100) * (lossWeek - paidWeek) - paidWeek;
+  const availMonth = (cfg.pct / 100) * (lossMonth - paidMonth) - paidMonth;
+  let reclamable = Math.floor(Math.max(0, Math.min(availDay, availWeek, availMonth)));
   if (cfg.maxDailyArs > 0) reclamable = Math.min(reclamable, Math.max(0, cfg.maxDailyArs - paidToday));
   return {
     enabled: true, pct: cfg.pct, rolloverX: cfg.rolloverX, minArs: cfg.minArs,
     maxDailyArs: cfg.maxDailyArs, dateKey: today.dateStr,
-    netwinToday: netLoss, paidToday, reclamable,
+    netwinToday: lossDay, netwinWeek: lossWeek, netwinMonth: lossMonth,
+    paidToday, reclamable,
     belowMin: reclamable > 0 && reclamable < cfg.minArs
   };
 }
@@ -11946,6 +11989,19 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
       }
     }
     if (!claimDoc) return res.status(409).json({ error: 'Hay otro reclamo en curso. Probá de nuevo.' });
+
+    // GUARD anti-carrera (#254): si hay OTRO reclamo del mismo usuario creado en
+    // los últimos 20s (doble click / dos pestañas / dos instancias), este aborta
+    // y libera su doc — el otro sigue. Junto con "los pendientes descuentan de la
+    // base", cierra la ventana en que dos reclamos simultáneos pasaban el chequeo.
+    const _concurrent = await CashbackClaim.findOne({
+      userId, dateKey: st.dateKey, id: { $ne: claimDoc.id },
+      createdAt: { $gte: new Date(Date.now() - 20000) }
+    }).select('id').lean();
+    if (_concurrent) {
+      await CashbackClaim.deleteOne({ id: claimDoc.id }).catch(() => {});
+      return res.status(409).json({ error: 'Hay otro reclamo en curso. Esperá unos segundos y actualizá.' });
+    }
 
     // Reference por (usuario, día, seq): un reintento tras fallo borra el doc y
     // reusa el MISMO seq → misma reference → la plataforma deduplica (no doble pago).
