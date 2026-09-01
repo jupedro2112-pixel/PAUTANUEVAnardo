@@ -4,7 +4,54 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-08-30**
+> **Última actualización: 2026-09-01**
+
+## Sesión 2026-09-01
+
+### 254. Retención: hub "🎁 PREMIOS" + Ruleta DIARIA v2 + CASHBACK instantáneo tipo Stake
+- **Pedido owner:** replicar la ruleta de bienvenida como ruleta DIARIA (sin el 100%,
+  premios propios), sacar las ruletas del chat a un recuadro visible y profesional, y
+  un cashback en tiempo real sobre la pérdida REAL (netwin) acreditado como bonus con
+  rollover y sin "reembolso del reembolso". Números elegidos: 5% · rollover x2 ·
+  mínimo $300 · tope diario $50.000 (todo editable en panel). Convivencia con el
+  reembolso semanal/mensual: lo cobrado en cashback se DESCUENTA (opción 1).
+- **Hub (front, `ui.js`):** botón flotante "🎁 PREMIOS" a la izquierda del casino
+  (puntito rojo si hay giro/cashback reclamable) → overlay a pantalla completa con
+  tarjetas: Bienvenida (girar / ver premio), Diaria (girar / countdown al próximo giro
+  ART / primera carga requerida), Cashback ("perdiste $X hoy → recuperá $Y AHORA").
+  La oferta de la ruleta YA NO aparece en el hilo del chat. La rueda diaria usa el
+  overlay pantalla completa (verde) con su propio spin. **SW → v141.**
+- **Ruleta diaria v2 (backend):** se reusó el motor viejo (1 giro/día atómico por
+  `DailyRouletteSpin`, budget diario con pacing, panel con test/reset/history) y se le
+  puso: premios CONFIGURABLES (`Config['dailyRoulette']`: % extra / saldo con rollover /
+  sin premio + pesos — editor nuevo en la sección Ruleta del panel), gates configurables
+  (**cargas mínimas default 1**; app instalada default OFF — antes exigía app + >10
+  cargas/30d), cash por `depositToUser` con multiplier (antes `/bonus`), y premio en %
+  pendiente en `User.dailyRoulettePendingPct` que consume la próxima carga (manual sin
+  bonus / hgcash / bonus manual lo marca usado) con prioridad bienvenida > diaria, y
+  reversión si la carga falla. Notas adminOnly en giro y consumo.
+- **Cashback instantáneo (backend):** `Config['instantCashback']` + card en panel.
+  Fórmula anti-loop: `reclamable = max(0, pct×(netwin_hoy − cobrado_hoy) − cobrado_hoy)`
+  — el bonus perdido no genera cashback nuevo (ejemplo validado con el owner: pierde
+  40k → cobra 2k; pierde 60k+2k → cobra 3k = 5% de 60k). Netwin de casino del día ART
+  (Partner API, cache 90s en status, fresh en claim). Reclamo con `CashbackClaim`
+  (único userId+dateKey+seq) y reference `vip-cbk-<user>-<día>-<seq>` → reintentos
+  idempotentes. Crédito = depósito con multiplier (rollover). Tope diario por cliente.
+  **Descuento en reembolsos:** el semanal/mensual (claim Y status) restan lo cobrado en
+  cashback del período — la misma pérdida nunca se paga dos veces.
+- **Resumen para el hub:** `GET /api/rewards/summary` (bienvenida + diaria + cashback
+  en un request; el netwin sólo se consulta si el cliente cargó en los últimos 7 días).
+- **Panel:** editor de premios de la diaria (activar, cargas mínimas, exigir app, tabla
+  % / $ / sin premio con probabilidades en vivo) en la sección 🎰 Ruleta; card
+  "📉 Cashback instantáneo" (activar, %, rollover, mínimo, tope) junto a la ruleta de
+  bienvenida. POST solo admin general. **admin-sw → v47.**
+- **Validado:** `node --check` OK (server.js, ui.js, admin.js, User.js, CashbackClaim,
+  DailyRouletteSpin, ambos SW); divs del panel balanceados. **Requiere deploy** (el
+  owner lo va a probar primero en Render). AMBAS features vienen APAGADAS por default:
+  activar en el panel (Ruleta diaria + Cashback) cuando esté deployado. PROBAR:
+  activar diaria → cliente con 1 carga ve "🎁 PREMIOS" con puntito → gira → % queda
+  pendiente y lo consume la próxima carga / cash acredita con rollover; activar
+  cashback → cliente que perdió hoy ve el monto y reclama; reembolso semanal descuenta.
 
 ## Sesión 2026-08-30
 

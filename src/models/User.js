@@ -611,6 +611,14 @@ const userSchema = new mongoose.Schema({
   welcomeRouletteUsedAt: { type: Date, default: null },
   welcomeRouletteUsedBy: { type: String, default: null },
 
+  // RULETA DIARIA (#254): % EXTRA pendiente ganado en el giro del día. Se consume
+  // igual que el de bienvenida (carga manual sin bonus / auto-carga hgcash) pero
+  // en un slot APARTE para no tocar la máquina de estados de la bienvenida
+  // (que es una sola vez por cuenta). Un premio % nuevo PISA al pendiente anterior.
+  dailyRoulettePendingPct: { type: Number, default: 0 },
+  dailyRoulettePendingLabel: { type: String, default: null },
+  dailyRouletteWonAt: { type: Date, default: null },
+
   // Plan de notificaciones elegido en la encuesta inicial (app instalada).
   // Define el volumen de notificaciones push que el usuario quiere recibir.
   // null = todavía no respondió la encuesta.

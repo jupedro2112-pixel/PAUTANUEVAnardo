@@ -591,6 +591,25 @@ VIPCARGAS con su JWT, y el cliente nunca más necesita conocer su clave del casi
   pantalla completa** (`#wrOverlay`, `_renderRoulette` / `casinoRouletteClose`), no en el
   área del chat. Panel: banner `#chatRouletteBanner`
   (`GET/POST /api/admin/welcome-roulette/user/:userId[/use]`).
+- **Hub "🎁 PREMIOS" + Ruleta diaria v2 + Cashback instantáneo (#254, 2026-09-01).**
+  Botón flotante `#casinoRewardsBtn` (izquierda del casino, puntito rojo si hay algo
+  reclamable) → overlay `#rwHubOverlay` con 3 tarjetas; `GET /api/rewards/summary` trae
+  todo en un request (el netwin del cashback sólo se consulta si el cliente cargó en 7d).
+  **Ruleta diaria v2:** premios configurables en `Config['dailyRoulette']` (percent/cash/
+  none + peso + rollover; gates `requireDeposits` default 1 y `requireAppInstalled`
+  default off; editor en la sección Ruleta del panel, `GET/POST /api/admin/daily-roulette`).
+  Cash → `depositToUser` con `multiplier` (ref `vip-roulette-<spinId>`, budget-pacing
+  intacto); percent → `User.dailyRoulettePendingPct/Label` (un pendiente, el nuevo pisa),
+  consumido con `claimDailyRoulettePercent`/`revert…` en carga manual (prioridad:
+  bonus agente > bienvenida > diaria > 1ª carga) y hgcash. `DailyRouletteSpin` suma
+  `prizeType/prizePct/rolloverX` y status `percent_pending`.
+  **Cashback instantáneo:** `Config['instantCashback']` {pct 5, rolloverX 2, minArs 300,
+  maxDailyArs 50000} (`GET/POST /api/admin/instant-cashback`, card en el panel).
+  `reclamable = max(0, pct×(netwinHoy − cobradoHoy) − cobradoHoy)` (netwin casino del
+  día ART vía Partner API; sin "reembolso del reembolso"). Reclamo: modelo
+  `CashbackClaim` (índice único userId+dateKey+seq), reference `vip-cbk-<user>-<día>-<seq>`
+  (reintento = misma reference → la plataforma dedupe), crédito por depósito con
+  `multiplier`. Lo cobrado se DESCUENTA del reembolso semanal/mensual (claim y status).
 - **AUTO-CARGA hgcash** (`POST /api/hgcash/webhook`, firma HMAC sobre rawBody,
   fail-closed en prod): guarda BankMovement → matching contra Comprobantes por
   monto + (N° operación==coelsa/externalID, o nombre de origen + destino consistente)

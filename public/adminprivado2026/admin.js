@@ -5813,6 +5813,7 @@ async function loadCBUConfig() {
     loadWelcomeCodeConfig();
     // Cargar la config de la ruleta de bienvenida (solo admin general)
     loadWelcomeRoulette();
+    loadInstantCashbackCfg();
     // Cargar la config del bono de primera carga (solo admin general)
     loadFirstChargeBonus();
     // Cargar la config del banco automático (hgcash)
@@ -6614,6 +6615,133 @@ async function saveWelcomeRoulette() {
 window.wrAddPrize = wrAddPrize;
 window.wrUpdateOdds = wrUpdateOdds;
 window.saveWelcomeRoulette = saveWelcomeRoulette;
+
+// ====== RULETA DIARIA v2 (#254): premios configurables ======
+async function loadDailyRouletteCfg() {
+    const card = document.getElementById('drCfgCard');
+    try {
+        const r = await authFetch('/api/admin/daily-roulette');
+        if (!r.ok) { if (card) card.style.display = 'none'; return; }
+        const cfg = await r.json();
+        if (card) card.style.display = '';
+        const en = document.getElementById('drEnabled');
+        if (en) en.checked = cfg.enabled === true;
+        const md = document.getElementById('drMinDeposits');
+        if (md) md.value = (cfg.requireDeposits != null ? cfg.requireDeposits : 1);
+        const ra = document.getElementById('drRequireApp');
+        if (ra) ra.checked = cfg.requireAppInstalled === true;
+        const list = document.getElementById('drPrizesList');
+        if (list) { list.innerHTML = ''; (cfg.prizes || []).forEach(function(p) { drAddPrize(p); }); drUpdateOdds(); }
+    } catch (e) { if (card) card.style.display = 'none'; }
+}
+function drAddPrize(p) {
+    p = p || { label: '', type: 'percent', value: '', weight: '', rolloverX: 0 };
+    const list = document.getElementById('drPrizesList');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'dr-prize-row';
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,0.04);padding:8px;border-radius:8px;margin-bottom:6px;';
+    row.innerHTML =
+        '<input class="drP-label" placeholder="Etiqueta (ej. 10% EXTRA)" value="' + _centEsc(p.label || '') + '" style="flex:2;min-width:120px;">' +
+        '<select class="drP-type" style="flex:1;min-width:100px;">' +
+          '<option value="percent"' + (p.type === 'percent' || !p.type ? ' selected' : '') + '>% Extra</option>' +
+          '<option value="cash"' + (p.type === 'cash' ? ' selected' : '') + '>Saldo $</option>' +
+          '<option value="none"' + (p.type === 'none' ? ' selected' : '') + '>Sin premio</option>' +
+        '</select>' +
+        '<input class="drP-value" type="number" min="0" placeholder="valor" value="' + (p.value || '') + '" title="% o monto $ (Sin premio: dejar vacío)" style="width:80px;">' +
+        '<input class="drP-weight" type="number" min="1" placeholder="peso" value="' + (p.weight || '') + '" title="probabilidad relativa" style="width:70px;" oninput="drUpdateOdds()">' +
+        '<input class="drP-roll" type="number" min="0" max="50" placeholder="rollX" value="' + (p.rolloverX || 0) + '" title="rollover del saldo (solo Saldo $)" style="width:66px;">' +
+        '<button type="button" class="btn btn-danger" onclick="this.parentNode.remove();drUpdateOdds();" style="padding:4px 9px;">✕</button>';
+    list.appendChild(row);
+    drUpdateOdds();
+}
+function drUpdateOdds() {
+    const rows = document.querySelectorAll('#drPrizesList .dr-prize-row');
+    let total = 0;
+    rows.forEach(function(r) { total += Number(r.querySelector('.drP-weight').value) || 0; });
+    const hint = document.getElementById('drOddsHint');
+    if (!hint) return;
+    if (!total) { hint.textContent = ''; return; }
+    const parts = [];
+    rows.forEach(function(r) {
+        const w = Number(r.querySelector('.drP-weight').value) || 0;
+        const lbl = r.querySelector('.drP-label').value || '(sin nombre)';
+        if (w > 0) parts.push(lbl + ': ' + Math.round(w / total * 100) + '%');
+    });
+    hint.textContent = 'Probabilidades → ' + parts.join(' · ');
+}
+async function saveDailyRoulette() {
+    const rows = document.querySelectorAll('#drPrizesList .dr-prize-row');
+    const prizes = [];
+    let bad = false;
+    rows.forEach(function(r, i) {
+        const label = r.querySelector('.drP-label').value.trim();
+        const type = r.querySelector('.drP-type').value;
+        const value = Number(r.querySelector('.drP-value').value) || 0;
+        const weight = Number(r.querySelector('.drP-weight').value) || 0;
+        const rolloverX = Number(r.querySelector('.drP-roll').value) || 0;
+        if (weight <= 0) bad = true;
+        if (type !== 'none' && value <= 0) bad = true;
+        prizes.push({ id: 'd' + i, label: label, type: type, value: value, weight: weight, rolloverX: rolloverX });
+    });
+    if (!prizes.length) { showToast('Agregá al menos un premio', 'error'); return; }
+    if (bad) { showToast('Cada premio necesita peso > 0 (y valor > 0, salvo Sin premio)', 'error'); return; }
+    try {
+        const r = await authFetch('/api/admin/daily-roulette', {
+            method: 'POST',
+            body: JSON.stringify({
+                enabled: document.getElementById('drEnabled').checked,
+                requireDeposits: Number(document.getElementById('drMinDeposits').value) || 0,
+                requireAppInstalled: document.getElementById('drRequireApp').checked,
+                prizes: prizes
+            })
+        });
+        const j = await r.json();
+        if (!r.ok) { showToast(j.error || 'No se pudo guardar', 'error'); return; }
+        showToast('Ruleta diaria guardada', 'success');
+        drUpdateOdds();
+    } catch (e) { showToast('Error de conexión', 'error'); }
+}
+window.drAddPrize = drAddPrize;
+window.drUpdateOdds = drUpdateOdds;
+window.saveDailyRoulette = saveDailyRoulette;
+window.loadDailyRouletteCfg = loadDailyRouletteCfg;
+
+// ====== CASHBACK instantáneo (#254) ======
+async function loadInstantCashbackCfg() {
+    const form = document.getElementById('cashbackForm');
+    const header = document.getElementById('cashbackHeader');
+    try {
+        const r = await authFetch('/api/admin/instant-cashback');
+        if (!r.ok) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; return; }
+        const cfg = await r.json();
+        if (form) form.style.display = '';
+        if (header) header.style.display = '';
+        const en = document.getElementById('cbkEnabled');
+        if (en) en.checked = cfg.enabled === true;
+        const set = function(id, v) { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+        set('cbkPct', cfg.pct); set('cbkRoll', cfg.rolloverX); set('cbkMin', cfg.minArs); set('cbkMax', cfg.maxDailyArs);
+    } catch (e) { if (form) form.style.display = 'none'; if (header) header.style.display = 'none'; }
+}
+async function saveInstantCashback() {
+    try {
+        const r = await authFetch('/api/admin/instant-cashback', {
+            method: 'POST',
+            body: JSON.stringify({
+                enabled: document.getElementById('cbkEnabled').checked,
+                pct: Number(document.getElementById('cbkPct').value) || 0,
+                rolloverX: Number(document.getElementById('cbkRoll').value) || 0,
+                minArs: Number(document.getElementById('cbkMin').value) || 0,
+                maxDailyArs: Number(document.getElementById('cbkMax').value) || 0
+            })
+        });
+        const j = await r.json();
+        if (!r.ok) { showToast(j.error || 'No se pudo guardar', 'error'); return; }
+        showToast('Cashback guardado', 'success');
+    } catch (e) { showToast('Error de conexión', 'error'); }
+}
+window.saveInstantCashback = saveInstantCashback;
+window.loadInstantCashbackCfg = loadInstantCashbackCfg;
 
 // ====== Código de bienvenida de la Comunidad (bono sorpresa) ======
 // Código: solo admin general. Monto: admin general y depositor. Para los demás
@@ -9942,8 +10070,9 @@ async function loadRouletteAdmin() {
     const body = document.getElementById('rouletteAdminBody');
     if (!body) return;
     body.innerHTML = '<div style="color:#aaa;text-align:center;padding:24px;">⏳ Cargando…</div>';
-    // Cargar budget en paralelo (no bloqueante).
+    // Cargar budget y config de premios en paralelo (no bloqueante).
     loadRouletteBudget();
+    loadDailyRouletteCfg();
     try {
         const [statsResp, historyResp] = await Promise.all([
             rouletteAuthFetch('/api/admin/roulette/stats?days=' + days),

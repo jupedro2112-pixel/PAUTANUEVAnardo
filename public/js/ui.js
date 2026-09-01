@@ -1338,6 +1338,24 @@ VIP.ui._showCasinoFrame = function() {
       // `allow` habilita pantalla completa y sonido dentro de los juegos.
       '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
         'allow="autoplay; fullscreen; payment"></iframe>' +
+      // BOTÓN "🎁 PREMIOS" (#254): entrada al hub de recompensas (ruleta de
+      // bienvenida + ruleta diaria + cashback). Flotante a la IZQUIERDA (la
+      // burbuja de cargas vive a la derecha). El puntito rojo se prende cuando
+      // hay algo para reclamar (giro disponible / cashback ≥ mínimo).
+      '<button type="button" id="casinoRewardsBtn" onclick="VIP.ui.openRewardsHub()" ' +
+        'style="position:absolute;left:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));' +
+        'display:none;flex-direction:column;align-items:center;gap:4px;padding:0;z-index:6;' +
+        'background:none;border:none;cursor:pointer;user-select:none;-webkit-user-select:none;">' +
+        '<span style="position:relative;display:flex;align-items:center;justify-content:center;' +
+          'width:56px;height:56px;border-radius:50%;font-size:26px;' +
+          'background:radial-gradient(circle at 30% 25%,#3b2f00,#1a1400 70%);' +
+          'border:2px solid #ffd700;box-shadow:0 6px 22px rgba(255,215,0,0.45);">🎁' +
+          '<span id="rwDot" style="display:none;position:absolute;top:-2px;right:-2px;width:15px;height:15px;' +
+            'border-radius:50%;background:#e53935;border:2px solid #0d0d1a;box-shadow:0 0 8px rgba(229,57,53,0.9);"></span>' +
+        '</span>' +
+        '<span style="background:linear-gradient(135deg,#ffd700,#ff9800);color:#231a00;font-size:10px;font-weight:900;' +
+          'letter-spacing:0.6px;padding:3px 9px;border-radius:9px;box-shadow:0 3px 10px rgba(0,0,0,0.45);">PREMIOS</span>' +
+      '</button>' +
       // BURBUJA "Carga automática" (abre/cierra el widget) — logo de la marca +
       // etiqueta "⚡ CARGA AUTOMÁTICA": con el 🎧 pelado los clientes creían que
       // era el soporte propio de la página del casino. Todo vive DENTRO del
@@ -1467,6 +1485,9 @@ VIP.ui._showCasinoFrame = function() {
   // Bloquea el scroll del fondo mientras el casino está abierto.
   document.body.style.overflow = 'hidden';
   VIP.ui._casinoOpen = true;
+  // Hub de premios (#254): traer el resumen (bienvenida/diaria/cashback) y
+  // prender el botón + puntito. Fire-and-forget.
+  try { VIP.ui._refreshRewards(); } catch (e) {}
 
   // Badge de mensajes sin leer mientras juega: observa el listado real del chat
   // (chat.js sigue appendeando ahí aunque el casino lo tape) y cuenta lo que
@@ -1889,8 +1910,8 @@ VIP.ui.casinoBotGo = function(state) {
         VIP.ui._botRow(VIP.ui._botBtn('🔄 Cambiar de cuenta / Salir', 'VIP.ui.casinoLogout()', false));
       }
     } catch (e) {}
-    // Ofrecer la RULETA DE BIENVENIDA si está habilitada y no la giró (1 vez).
-    VIP.ui._maybeOfferWelcomeRoulette();
+    // Las ruletas y el cashback viven en el hub "🎁 PREMIOS" (#254) — ya no se
+    // ofrecen en el hilo del chat (pedido owner: recuadro propio, no en el chat).
     return;
   }
 
@@ -2456,7 +2477,317 @@ VIP.ui.casinoRouletteClose = function(silent) {
   const ov = document.getElementById('wrOverlay');
   if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
   VIP.ui._wrOverlayOpen = false;
-  if (!silent) { try { VIP.ui.casinoBotGo('home'); } catch (e) {} }
+  if (silent) return;
+  if (VIP.ui._rwReturn) { VIP.ui._rwReturn = false; try { VIP.ui.openRewardsHub(); return; } catch (e) {} }
+  try { VIP.ui.casinoBotGo('home'); } catch (e) {}
+};
+
+// ============================================================
+// 🎁 HUB DE PREMIOS (#254) — ruleta de bienvenida + ruleta diaria + cashback
+// instantáneo en un overlay propio, fuera del chat.
+// ============================================================
+VIP.ui._refreshRewards = function() {
+  fetch(`${VIP.config.API_URL}/api/rewards/summary`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    if (!d) return;
+    VIP.ui._rwSummary = d;
+    if (d.welcome && d.welcome.segments) VIP.ui._wrSegments = d.welcome.segments.map(function(x) { return x.label; });
+    const btn = document.getElementById('casinoRewardsBtn');
+    const anyEnabled = (d.welcome && d.welcome.enabled) || (d.daily && d.daily.enabled) || (d.cashback && d.cashback.enabled);
+    if (btn) btn.style.display = anyEnabled ? 'flex' : 'none';
+    const dot = document.getElementById('rwDot');
+    const claimable =
+      (d.welcome && d.welcome.canSpin) ||
+      (d.daily && d.daily.canSpin) ||
+      (d.cashback && d.cashback.reclamable >= (d.cashback.minArs || 1) && d.cashback.reclamable > 0);
+    if (dot) dot.style.display = claimable ? 'block' : 'none';
+    // Si el hub está abierto, re-pintarlo con los datos frescos.
+    if (document.getElementById('rwHubOverlay')) VIP.ui.openRewardsHub();
+  }).catch(function() {});
+};
+
+function _rwFmt(n) { try { return '$' + Number(n || 0).toLocaleString('es-AR'); } catch (e) { return '$' + n; } }
+function _rwCountdown(iso) {
+  try {
+    const ms = new Date(iso).getTime() - Date.now();
+    if (ms <= 0) return 'ya mismo';
+    const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    return (h > 0 ? h + ' h ' : '') + m + ' min';
+  } catch (e) { return '—'; }
+}
+function _rwCard(opts) {
+  // Tarjeta del hub: ícono + título + estado + CTA. Diseño oscuro con acento.
+  const acc = opts.accent || '#ffd700';
+  return '<div style="background:linear-gradient(160deg,rgba(255,255,255,0.055),rgba(255,255,255,0.015));' +
+      'border:1px solid ' + acc + '55;border-radius:18px;padding:16px 16px 14px;position:relative;overflow:hidden;">' +
+    '<div style="position:absolute;top:-30px;right:-30px;width:110px;height:110px;border-radius:50%;background:' + acc + '14;"></div>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">' +
+      '<div style="width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;' +
+        'font-size:24px;background:' + acc + '1f;border:1px solid ' + acc + '44;flex:none;">' + opts.icon + '</div>' +
+      '<div style="min-width:0;">' +
+        '<div style="font-size:15px;font-weight:900;color:#fff;letter-spacing:0.2px;">' + opts.title + '</div>' +
+        '<div style="font-size:11.5px;color:#9aa4b0;">' + (opts.subtitle || '') + '</div>' +
+      '</div>' +
+    '</div>' +
+    (opts.body || '') +
+    (opts.cta || '') +
+  '</div>';
+}
+function _rwCta(label, onclick, enabled, accent) {
+  const acc = accent || '#ffd700';
+  if (enabled) {
+    return '<button type="button" onclick="' + onclick + '" style="width:100%;margin-top:10px;border:none;cursor:pointer;' +
+      'background:linear-gradient(135deg,' + acc + ',#ff9800);color:#231a00;border-radius:13px;padding:13px;' +
+      'font-size:15px;font-weight:900;letter-spacing:0.3px;box-shadow:0 6px 18px ' + acc + '40;">' + label + '</button>';
+  }
+  return '<div style="width:100%;margin-top:10px;text-align:center;background:rgba(255,255,255,0.06);color:#8b95a1;' +
+    'border-radius:13px;padding:12px;font-size:13px;font-weight:700;">' + label + '</div>';
+}
+
+VIP.ui.openRewardsHub = function() {
+  VIP.ui.closeRewardsHub(true);
+  const d = VIP.ui._rwSummary || {};
+  const w = d.welcome || {}, dy = d.daily || {}, cb = d.cashback || {};
+  let cards = '';
+
+  // --- Ruleta de BIENVENIDA ---
+  if (w.enabled || w.prize) {
+    let body = '', cta = '';
+    if (w.canSpin) {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Tenés <b style="color:#ffd700;">1 giro GRATIS</b> de bienvenida. Se gira una sola vez. ¡Suerte!</div>';
+      cta = _rwCta('🎡 GIRAR AHORA', "VIP.ui._rwSpinWelcome()", true);
+    } else if (w.prize) {
+      const p = w.prize;
+      let st = p.type === 'cash'
+        ? '💰 Acreditado en tu saldo' + (p.rolloverX > 0 ? ' · rollover x' + p.rolloverX : '')
+        : (p.status === 'pending' ? '⏳ ' + _wrEsc(String(p.value)) + '% EXTRA pendiente — se suma en tu próxima carga' : '✅ Ya aplicado en una carga');
+      body = '<div style="font-size:13px;color:#cfd6de;">Tu premio: <b style="color:#ffd700;font-size:16px;">' + _wrEsc(p.label || '') + '</b><br>' +
+        '<span style="font-size:12px;">' + st + '</span></div>';
+      if (p.type === 'percent' && p.status === 'pending') cta = _rwCta('💳 Cargar y usarlo', "VIP.ui.closeRewardsHub();VIP.ui.casinoBotGo('deposit')", true);
+    }
+    cards += _rwCard({ icon: '🎡', accent: '#ffd700', title: 'Ruleta de Bienvenida', subtitle: 'Un giro único por cuenta', body: body, cta: cta });
+  }
+
+  // --- Ruleta DIARIA ---
+  if (dy.enabled) {
+    let body = '', cta = '';
+    if (dy.canSpin) {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Tu giro <b style="color:#26e07f;">GRATIS de HOY</b> está disponible. Premios en % extra y saldo directo.</div>';
+      cta = _rwCta('🎰 GIRAR LA RULETA DE HOY', 'VIP.ui._rwSpinDaily()', true, '#26e07f');
+    } else if (dy.needsDeposit) {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Hacé tu <b>primera carga</b> y desbloqueás un giro gratis <b>todos los días</b>.</div>';
+      cta = _rwCta('💳 Hacer mi primera carga', "VIP.ui.closeRewardsHub();VIP.ui.casinoBotGo('deposit')", true, '#26e07f');
+    } else if (dy.alreadySpun) {
+      const tp = dy.todayPrize || {};
+      let st = tp.type === 'percent' ? ('Hoy ganaste <b style="color:#26e07f;">' + _wrEsc(tp.label || '') + '</b>' + (dy.pendingPct > 0 ? ' — se aplica en tu próxima carga' : ' — ya aplicado'))
+        : tp.type === 'cash' && tp.prizeARS > 0 ? ('Hoy ganaste <b style="color:#26e07f;">' + _rwFmt(tp.prizeARS) + '</b> — acreditado 💰')
+        : 'Hoy no hubo suerte 😅';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">' + st + '<br>' +
+        '<span style="font-size:12px;color:#9aa4b0;">⏰ Próximo giro en <b>' + _rwCountdown(dy.nextResetAt) + '</b></span></div>';
+      cta = _rwCta('⏰ Volvé mañana por otro giro', '', false);
+    } else {
+      body = '<div style="font-size:13px;color:#cfd6de;">La ruleta diaria no está disponible para tu cuenta todavía.</div>';
+    }
+    cards += _rwCard({ icon: '🎰', accent: '#26e07f', title: 'Ruleta Diaria', subtitle: 'Un giro gratis por día', body: body, cta: cta });
+  }
+
+  // --- CASHBACK instantáneo ---
+  if (cb.enabled) {
+    let body = '', cta = '';
+    if (cb.unavailable) {
+      body = '<div style="font-size:13px;color:#cfd6de;">No pudimos calcular tu pérdida de hoy. Probá en unos minutos.</div>';
+    } else if (cb.reclamable > 0 && cb.reclamable >= (cb.minArs || 0)) {
+      body = '<div style="text-align:center;padding:4px 0 2px;">' +
+        '<div style="font-size:11.5px;color:#9aa4b0;">Perdiste hoy ' + _rwFmt(cb.netwinToday) + ' → recuperá</div>' +
+        '<div style="font-size:30px;font-weight:900;color:#4dd0ff;text-shadow:0 2px 8px rgba(77,208,255,0.35);margin:2px 0;">' + _rwFmt(cb.reclamable) + '</div>' +
+        '<div style="font-size:11px;color:#9aa4b0;">Se acredita YA como bonus' + (cb.rolloverX > 0 ? ' · para retirarlo apostalo x' + cb.rolloverX : '') + '</div></div>';
+      cta = _rwCta('📉 RECLAMAR ' + _rwFmt(cb.reclamable), 'VIP.ui.casinoCashbackClaim()', true, '#4dd0ff');
+    } else if (cb.netwinToday > 0) {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Perdiste hoy ' + _rwFmt(cb.netwinToday) +
+        (cb.paidToday > 0 ? ' y ya recuperaste ' + _rwFmt(cb.paidToday) + '.' : '.') +
+        '<br><span style="font-size:12px;color:#9aa4b0;">Reclamás el ' + (cb.pct || 0) + '% de tu pérdida (mínimo ' + _rwFmt(cb.minArs) + ').</span></div>';
+      cta = _rwCta('Todavía no llegás al mínimo', '', false);
+    } else {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si hoy perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> al instante. Sin esperar al lunes.</div>';
+    }
+    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: 'Recuperá el ' + (cb.pct || 0) + '% de lo que perdés hoy', body: body, cta: cta });
+  }
+
+  if (!cards) cards = '<div style="color:#9aa4b0;text-align:center;padding:30px 10px;font-size:14px;">Por ahora no hay premios activos. ¡Volvé pronto! 🎁</div>';
+
+  const ov = document.createElement('div');
+  ov.id = 'rwHubOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147482900;display:flex;flex-direction:column;align-items:center;' +
+    'background:radial-gradient(120% 90% at 50% 0%,#141b2e 0%,#0a0e1a 55%,#070a12 100%);overflow:auto;' +
+    'padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;';
+  ov.innerHTML =
+    '<button type="button" onclick="VIP.ui.closeRewardsHub()" aria-label="Cerrar" ' +
+      'style="position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:38px;height:38px;border-radius:50%;' +
+      'border:none;background:rgba(255,255,255,.12);color:#fff;font-size:19px;font-weight:900;cursor:pointer;">✕</button>' +
+    '<div style="width:100%;max-width:420px;">' +
+      '<div style="text-align:center;margin:6px 0 18px;">' +
+        '<div style="font-size:34px;line-height:1;">🎁</div>' +
+        '<div style="font-size:22px;font-weight:900;color:#fff;letter-spacing:0.5px;margin-top:4px;">TUS PREMIOS</div>' +
+        '<div style="font-size:12px;color:#9aa4b0;margin-top:2px;">Ruletas, bonos y cashback — todo acá</div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:14px;">' + cards + '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+};
+VIP.ui.closeRewardsHub = function(silent) {
+  const ov = document.getElementById('rwHubOverlay');
+  if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  if (!silent) { try { VIP.ui._refreshRewards(); } catch (e) {} }
+};
+
+// Girar la de BIENVENIDA desde el hub (cierra el hub, abre la rueda; al cerrar vuelve).
+VIP.ui._rwSpinWelcome = function() {
+  VIP.ui.closeRewardsHub(true);
+  VIP.ui._rwReturn = true;
+  VIP.ui.casinoBotGo('roulette');
+};
+
+// ---- RULETA DIARIA: overlay propio (misma rueda, endpoint /api/roulette) ----
+VIP.ui._rwSpinDaily = function() {
+  VIP.ui.closeRewardsHub(true);
+  VIP.ui._rwReturn = true;
+  const d = (VIP.ui._rwSummary && VIP.ui._rwSummary.daily) || {};
+  VIP.ui._drSegments = (d.segments || []).map(function(x) { return x.label; });
+  VIP.ui._renderDailyRoulette();
+};
+VIP.ui._renderDailyRoulette = function() {
+  VIP.ui.casinoRouletteClose(true);
+  const segs = VIP.ui._drSegments || [];
+  const n = Math.max(1, segs.length);
+  const S = Math.max(240, Math.min(Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.46)), 360));
+  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.36);
+  const fs = S >= 320 ? (n > 5 ? 13 : 16) : 12;
+  const colors = ['#0e7a5c', '#0b5d47', '#12996f', '#0a4d3b'];
+  let stops = '';
+  for (let i = 0; i < n; i++) {
+    const a0 = (360 / n) * i, a1 = (360 / n) * (i + 1);
+    stops += colors[i % colors.length] + ' ' + a0 + 'deg ' + a1 + 'deg' + (i < n - 1 ? ',' : '');
+  }
+  let labels = '';
+  for (let i = 0; i < n; i++) {
+    const ang = (360 / n) * i + (360 / n) / 2;
+    const rad = ang * Math.PI / 180;
+    const x = R + rr * Math.sin(rad), y = R - rr * Math.cos(rad);
+    labels += '<div class="wrLbl" style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;' +
+      'transform:translate(-50%,-50%);width:' + lw + 'px;text-align:center;font-size:' + fs + 'px;line-height:1.15;font-weight:900;' +
+      'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' +
+      _wrEsc(segs[i] || '') + '</div>';
+  }
+  const ov = document.createElement('div');
+  ov.id = 'wrOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.9);display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;padding:18px 16px;box-sizing:border-box;font-family:inherit;overflow:auto;';
+  ov.innerHTML =
+    '<button type="button" onclick="VIP.ui.casinoRouletteClose()" aria-label="Cerrar" ' +
+      'style="position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.14);' +
+      'color:#fff;font-size:20px;font-weight:900;cursor:pointer;">✕</button>' +
+    '<div style="color:#26e07f;font-size:22px;font-weight:900;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6);">🎰 RULETA DIARIA</div>' +
+    '<div style="color:#fff;opacity:.85;font-size:14px;margin:4px 0 16px;text-align:center;">Un giro gratis por día. ¡Suerte!</div>' +
+    '<div style="position:relative;width:' + S + 'px;height:' + S + 'px;margin-bottom:18px;flex:none;">' +
+      '<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);z-index:3;width:0;height:0;' +
+        'border-left:14px solid transparent;border-right:14px solid transparent;border-top:24px solid #26e07f;' +
+        'filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));"></div>' +
+      '<div id="wrWheel" style="width:' + S + 'px;height:' + S + 'px;border-radius:50%;position:relative;' +
+        'background:conic-gradient(' + stops + ');box-shadow:0 10px 34px rgba(0,0,0,.7),inset 0 0 0 5px #26e07faa;' +
+        'transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' + labels + '</div>' +
+    '</div>' +
+    '<div id="wrResult" style="color:#fff;text-align:center;font-size:15px;line-height:1.35;max-width:360px;"></div>' +
+    '<div id="wrActions" style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px;margin-top:6px;">' +
+      '<button type="button" id="wrSpinBtn" onclick="VIP.ui.casinoDailySpin()" ' +
+        'style="width:100%;background:#26e07f;color:#00301a;border:none;border-radius:16px;padding:16px;' +
+        'font-size:19px;font-weight:900;cursor:pointer;box-shadow:0 6px 18px rgba(38,224,127,.35);">🎰 GIRAR</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  VIP.ui._wrOverlayOpen = true;
+};
+VIP.ui.casinoDailySpin = function() {
+  const btn = document.getElementById('wrSpinBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Girando…'; }
+  fetch(`${VIP.config.API_URL}/api/roulette/spin`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      if (!res.ok || !res.d || !res.d.success) {
+        if (btn) { btn.disabled = false; btn.textContent = '🎰 GIRAR'; }
+        VIP.ui.showToast((res.d && res.d.error) || 'No se pudo girar. Probá de nuevo.', 'error');
+        return;
+      }
+      const n = Math.max(1, (VIP.ui._drSegments || []).length);
+      const idx = Math.max(0, Math.min(n - 1, res.d.prizeIndex || 0));
+      const wheel = document.getElementById('wrWheel');
+      const segMid = (360 / n) * idx + (360 / n) / 2;
+      const target = 360 * 5 + (360 - segMid);
+      if (wheel) wheel.style.transform = 'rotate(' + target + 'deg)';
+      try {
+        document.querySelectorAll('#wrWheel .wrLbl').forEach(function(el) {
+          el.style.transform = 'translate(-50%,-50%) rotate(' + (-target) + 'deg)';
+        });
+      } catch (e) {}
+      setTimeout(function() {
+        const p = res.d.prize || {};
+        VIP.ui._playChime();
+        let titulo, detalle;
+        if (p.type === 'cash' && p.prizeARS > 0) {
+          titulo = '🎉 ¡Ganaste ' + _wrEsc(p.prizeLabel) + '!';
+          detalle = '💰 Ya está <b>ACREDITADO</b> en tu saldo.' + (p.rolloverX > 0 ? '<br><span style="font-size:12px;opacity:.8;">Para retirarlo, apostá ' + p.rolloverX + ' veces el premio.</span>' : '');
+        } else if (p.type === 'percent') {
+          titulo = '🎉 ¡Ganaste ' + _wrEsc(p.prizeLabel) + '!';
+          detalle = 'Se suma automático en tu <b>PRÓXIMA CARGA</b>. 💪';
+        } else {
+          titulo = '😅 Hoy no hubo suerte';
+          detalle = 'Mañana tenés <b>otro giro gratis</b>. ¡Volvé a intentar!';
+        }
+        const rEl = document.getElementById('wrResult');
+        if (rEl) {
+          rEl.innerHTML = '<div style="font-size:26px;font-weight:900;color:#26e07f;margin:4px 0 8px;text-shadow:0 2px 6px rgba(0,0,0,.6);">' + titulo + '</div><div>' + detalle + '</div>';
+        }
+        const aEl = document.getElementById('wrActions');
+        if (aEl) {
+          aEl.innerHTML =
+            (p.type === 'percent'
+              ? '<button type="button" onclick="VIP.ui.casinoRouletteClose(true);VIP.ui._rwReturn=false;VIP.ui.casinoBotGo(\'deposit\')" style="width:100%;background:#26e07f;color:#00301a;border:none;border-radius:16px;padding:15px;font-size:17px;font-weight:900;cursor:pointer;">💳 Cargar ahora y usarlo</button>'
+              : '') +
+            '<button type="button" onclick="VIP.ui.casinoRouletteClose()" style="width:100%;background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:16px;padding:13px;font-size:15px;font-weight:800;cursor:pointer;">Cerrar</button>';
+        }
+        try { VIP.ui._refreshRewards(); } catch (e) {}
+        if (p.type === 'cash' && p.prizeARS > 0 && VIP.ui.syncBalance) { try { VIP.ui.syncBalance(); } catch (e) {} }
+      }, 4400);
+    })
+    .catch(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '🎰 GIRAR'; }
+      VIP.ui.showToast('Error de conexión. Probá de nuevo.', 'error');
+    });
+};
+
+// ---- CASHBACK: reclamo desde el hub ----
+VIP.ui.casinoCashbackClaim = function() {
+  const d = (VIP.ui._rwSummary && VIP.ui._rwSummary.cashback) || {};
+  if (!confirm('¿Reclamar ' + _rwFmt(d.reclamable) + ' de cashback ahora?' + (d.rolloverX > 0 ? '\n(Se acredita como bonus: para retirarlo apostalo x' + d.rolloverX + ')' : ''))) return;
+  fetch(`${VIP.config.API_URL}/api/cashback/claim`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+    .then(function(res) {
+      if (!res.ok || !res.j || !res.j.success) {
+        VIP.ui.showToast((res.j && res.j.error) || 'No se pudo reclamar. Probá de nuevo.', 'error');
+        VIP.ui._refreshRewards();
+        return;
+      }
+      VIP.ui._playChime();
+      VIP.ui.showToast('💸 ¡' + _rwFmt(res.j.amount) + ' acreditados en tu saldo!', 'success');
+      if (VIP.ui.syncBalance) { try { VIP.ui.syncBalance(); } catch (e) {} }
+      VIP.ui._refreshRewards();
+    })
+    .catch(function() { VIP.ui.showToast('Error de conexión. Probá de nuevo.', 'error'); });
 };
 
 function _wrEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -2522,6 +2853,7 @@ VIP.ui.casinoRouletteSpin = function() {
         }
         // Copia en el hilo del asistente (queda en el historial del widget).
         VIP.ui._botMsg('🎉 <b>¡Ganaste ' + _wrEsc(p.label) + '!</b><br>' + detalle);
+        try { VIP.ui._refreshRewards(); } catch (e) {}
       }, 4400);
     })
     .catch(function() {

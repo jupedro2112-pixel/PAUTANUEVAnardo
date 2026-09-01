@@ -24,9 +24,13 @@ const spinSchema = new mongoose.Schema({
 
   spunAt: { type: Date, default: Date.now, immutable: true, index: true },
 
-  // Premio ganado: monto ARS. 0 = sin premio.
+  // Premio ganado: monto ARS. 0 = sin premio (o premio en %).
   prizeARS: { type: Number, required: true, default: 0, min: 0 },
   prizeLabel: { type: String, default: '' }, // ej. "$10.000", "SIN PREMIO"
+  // v2 (#254): la ruleta diaria también da % EXTRA en la próxima carga.
+  prizeType: { type: String, enum: ['cash', 'percent', 'none'], default: 'cash' },
+  prizePct: { type: Number, default: 0 },
+  rolloverX: { type: Number, default: 0 },
 
   // Anti-fraude
   ipAddress: { type: String, default: null },
@@ -38,7 +42,7 @@ const spinSchema = new mongoose.Schema({
   // Si prizeARS=0, status='no_prize'.
   status: {
     type: String,
-    enum: ['no_prize', 'won', 'credited', 'credit_failed'],
+    enum: ['no_prize', 'won', 'credited', 'credit_failed', 'percent_pending'],
     default: 'won',
     index: true
   },
