@@ -1338,24 +1338,6 @@ VIP.ui._showCasinoFrame = function() {
       // `allow` habilita pantalla completa y sonido dentro de los juegos.
       '<iframe id="casinoFrame" title="Casino" style="flex:1;width:100%;border:0;display:none;" ' +
         'allow="autoplay; fullscreen; payment"></iframe>' +
-      // BOTÓN "🎁 PREMIOS" (#254): entrada al hub de recompensas (ruleta de
-      // bienvenida + ruleta diaria + cashback). Flotante a la IZQUIERDA (la
-      // burbuja de cargas vive a la derecha). El puntito rojo se prende cuando
-      // hay algo para reclamar (giro disponible / cashback ≥ mínimo).
-      '<button type="button" id="casinoRewardsBtn" onclick="VIP.ui.openRewardsHub()" ' +
-        'style="position:absolute;left:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));' +
-        'display:none;flex-direction:column;align-items:center;gap:4px;padding:0;z-index:6;' +
-        'background:none;border:none;cursor:pointer;user-select:none;-webkit-user-select:none;">' +
-        '<span style="position:relative;display:flex;align-items:center;justify-content:center;' +
-          'width:56px;height:56px;border-radius:50%;font-size:26px;' +
-          'background:radial-gradient(circle at 30% 25%,#3b2f00,#1a1400 70%);' +
-          'border:2px solid #ffd700;box-shadow:0 6px 22px rgba(255,215,0,0.45);">🎁' +
-          '<span id="rwDot" style="display:none;position:absolute;top:-2px;right:-2px;width:15px;height:15px;' +
-            'border-radius:50%;background:#e53935;border:2px solid #0d0d1a;box-shadow:0 0 8px rgba(229,57,53,0.9);"></span>' +
-        '</span>' +
-        '<span style="background:linear-gradient(135deg,#ffd700,#ff9800);color:#231a00;font-size:10px;font-weight:900;' +
-          'letter-spacing:0.6px;padding:3px 9px;border-radius:9px;box-shadow:0 3px 10px rgba(0,0,0,0.45);">PREMIOS</span>' +
-      '</button>' +
       // BURBUJA "Carga automática" (abre/cierra el widget) — logo de la marca +
       // etiqueta "⚡ CARGA AUTOMÁTICA": con el 🎧 pelado los clientes creían que
       // era el soporte propio de la página del casino. Todo vive DENTRO del
@@ -1422,8 +1404,16 @@ VIP.ui._showCasinoFrame = function() {
           'background:#e53935;color:#fff;border-radius:11px;min-width:18px;height:18px;line-height:18px;' +
           'font-size:11px;font-weight:800;padding:0 4px;text-align:center;">0</span></button>' +
         '</div>' +
-        // 2ª fila: Información (aparte de las 3 acciones).
-        '<div class="cwBar" style="flex:0 0 auto;display:flex;padding:0 8px 8px;">' +
+        // 2ª fila: 🎁 PREMIOS (hub de recompensas #254, dentro de Cargas
+        // Automáticas — pedido owner 2026-09-01) + Información. El puntito rojo
+        // avisa cuando hay giro o cashback reclamable.
+        '<div class="cwBar" style="flex:0 0 auto;display:flex;gap:6px;padding:0 8px 8px;">' +
+          '<button type="button" id="casinoRewardsBtn" onclick="VIP.ui.openRewardsHub()" style="flex:1.3;display:none;' +
+          'align-items:center;justify-content:center;position:relative;background:linear-gradient(135deg,#ffd700,#ff9800);' +
+          'color:#231a00;border:none;border-radius:9px;padding:8px 4px;font-size:11.5px;font-weight:900;cursor:pointer;">' +
+          '🎁 PREMIOS' +
+          '<span id="rwDot" style="display:none;position:absolute;top:-4px;right:-4px;width:13px;height:13px;' +
+          'border-radius:50%;background:#e53935;border:2px solid #fff;box-shadow:0 0 8px rgba(229,57,53,0.9);"></span></button>' +
           '<button type="button" class="cwSop" onclick="VIP.ui.casinoBotGo(\'info\')" style="flex:1;' +
           'border-radius:9px;padding:8px 4px;font-size:11.5px;font-weight:800;cursor:pointer;">ℹ️ ¿Cómo funciona?</button>' +
         '</div>' +
@@ -2494,8 +2484,7 @@ VIP.ui._refreshRewards = function() {
     VIP.ui._rwSummary = d;
     if (d.welcome && d.welcome.segments) VIP.ui._wrSegments = d.welcome.segments.map(function(x) { return x.label; });
     const btn = document.getElementById('casinoRewardsBtn');
-    const anyEnabled = (d.welcome && d.welcome.enabled) || (d.daily && d.daily.enabled) || (d.cashback && d.cashback.enabled);
-    if (btn) btn.style.display = anyEnabled ? 'flex' : 'none';
+    if (btn) btn.style.display = 'flex'; // el hub siempre existe (muestra "muy pronto" si algo está apagado)
     const dot = document.getElementById('rwDot');
     const claimable =
       (d.welcome && d.welcome.canSpin) ||
@@ -2551,8 +2540,8 @@ VIP.ui.openRewardsHub = function() {
   const w = d.welcome || {}, dy = d.daily || {}, cb = d.cashback || {};
   let cards = '';
 
-  // --- Ruleta de BIENVENIDA ---
-  if (w.enabled || w.prize) {
+  // --- Ruleta de BIENVENIDA (siempre visible; apagada = "muy pronto") ---
+  {
     let body = '', cta = '';
     if (w.canSpin) {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Tenés <b style="color:#ffd700;">1 giro GRATIS</b> de bienvenida. Se gira una sola vez. ¡Suerte!</div>';
@@ -2566,13 +2555,20 @@ VIP.ui.openRewardsHub = function() {
         '<span style="font-size:12px;">' + st + '</span></div>';
       if (p.type === 'percent' && p.status === 'pending') cta = _rwCta('💳 Cargar y usarlo', "VIP.ui.closeRewardsHub();VIP.ui.casinoBotGo('deposit')", true);
     }
+    if (!body && !cta) {
+      body = '<div style="font-size:13px;color:#9aa4b0;">Un giro gratis al crear tu cuenta. 🔒 Disponible muy pronto.</div>';
+      cta = _rwCta('🔒 Muy pronto', '', false);
+    }
     cards += _rwCard({ icon: '🎡', accent: '#ffd700', title: 'Ruleta de Bienvenida', subtitle: 'Un giro único por cuenta', body: body, cta: cta });
   }
 
-  // --- Ruleta DIARIA ---
-  if (dy.enabled) {
+  // --- Ruleta DIARIA (siempre visible; apagada = "muy pronto") ---
+  {
     let body = '', cta = '';
-    if (dy.canSpin) {
+    if (!dy.enabled) {
+      body = '<div style="font-size:13px;color:#9aa4b0;">Un giro gratis TODOS los días con premios en % extra y saldo. 🔒 Disponible muy pronto.</div>';
+      cta = _rwCta('🔒 Muy pronto', '', false, '#26e07f');
+    } else if (dy.canSpin) {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Tu giro <b style="color:#26e07f;">GRATIS de HOY</b> está disponible. Premios en % extra y saldo directo.</div>';
       cta = _rwCta('🎰 GIRAR LA RULETA DE HOY', 'VIP.ui._rwSpinDaily()', true, '#26e07f');
     } else if (dy.needsDeposit) {
@@ -2592,10 +2588,13 @@ VIP.ui.openRewardsHub = function() {
     cards += _rwCard({ icon: '🎰', accent: '#26e07f', title: 'Ruleta Diaria', subtitle: 'Un giro gratis por día', body: body, cta: cta });
   }
 
-  // --- CASHBACK instantáneo ---
-  if (cb.enabled) {
+  // --- CASHBACK instantáneo (siempre visible; apagado = "muy pronto") ---
+  {
     let body = '', cta = '';
-    if (cb.unavailable) {
+    if (!cb.enabled) {
+      body = '<div style="font-size:13px;color:#9aa4b0;">Recuperá al instante un % de lo que perdés en el día. 🔒 Disponible muy pronto.</div>';
+      cta = _rwCta('🔒 Muy pronto', '', false, '#4dd0ff');
+    } else if (cb.unavailable) {
       body = '<div style="font-size:13px;color:#cfd6de;">No pudimos calcular tu pérdida de hoy. Probá en unos minutos.</div>';
     } else if (cb.reclamable > 0 && cb.reclamable >= (cb.minArs || 0)) {
       body = '<div style="text-align:center;padding:4px 0 2px;">' +
@@ -2611,8 +2610,18 @@ VIP.ui.openRewardsHub = function() {
     } else {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si hoy perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> al instante. Sin esperar al lunes.</div>';
     }
-    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: 'Recuperá el ' + (cb.pct || 0) + '% de lo que perdés hoy', body: body, cta: cta });
+    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés hoy') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
+
+  // --- ℹ️ Qué es el ROLLOVER (owner 2026-09-01: explicado acá adentro) ---
+  cards += '<div style="background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:14px 16px;">' +
+    '<div style="font-size:13px;font-weight:900;color:#fff;margin-bottom:6px;">ℹ️ ¿Qué es el ROLLOVER?</div>' +
+    '<div style="font-size:12px;color:#b7c0ca;line-height:1.55;">' +
+      'Varios premios y reembolsos se acreditan como <b style="color:#fff;">BONUS con rollover</b>: la plata entra YA a tu saldo y podés jugarla, ' +
+      'pero para <b style="color:#fff;">retirarla</b> primero tenés que apostarla la cantidad de veces que indica ' +
+      '(ej. <b style="color:#ffd700;">x2</b> = apostar 2 veces ese monto).<br>' +
+      '⚠️ El rollover se completa jugando <b style="color:#26e07f;">SLOTS y RULETA</b> — las apuestas en <b style="color:#ff8a80;">DEPORTES NO suman</b> para el rollover.' +
+    '</div></div>';
 
   if (!cards) cards = '<div style="color:#9aa4b0;text-align:center;padding:30px 10px;font-size:14px;">Por ahora no hay premios activos. ¡Volvé pronto! 🎁</div>';
 

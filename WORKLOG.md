@@ -45,6 +45,13 @@
   % / $ / sin premio con probabilidades en vivo) en la sección 🎰 Ruleta; card
   "📉 Cashback instantáneo" (activar, %, rollover, mínimo, tope) junto a la ruleta de
   bienvenida. POST solo admin general. **admin-sw → v47.**
+- **AJUSTES tras la prueba en Render (owner, misma sesión):** (1) el botón "🎁 PREMIOS"
+  se movió ADENTRO del widget de Cargas Automáticas (2ª fila, junto a "¿Cómo funciona?",
+  con el puntito rojo) — se eliminó el botón flotante; (2) el hub muestra SIEMPRE las 3
+  tarjetas: las features apagadas salen en gris "🔒 Disponible muy pronto" (antes
+  desaparecían y el hub se veía vacío); (3) recuadro fijo al pie del hub "ℹ️ ¿Qué es el
+  ROLLOVER?": bonus jugable ya, retirable tras apostar xN, y ⚠️ el rollover se completa
+  SOLO con SLOTS y RULETA — deportes NO suma. **SW → v142.**
 - **Validado:** `node --check` OK (server.js, ui.js, admin.js, User.js, CashbackClaim,
   DailyRouletteSpin, ambos SW); divs del panel balanceados. **Requiere deploy** (el
   owner lo va a probar primero en Render). AMBAS features vienen APAGADAS por default:
