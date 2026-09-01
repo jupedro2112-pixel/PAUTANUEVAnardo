@@ -2591,6 +2591,18 @@ VIP.ui.openRewardsHub = function() {
   // --- CASHBACK instantáneo (siempre visible; apagado = "muy pronto") ---
   {
     let body = '', cta = '';
+    // "En vivo" (#254): sello de frescura + refresco manual. El auto-refresh
+    // corre cada 60s mientras el hub está abierto (_rwStartPolling).
+    const _cbAgo = VIP.ui._rwCbAt ? Math.max(0, Math.round((Date.now() - VIP.ui._rwCbAt) / 1000)) : null;
+    const _cbLive = cb.enabled && !cb.unavailable
+      ? '<div style="display:flex;align-items:center;justify-content:space-between;margin:-2px 0 6px;">' +
+          '<span style="font-size:10.5px;color:#6f7a86;">' +
+            '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#26e07f;box-shadow:0 0 6px #26e07f;margin-right:4px;"></span>' +
+            'EN VIVO' + (_cbAgo != null ? ' · actualizado hace ' + (_cbAgo < 5 ? 'instantes' : _cbAgo + ' s') : '') + '</span>' +
+          '<button type="button" onclick="VIP.ui._rwPollCashback(true)" style="background:rgba(255,255,255,0.10);border:none;color:#cfd6de;' +
+            'border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;">🔄 Actualizar</button>' +
+        '</div>'
+      : '';
     if (!cb.enabled) {
       body = '<div style="font-size:13px;color:#9aa4b0;">Recuperá al instante un % de lo que perdés en el día. 🔒 Disponible muy pronto.</div>';
       cta = _rwCta('🔒 Muy pronto', '', false, '#4dd0ff');
@@ -2610,6 +2622,7 @@ VIP.ui.openRewardsHub = function() {
     } else {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si hoy perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> al instante. Sin esperar al lunes.</div>';
     }
+    body = _cbLive + body;
     cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés hoy') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
 
@@ -2643,11 +2656,54 @@ VIP.ui.openRewardsHub = function() {
       '<div style="display:flex;flex-direction:column;gap:14px;">' + cards + '</div>' +
     '</div>';
   document.body.appendChild(ov);
+  // Arrancar el polling solo si no está corriendo (el re-render del propio
+  // polling vuelve a pasar por acá y no debe reiniciar el timer ni re-pedir).
+  if (!VIP.ui._rwPollTimer) VIP.ui._rwStartPolling();
 };
 VIP.ui.closeRewardsHub = function(silent) {
   const ov = document.getElementById('rwHubOverlay');
   if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  VIP.ui._rwStopPolling();
   if (!silent) { try { VIP.ui._refreshRewards(); } catch (e) {} }
+};
+
+// ---- CASHBACK "EN VIVO" (#254): auto-refresh SOLO mientras el hub está
+// abierto y la pestaña visible. Cada 60s pide /api/cashback/status; el server
+// cachea el netwin 90s → como mucho UNA consulta real a la plataforma por
+// cliente cada minuto y medio (no come el rate limit de 60/min). ----
+VIP.ui._rwStartPolling = function() {
+  VIP.ui._rwStopPolling();
+  VIP.ui._rwPollCashback();
+  VIP.ui._rwPollTimer = setInterval(function() {
+    if (document.hidden) return;
+    if (!document.getElementById('rwHubOverlay')) { VIP.ui._rwStopPolling(); return; }
+    VIP.ui._rwPollCashback();
+  }, 60000);
+};
+VIP.ui._rwStopPolling = function() {
+  if (VIP.ui._rwPollTimer) { clearInterval(VIP.ui._rwPollTimer); VIP.ui._rwPollTimer = null; }
+};
+VIP.ui._rwPollCashback = function(manual) {
+  if (VIP.ui._rwPollBusy) return;
+  VIP.ui._rwPollBusy = true;
+  fetch(`${VIP.config.API_URL}/api/cashback/status`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    VIP.ui._rwPollBusy = false;
+    if (!d) return;
+    if (!VIP.ui._rwSummary) VIP.ui._rwSummary = {};
+    VIP.ui._rwSummary.cashback = d;
+    VIP.ui._rwCbAt = Date.now();
+    // Re-pintar el hub conservando el scroll (la lista es corta, no molesta).
+    const ov = document.getElementById('rwHubOverlay');
+    if (ov) {
+      const st = ov.scrollTop;
+      VIP.ui.openRewardsHub();
+      const ov2 = document.getElementById('rwHubOverlay');
+      if (ov2) ov2.scrollTop = st;
+    }
+    if (manual) VIP.ui.showToast('Actualizado ✔', 'success');
+  }).catch(function() { VIP.ui._rwPollBusy = false; });
 };
 
 // Girar la de BIENVENIDA desde el hub (cierra el hub, abre la rueda; al cerrar vuelve).

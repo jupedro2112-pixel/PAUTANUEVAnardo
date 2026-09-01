@@ -52,6 +52,14 @@
   desaparecían y el hub se veía vacío); (3) recuadro fijo al pie del hub "ℹ️ ¿Qué es el
   ROLLOVER?": bonus jugable ya, retirable tras apostar xN, y ⚠️ el rollover se completa
   SOLO con SLOTS y RULETA — deportes NO suma. **SW → v142.**
+- **AJUSTE 2 (owner): cashback EN VIVO.** Mientras el hub está abierto (y la pestaña
+  visible) se auto-refresca `/api/cashback/status` cada 60 s + botón "🔄 Actualizar" +
+  sello "EN VIVO · actualizado hace Xs". Sin saturar: el netwin se cachea 90 s en el
+  server (`GIROX_STATS_CACHE_MS`) → máx. UNA consulta real a la plataforma por cliente
+  cada 90 s, solo con el hub abierto. El timer se corta al cerrar el hub. Guard para
+  que el re-render del polling no reinicie el timer. **SW → v143.** Nota: la config de
+  la RULETA DIARIA está en la sección "🎰 Ruleta diaria" del panel (card verde arriba
+  del budget), no junto a la de bienvenida.
 - **Validado:** `node --check` OK (server.js, ui.js, admin.js, User.js, CashbackClaim,
   DailyRouletteSpin, ambos SW); divs del panel balanceados. **Requiere deploy** (el
   owner lo va a probar primero en Render). AMBAS features vienen APAGADAS por default:

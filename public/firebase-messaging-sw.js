@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v142'; // v142: PREMIOS dentro del widget de Cargas Automaticas, hub con las 3 tarjetas siempre + explicacion de rollover (solo slots/ruleta)
+const CACHE_VERSION = 'v143'; // v143: cashback EN VIVO (auto-refresh cada 60s con el hub abierto + boton actualizar + 'hace Xs')
+// v142: // v142: PREMIOS dentro del widget de Cargas Automaticas, hub con las 3 tarjetas siempre + explicacion de rollover (solo slots/ruleta)
 // v141: // v141: hub PREMIOS (boton flotante + overlay) con ruleta de bienvenida, RULETA DIARIA y CASHBACK instantaneo
 // v140: // v140: sin flash del login al recargar con sesion (splash 'Entrando al casino…' hasta que abre el casino)
 // v139: // v139: 'Cambiar de cuenta' en el widget, logout que cierra el casino y mata la sesion de 1girox, SSO fresco (logout previo) — fix chat/casino con usuarios distintos
