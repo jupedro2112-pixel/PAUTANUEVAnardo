@@ -11880,12 +11880,31 @@ async function _cashbackStateToday(userId, username, opts) {
   };
 }
 
-// Estado para el cliente (recuadro del hub).
+// Estado para el cliente (recuadro del hub). `?fresh=1` (botón 🔄 Actualizar)
+// fuerza una lectura SIN cache del netwin, con cooldown de 30s por usuario para
+// no comerse el rate limit de la Partner API si lo apretan como un timbre.
+const CASHBACK_FRESH_COOLDOWN_MS = 30 * 1000;
+const _cbkFreshAt = new Map(); // userId → ts del último fresh
+setInterval(() => { // poda simple para que el Map no crezca infinito
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [k, ts] of _cbkFreshAt) if (ts < cutoff) _cbkFreshAt.delete(k);
+}, 5 * 60 * 1000).unref();
 app.get('/api/cashback/status', authMiddleware, async (req, res) => {
   try {
     const cfg = await getInstantCashbackConfig();
     if (!cfg.enabled) return res.json({ enabled: false });
-    const st = await _cashbackStateToday(req.user.userId, req.user.username);
+    let fresh = false;
+    if (req.query && req.query.fresh === '1') {
+      const last = _cbkFreshAt.get(req.user.userId) || 0;
+      const waitMs = CASHBACK_FRESH_COOLDOWN_MS - (Date.now() - last);
+      if (waitMs > 0) {
+        const secs = Math.ceil(waitMs / 1000);
+        return res.status(429).json({ error: `Recién actualizaste. Esperá ${secs} segundos y probá de nuevo.`, retryInSec: secs });
+      }
+      _cbkFreshAt.set(req.user.userId, Date.now());
+      fresh = true;
+    }
+    const st = await _cashbackStateToday(req.user.userId, req.user.username, { fresh });
     if (st.error) return res.json({ enabled: true, unavailable: true });
     res.json(st);
   } catch (e) {

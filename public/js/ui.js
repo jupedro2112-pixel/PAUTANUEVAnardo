@@ -2686,24 +2686,35 @@ VIP.ui._rwStopPolling = function() {
 VIP.ui._rwPollCashback = function(manual) {
   if (VIP.ui._rwPollBusy) return;
   VIP.ui._rwPollBusy = true;
-  fetch(`${VIP.config.API_URL}/api/cashback/status`, {
+  // El botón 🔄 pide con fresh=1 → el server lee el netwin SIN cache (una vez
+  // cada 30s por usuario; si insiste antes, contesta 429 con cuántos segundos
+  // le faltan). El auto-refresh de 60s va por el cache normal.
+  const url = `${VIP.config.API_URL}/api/cashback/status` + (manual ? '?fresh=1' : '');
+  fetch(url, {
     headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
-  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
-    VIP.ui._rwPollBusy = false;
-    if (!d) return;
-    if (!VIP.ui._rwSummary) VIP.ui._rwSummary = {};
-    VIP.ui._rwSummary.cashback = d;
-    VIP.ui._rwCbAt = Date.now();
-    // Re-pintar el hub conservando el scroll (la lista es corta, no molesta).
-    const ov = document.getElementById('rwHubOverlay');
-    if (ov) {
-      const st = ov.scrollTop;
-      VIP.ui.openRewardsHub();
-      const ov2 = document.getElementById('rwHubOverlay');
-      if (ov2) ov2.scrollTop = st;
-    }
-    if (manual) VIP.ui.showToast('Actualizado ✔', 'success');
-  }).catch(function() { VIP.ui._rwPollBusy = false; });
+  }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+    .then(function(res) {
+      VIP.ui._rwPollBusy = false;
+      if (!res.ok) {
+        if (manual) VIP.ui.showToast((res.j && res.j.error) || 'Esperá unos segundos y probá de nuevo.', 'error');
+        return;
+      }
+      const d = res.j;
+      if (!d) return;
+      if (!VIP.ui._rwSummary) VIP.ui._rwSummary = {};
+      VIP.ui._rwSummary.cashback = d;
+      VIP.ui._rwCbAt = Date.now();
+      // Re-pintar el hub conservando el scroll (la lista es corta, no molesta).
+      const ov = document.getElementById('rwHubOverlay');
+      if (ov) {
+        const st = ov.scrollTop;
+        VIP.ui.openRewardsHub();
+        const ov2 = document.getElementById('rwHubOverlay');
+        if (ov2) ov2.scrollTop = st;
+      }
+      if (manual) VIP.ui.showToast('Actualizado ✔', 'success');
+    })
+    .catch(function() { VIP.ui._rwPollBusy = false; });
 };
 
 // Girar la de BIENVENIDA desde el hub (cierra el hub, abre la rueda; al cerrar vuelve).

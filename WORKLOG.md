@@ -60,6 +60,13 @@
   que el re-render del polling no reinicie el timer. **SW → v143.** Nota: la config de
   la RULETA DIARIA está en la sección "🎰 Ruleta diaria" del panel (card verde arriba
   del budget), no junto a la de bienvenida.
+- **AJUSTE 3 (owner): el botón "🔄 Actualizar" ahora actualiza DE VERDAD.** Antes
+  chocaba contra el mismo cache de 90 s y devolvía el número viejo (parecía roto).
+  Ahora manda `?fresh=1` → el server lee el netwin SIN cache, con **cooldown de 30 s
+  por usuario** (`CASHBACK_FRESH_COOLDOWN_MS`, Map con poda): si insiste antes,
+  responde 429 "Recién actualizaste. Esperá N segundos" y el widget lo muestra como
+  toast. El auto-refresh de 60 s sigue yendo por cache (no gasta rate limit).
+  **SW → v144.**
 - **Validado:** `node --check` OK (server.js, ui.js, admin.js, User.js, CashbackClaim,
   DailyRouletteSpin, ambos SW); divs del panel balanceados. **Requiere deploy** (el
   owner lo va a probar primero en Render). AMBAS features vienen APAGADAS por default:

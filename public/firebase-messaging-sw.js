@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v143'; // v143: cashback EN VIVO (auto-refresh cada 60s con el hub abierto + boton actualizar + 'hace Xs')
+const CACHE_VERSION = 'v144'; // v144: boton Actualizar del cashback fuerza lectura FRESCA (cooldown 30s por usuario con aviso de espera)
+// v143: // v143: cashback EN VIVO (auto-refresh cada 60s con el hub abierto + boton actualizar + 'hace Xs')
 // v142: // v142: PREMIOS dentro del widget de Cargas Automaticas, hub con las 3 tarjetas siempre + explicacion de rollover (solo slots/ruleta)
 // v141: // v141: hub PREMIOS (boton flotante + overlay) con ruleta de bienvenida, RULETA DIARIA y CASHBACK instantaneo
 // v140: // v140: sin flash del login al recargar con sesion (splash 'Entrando al casino…' hasta que abre el casino)
