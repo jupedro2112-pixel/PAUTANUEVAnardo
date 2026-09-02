@@ -89,6 +89,13 @@
 
 ## Sesión 2026-08-30
 
+### 256d. La Ruleta de Bienvenida sale del hub cuando ya no hay nada que hacer
+- **Pedido owner:** con el premio ya reclamado/aplicado, la tarjeta seguía apareciendo
+  ("Tu premio: 100% EXTRA · ya aplicado") y confundía. Ahora la tarjeta se muestra
+  SOLO si: puede girar, o tiene el % pendiente de usar (con el botón "Cargar y
+  usarlo"), o la feature está apagada y nunca giró ("muy pronto"). Usado/acreditado →
+  desaparece. **SW → v150.** Solo front.
+
 ### 256c. Guía de instalación PROPIA del hub (la vieja quedaba tapada)
 - **Bug:** "Instalar la app — ver cómo" llamaba a `installApp()` cuyo modal
   (`.ios-install-modal`) queda DEBAJO del overlay del casino → no se veía nada y el

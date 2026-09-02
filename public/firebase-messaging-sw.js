@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v149'; // v149: guia de instalacion propia del hub (pasos iPhone/Android + checks en vivo + derivar a soporte si no puede)
+const CACHE_VERSION = 'v150'; // v150: la Ruleta de Bienvenida desaparece del hub una vez reclamado/aplicado el premio
+// v149: // v149: guia de instalacion propia del hub (pasos iPhone/Android + checks en vivo + derivar a soporte si no puede)
 // v148: // v148: 'Reembolso en Vivo' (sin 'esperar al lunes') + guia de instalacion de app desde la tarjeta de la ruleta diaria
 // v147: // v147: cashback sobre la perdida de la SEMANA en curso (ayer tambien cuenta) + aviso de app en ruleta diaria
 // v146: // v146: recuadro 'TUS DATOS DE INGRESO' (usuario + clave con copiar) en el inicio del asistente

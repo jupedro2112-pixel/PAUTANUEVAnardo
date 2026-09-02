@@ -2590,26 +2590,28 @@ VIP.ui.openRewardsHub = function() {
   const w = d.welcome || {}, dy = d.daily || {}, cb = d.cashback || {};
   let cards = '';
 
-  // --- Ruleta de BIENVENIDA (siempre visible; apagada = "muy pronto") ---
+  // --- Ruleta de BIENVENIDA — solo mientras haya algo que hacer (owner
+  // 2026-09-02): con el giro disponible, o con el % pendiente de usar. Una vez
+  // RECLAMADO/aplicado el premio, la tarjeta desaparece del hub.
   {
     let body = '', cta = '';
+    const wPending = w.prize && w.prize.type === 'percent' && w.prize.status === 'pending';
     if (w.canSpin) {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">Tenés <b style="color:#ffd700;">1 giro GRATIS</b> de bienvenida. Se gira una sola vez. ¡Suerte!</div>';
       cta = _rwCta('🎡 GIRAR AHORA', "VIP.ui._rwSpinWelcome()", true);
-    } else if (w.prize) {
+    } else if (wPending) {
       const p = w.prize;
-      let st = p.type === 'cash'
-        ? '💰 Acreditado en tu saldo' + (p.rolloverX > 0 ? ' · rollover x' + p.rolloverX : '')
-        : (p.status === 'pending' ? '⏳ ' + _wrEsc(String(p.value)) + '% EXTRA pendiente — se suma en tu próxima carga' : '✅ Ya aplicado en una carga');
       body = '<div style="font-size:13px;color:#cfd6de;">Tu premio: <b style="color:#ffd700;font-size:16px;">' + _wrEsc(p.label || '') + '</b><br>' +
-        '<span style="font-size:12px;">' + st + '</span></div>';
-      if (p.type === 'percent' && p.status === 'pending') cta = _rwCta('💳 Cargar y usarlo', "VIP.ui.closeRewardsHub();VIP.ui.casinoBotGo('deposit')", true);
-    }
-    if (!body && !cta) {
+        '<span style="font-size:12px;">⏳ ' + _wrEsc(String(p.value)) + '% EXTRA pendiente — se suma en tu próxima carga</span></div>';
+      cta = _rwCta('💳 Cargar y usarlo', "VIP.ui.closeRewardsHub();VIP.ui.casinoBotGo('deposit')", true);
+    } else if (!w.prize && !w.enabled) {
       body = '<div style="font-size:13px;color:#9aa4b0;">Un giro gratis al crear tu cuenta. 🔒 Disponible muy pronto.</div>';
       cta = _rwCta('🔒 Muy pronto', '', false);
     }
-    cards += _rwCard({ icon: '🎡', accent: '#ffd700', title: 'Ruleta de Bienvenida', subtitle: 'Un giro único por cuenta', body: body, cta: cta });
+    // Premio ya usado/acreditado (o giró y no quedó nada pendiente) → sin tarjeta.
+    if (body || cta) {
+      cards += _rwCard({ icon: '🎡', accent: '#ffd700', title: 'Ruleta de Bienvenida', subtitle: 'Un giro único por cuenta', body: body, cta: cta });
+    }
   }
 
   // --- Ruleta DIARIA (siempre visible; apagada = "muy pronto") ---
