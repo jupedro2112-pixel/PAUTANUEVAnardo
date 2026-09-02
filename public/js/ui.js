@@ -1872,6 +1872,57 @@ VIP.ui._botRow = function(btnsHtml) {
   area.scrollTop = area.scrollHeight;
 };
 
+/** Recuadro "TUS DATOS DE INGRESO" del inicio del asistente (#255). Renderiza
+ *  al toque con lo que se sabe y completa la clave cuando responde el server
+ *  (cacheado por sesión). Copiar con un toque. */
+VIP.ui._renderCredsBox = function() {
+  const u = (VIP.state.currentUser && VIP.state.currentUser.username) || '';
+  if (!u) return;
+  const paint = function() {
+    const el = document.getElementById('credsBoxBody');
+    if (!el) return;
+    const pass = VIP.state.sessionPassword || VIP.ui._credsDefaultPass || null;
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">' +
+        '<span class="cwLbl" style="font-size:12px;">👤 Usuario:</span>' +
+        '<b style="font-size:15px;letter-spacing:0.3px;">' + _wrEsc(u) + '</b>' +
+        '<button type="button" class="cwSec" onclick="VIP.ui._copyCred(\'' + _wrEsc(u) + '\')" ' +
+          'style="border-radius:7px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;">📋 copiar</button>' +
+      '</div>' +
+      (pass
+        ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;">' +
+            '<span class="cwLbl" style="font-size:12px;">🔑 Clave:</span>' +
+            '<b style="font-size:15px;letter-spacing:0.3px;">' + _wrEsc(pass) + '</b>' +
+            '<button type="button" class="cwSec" onclick="VIP.ui._copyCred(\'' + _wrEsc(pass) + '\')" ' +
+              'style="border-radius:7px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;">📋 copiar</button>' +
+          '</div>' +
+          '<div class="cwLbl" style="font-size:10.5px;margin-top:5px;">Guardalos para volver a entrar cuando quieras. 🙌</div>'
+        : '<div style="margin-top:4px;"><span class="cwLbl" style="font-size:12px;">🔑 Clave:</span> ' +
+            '<span style="font-size:12px;">la que elegiste al crear tu cuenta. ¿La olvidaste? Tocá <b>🎧 Soporte</b> y te la cambiamos al toque.</span></div>');
+  };
+  VIP.ui._botMsg('<div><b style="font-size:13px;">🪪 TUS DATOS DE INGRESO</b><div id="credsBoxBody"></div></div>');
+  paint();
+  // Completar la clave default desde el server (una vez por sesión).
+  if (VIP.ui._credsFetched) return;
+  VIP.ui._credsFetched = true;
+  fetch(`${VIP.config.API_URL}/api/users/my-credentials`, {
+    headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+  }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    if (d && d.defaultPassword) { VIP.ui._credsDefaultPass = d.defaultPassword; paint(); }
+  }).catch(function() {});
+};
+VIP.ui._copyCred = function(txt) {
+  const done = function() { VIP.ui.showToast('Copiado ✔', 'success'); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function() {}); return; }
+  } catch (e) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
+  } catch (e) {}
+};
+
 /** Estados del asistente. */
 VIP.ui.casinoBotGo = function(state) {
   const area = document.getElementById('casinoBotArea');
@@ -1889,6 +1940,11 @@ VIP.ui.casinoBotGo = function(state) {
     // el saludo. Volver de cualquier flujo = las opciones siguen a la vista.
     VIP.ui._botMsg('👋 ¡Hola! Soy el <b>asistente de cargas automáticas</b>.<br>' +
       'Elegí una opción acá arriba: <b>depositar</b>, <b>retirar</b> o hablar con <b>soporte</b>.');
+    // "TUS DATOS DE INGRESO" (#255): usuario + clave bien visibles — muchos
+    // clientes preguntan cuál es su usuario. La clave solo se muestra si se
+    // conoce (la escribió en esta sesión, o sigue siendo la default asd123
+    // confirmada por el server contra el hash).
+    VIP.ui._renderCredsBox();
     // (owner 2026-09-02: se SACÓ del asistente el "Estás como X" + botón
     // "Cambiar de cuenta / Salir" de #252 — no quiere que el cliente pueda
     // cerrar sesión desde el widget. VIP.ui.casinoLogout queda definido por si

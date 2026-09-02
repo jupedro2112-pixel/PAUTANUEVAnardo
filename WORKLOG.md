@@ -89,6 +89,17 @@
 
 ## Sesión 2026-08-30
 
+### 255. Recuadro "🪪 TUS DATOS DE INGRESO" en el asistente (usuario + clave)
+- **Pedido owner:** muchos clientes preguntan cuál es su usuario. Al abrir el asistente,
+  primer recuadro: usuario (siempre) + clave, ambos con botón "📋 copiar".
+- **De dónde sale la clave (sin guardar texto plano):** (1) la escrita en ESTA sesión
+  (`VIP.state.sessionPassword`, solo memoria); (2) si no, nuevo endpoint
+  `GET /api/users/my-credentials` que hace `bcrypt.compare('asd123', hash)` y devuelve
+  `defaultPassword:'asd123'` SOLO si la clave sigue siendo la default de landing/
+  publicistas — exacto, sin migraciones ni falsos positivos. (3) Si la cambió: pista
+  "la que elegiste; ¿la olvidaste? Tocá Soporte y te la cambiamos".
+- Cache por sesión (1 request); solo rol `user`. **SW → v146.** Back necesita redeploy.
+
 ### 253b. Sacado el "Cambiar de cuenta / Salir" del widget (owner 2026-09-02)
 - El owner pidió que el cliente NO pueda cerrar sesión ni cambiar de cuenta desde el
   asistente → se quitó el mensaje "👤 Estás como X" y el botón "🔄 Cambiar de cuenta /

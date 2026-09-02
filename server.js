@@ -4721,6 +4721,28 @@ app.get('/api/admin/me', async (req, res) => {
 });
 
 // Obtener información del usuario actual
+// CREDENCIALES para el widget (#255, owner 2026-09-02): muchos clientes (sobre
+// todo los de landing, clave fija asd123) preguntan "¿cuál es mi usuario?". Se
+// devuelve el username y, SOLO si la clave actual sigue siendo la default
+// asd123 (bcrypt.compare contra el hash — no se guarda nada en texto plano),
+// también la clave. Si la cambió, defaultPassword viene null y el widget
+// muestra la pista ("la que elegiste; Soporte te la puede cambiar").
+app.get('/api/users/my-credentials', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'user') return res.status(403).json({ error: 'Solo clientes' });
+    const user = await User.findOne({ id: req.user.userId }).select('username password').lean();
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    let defaultPassword = null;
+    try {
+      if (user.password && await bcrypt.compare('asd123', user.password)) defaultPassword = 'asd123';
+    } catch (_) { /* hash raro/legacy → sin clave */ }
+    res.json({ username: user.username, defaultPassword });
+  } catch (e) {
+    logger.warn(`[my-credentials] falló: ${e.message}`);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 app.get('/api/users/me', authMiddleware, async (req, res) => {
   try {
     // Buscar por 'id' primero, luego por '_id' como fallback
