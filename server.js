@@ -11945,7 +11945,31 @@ async function _cashbackStateToday(userId, username, opts) {
   const liveRes = await girox.getPlayerStats(username, anchor, dayTo, 'cashback-vida', { fresh });
   if (!liveRes.success) return { enabled: true, error: liveRes.error || 'stats_failed' };
   const lifeNet = carry + (Number(liveRes.casinoNetwin) || 0);
-  const lossLife = Math.max(0, lifeNet);
+
+  // ⚠️ BONOS REGALADOS FUERA DE LA BASE (#257e, caso real gxelvira445): cargó
+  // $20k, la ruleta le regaló $20k (100%), perdió $40k → cobraba 5% de $40k =
+  // 10% de su plata real. El netwin de la plataforma no distingue plata propia
+  // de bonos → se descuentan de la base TODOS los bonos regalados desde la
+  // época 1girox: `bonus` de los depósitos (ruleta %, 1ª carga, bonus del
+  // agente) + Transactions type 'bonus' (ruleta cash, fueguito, bono manual),
+  // EXCEPTO los propios reclamos de cashback (esos ya se descuentan por
+  // `paidLife` — y si el cliente los pierde, netean solos: pierde $C de bonus
+  // regalado → lifeNet+C y gifted+C se cancelan → cero reembolso del regalo).
+  const _giftFrom = new Date(Math.max(
+    uDoc.createdAt ? new Date(uDoc.createdAt).getTime() : CASHBACK_STATS_EPOCH.getTime(),
+    CASHBACK_STATS_EPOCH.getTime()
+  ));
+  const giftAgg = await Transaction.aggregate([
+    { $match: { userId: String(userId), type: { $in: ['deposit', 'bonus'] }, timestamp: { $gte: _giftFrom } } },
+    { $group: { _id: null,
+        depBonus: { $sum: { $cond: [{ $eq: ['$type', 'deposit'] }, { $ifNull: ['$bonus', 0] }, 0] } },
+        bonusCredits: { $sum: { $cond: [
+          { $and: [{ $eq: ['$type', 'bonus'] }, { $ne: ['$metadata.source', 'instant_cashback'] }] },
+          '$amount', 0] } } } }
+  ]);
+  const giftedLife = ((giftAgg && giftAgg[0] && giftAgg[0].depBonus) || 0) +
+                     ((giftAgg && giftAgg[0] && giftAgg[0].bonusCredits) || 0);
+  const lossLife = Math.max(0, lifeNet - giftedLife);
 
   // Cobrado de POR VIDA (pendiente + acreditado — los pendientes cierran la
   // carrera de doble click) + lo de HOY (para el tope diario).
@@ -12072,7 +12096,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
       timestamp: new Date()
     }).catch(() => {});
     await _emitAdminOnlyChatNote(userId, username,
-      `📉 REEMBOLSO acumulativo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de su pérdida neta acumulada de $${Number(st.netwinToday).toLocaleString('es-AR')}, menos lo ya cobrado)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — el contador le arranca de 0. Este monto se descuenta de su reembolso semanal/mensual.`);
+      `📉 REEMBOLSO acumulativo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de su pérdida neta acumulada de $${Number(st.netwinToday).toLocaleString('es-AR')} — bonos regalados EXCLUIDOS de la base — menos lo ya cobrado)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — el contador le arranca de 0. Este monto se descuenta de su reembolso semanal/mensual.`);
     logger.info(`[cashback] ${username} → $${amount} acreditado (netwin hoy $${st.netwinToday}, seq ${claimDoc.seq})`);
     res.json({ success: true, amount, rolloverX: st.rolloverX, pct: st.pct, transactionId: txId });
   } catch (e) {

@@ -89,6 +89,23 @@
 
 ## Sesión 2026-08-30
 
+### 257e. Bonos regalados FUERA de la base del reembolso (caso real en producción)
+- **Caso (gxelvira445, EB con build viejo #256):** cargó $20.000, la ruleta de
+  bienvenida le regaló $20.000 (100%), perdió los $40.000 → cobró cashback 5% de
+  $40.000 = $2.000 = **10% de su plata real**. El netwin de la plataforma no
+  distingue plata propia de bonos.
+- **Fix:** `base = max(0, netoDePorVida − bonosRegalados)`. Bonos regalados = suma
+  lifetime (desde época 1girox / alta) de `Transaction.bonus` en depósitos (ruleta %,
+  bono 1ª carga, bonus del agente) + `Transaction type 'bonus'` (ruleta cash,
+  fueguito, bono manual), EXCLUYENDO los reclamos de cashback (van por `paidLife`;
+  si el cliente pierde el bonus regalado, lifeNet y gifted suben igual y se cancelan
+  → cero reembolso del regalo). Con el fix, elvira: base = 40.000 − 20.000 = 20.000
+  → $1.000 (5% real de su carga).
+- **Deploy:** EB corre el build viejo (nota "en la semana") → armar ZIP nuevo con
+  #256f→257e (cooldown 24h, acumulativo de por vida, tarjeta simple, información,
+  bonos excluidos). Los $2.000 ya pagados a elvira quedan cubiertos: el modelo
+  descuenta lo cobrado, su próximo reclamable arranca negativo hasta compensar.
+
 ### 257d. Sección "ℹ️ INFORMACIÓN — Reembolso y Rollover" dentro de PREMIOS
 - Reemplaza el recuadro suelto de rollover por una sección completa al pie del hub,
   con los VALORES REALES de la config del panel (%, mínimo, tope diario, rollover x):
