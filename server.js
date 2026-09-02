@@ -11874,23 +11874,21 @@ async function _cashbackPaidBetween(userId, fromDate, toDate) {
   ]);
   return (agg && agg[0] && agg[0].total) || 0;
 }
-// Lunes 00:00 ART de la semana en curso (para el tope semanal del cashback).
-function _cashbackWeekStartART() {
-  const k = _rouletteDateKeyART(); // YYYY-MM-DD de HOY en ART (hoisted, mismo archivo)
-  const noon = new Date(`${k}T12:00:00-03:00`);
-  const dow = noon.getUTCDay(); // 0=dom … 6=sáb (a las 15:00 UTC el día ART coincide)
-  const daysSinceMonday = (dow + 6) % 7;
-  return new Date(new Date(`${k}T00:00:00-03:00`).getTime() - daysSinceMonday * 86400000);
-}
-// Estado del cashback de HOY para un usuario. fresh=true → netwin sin cache
-// (para la RECLAMACIÓN).
-// ⚠️ ANTI-REGALO (owner 2026-09-01): la base es el MENOR de tres netos, cada uno
-// con sus cobros descontados — (a) pérdida de HOY, (b) pérdida de la SEMANA en
-// curso (lunes→hoy), (c) pérdida de los ÚLTIMOS 30 DÍAS. Así el que venía
-// GANANDO (hoy, esta semana o este mes) y devuelve esas ganancias no cobra
-// cashback por plata que nunca fue suya: gana $900k el sábado y pierde $1M el
-// lunes → el neto de 30 días es $100k y el cashback sale de ahí, no del millón.
-// Los reclamos PENDIENTES también descuentan (cierra la carrera de doble click).
+// Estado del REEMBOLSO ACUMULATIVO (owner 2026-09-03, #257). fresh=true →
+// netwin sin cache (para la RECLAMACIÓN).
+//
+// MODELO: ventana rodante de 30 días. La pérdida NETA de la ventana (apostado −
+// ganado; las ganancias netean solas → jamás se reembolsa plata que ganó) genera
+// `pct%`, y TODO lo ya cobrado en la ventana se descuenta:
+//     reclamable = pct% × pérdidaNeta(30d) − cobrado(30d)
+// Propiedades (validadas con el owner):
+//   · se ACUMULA hasta que reclame (no vence a medianoche ni el lunes);
+//   · al reclamar queda EXACTO en 0 (pct×pérdida − cobrado = 0) y lo que pierda
+//     de ahí en más suma de nuevo desde cero;
+//   · el que venía ganando no cobra: la ganancia previa resta de la base;
+//   · el bonus perdido casi no genera reembolso nuevo (5% del 5%, converge);
+//   · tope de reclamos POR DÍA (maxDailyArs) intacto.
+// Una sola consulta de stats por evaluación.
 async function _cashbackStateToday(userId, username, opts) {
   const cfg = await getInstantCashbackConfig();
   if (!cfg.enabled || !(cfg.pct > 0)) return { enabled: false };
@@ -11898,54 +11896,33 @@ async function _cashbackStateToday(userId, username, opts) {
   const today = periodRanges.getTodayRangeArgentinaEpoch();
   const dayFrom = new Date(today.fromEpoch * 1000);
   const dayTo = new Date(today.toEpoch * 1000);
-  const weekFrom = _cashbackWeekStartART();
   const monthFrom = new Date(dayFrom.getTime() - 29 * 86400000);
 
-  // AJUSTE owner 2026-09-02: la ventana corta es la SEMANA EN CURSO, no el día
-  // (el que perdió AYER puede reclamar HOY; el corte diario dejaba "vencer" la
-  // pérdida a medianoche). Lo no reclamado en la semana pasa al reembolso del
-  // lunes, que ya descuenta estos adelantos. El tope de 30 días sigue cerrando
-  // el caso "venía ganando y devuelve ganancias". El TOPE DIARIO de reclamos
-  // (maxDailyArs) sigue siendo por día calendario.
-  const [weekRes, monthRes] = await Promise.all([
-    girox.getPlayerStats(username, weekFrom, dayTo, 'cashback-semana', { fresh }),
-    girox.getPlayerStats(username, monthFrom, dayTo, 'cashback-30d', { fresh })
-  ]);
-  if (!weekRes.success || !monthRes.success) {
-    return { enabled: true, error: (weekRes.error || monthRes.error) || 'stats_failed' };
+  const monthRes = await girox.getPlayerStats(username, monthFrom, dayTo, 'cashback-30d', { fresh });
+  if (!monthRes.success) {
+    return { enabled: true, error: monthRes.error || 'stats_failed' };
   }
-  const lossWeek = Math.max(0, Number(weekRes.casinoNetwin) || 0);
   const lossMonth = Math.max(0, Number(monthRes.casinoNetwin) || 0);
 
-  // Cobrado (pendiente + acreditado) en cada ventana.
-  const _paid = async (from) => {
-    const agg = await CashbackClaim.aggregate([
-      { $match: { userId: String(userId), status: { $in: ['pending', 'credited'] }, createdAt: { $gte: from, $lte: new Date() } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    return (agg && agg[0] && agg[0].total) || 0;
-  };
-  const paidTodayAgg = await CashbackClaim.aggregate([
-    { $match: { userId: String(userId), dateKey: today.dateStr, status: { $in: ['pending', 'credited'] } } },
-    { $group: { _id: null, total: { $sum: '$amount' } } }
+  // Cobrado (pendiente + acreditado — los pendientes cierran la carrera de
+  // doble click) en la ventana y en el día (para el tope diario).
+  const paidAgg = await CashbackClaim.aggregate([
+    { $match: { userId: String(userId), status: { $in: ['pending', 'credited'] }, createdAt: { $gte: monthFrom } } },
+    { $group: { _id: null, total: { $sum: '$amount' },
+                today: { $sum: { $cond: [{ $eq: ['$dateKey', today.dateStr] }, '$amount', 0] } } } }
   ]);
-  const paidToday = (paidTodayAgg && paidTodayAgg[0] && paidTodayAgg[0].total) || 0;
-  const paidWeek = await _paid(weekFrom);
-  const paidMonth = await _paid(monthFrom);
+  const paidMonth = (paidAgg && paidAgg[0] && paidAgg[0].total) || 0;
+  const paidToday = (paidAgg && paidAgg[0] && paidAgg[0].today) || 0;
 
-  // Disponible por ventana: pct × (pérdida − cobrado) − cobrado. La base final
-  // es el MENOR de las dos (nunca se paga por pérdida que netea ganancias).
-  const availWeek = (cfg.pct / 100) * (lossWeek - paidWeek) - paidWeek;
-  const availMonth = (cfg.pct / 100) * (lossMonth - paidMonth) - paidMonth;
-  let reclamable = Math.floor(Math.max(0, Math.min(availWeek, availMonth)));
+  let reclamable = Math.floor(Math.max(0, (cfg.pct / 100) * lossMonth - paidMonth));
   if (cfg.maxDailyArs > 0) reclamable = Math.min(reclamable, Math.max(0, cfg.maxDailyArs - paidToday));
   return {
     enabled: true, pct: cfg.pct, rolloverX: cfg.rolloverX, minArs: cfg.minArs,
     maxDailyArs: cfg.maxDailyArs, dateKey: today.dateStr,
-    // netwinToday se mantiene por compatibilidad del widget: ahora es la
-    // pérdida de la SEMANA en curso (lo que el cliente puede recuperar).
-    netwinToday: lossWeek, netwinWeek: lossWeek, netwinMonth: lossMonth,
-    paidToday, reclamable,
+    // netwinToday: nombre legacy del widget — es la pérdida NETA acumulada de
+    // la ventana, ya con lo cobrado fuera del cálculo del reclamable.
+    netwinToday: lossMonth, netwinMonth: lossMonth,
+    paidMonth, paidToday, reclamable,
     belowMin: reclamable > 0 && reclamable < cfg.minArs
   };
 }
@@ -11996,7 +11973,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     if (!(amount > 0) || amount < st.minArs) {
       return res.status(400).json({
         error: st.netwinToday <= 0
-          ? 'No tenés pérdida esta semana: el reembolso aplica solo sobre lo que perdiste jugando.'
+          ? 'No tenés pérdida acumulada: el reembolso aplica solo sobre lo que perdiste jugando.'
           : `Tu reembolso disponible es $${Number(amount).toLocaleString('es-AR')} y el mínimo para reclamarlo es $${Number(st.minArs).toLocaleString('es-AR')}. Seguí jugando y probá más tarde.`,
         reclamable: amount, minArs: st.minArs
       });
@@ -12036,7 +12013,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     let credit;
     try {
       credit = await girox.depositToUser(username, amount,
-        `Reembolso ${st.pct}% de tu pérdida de la semana`, ref,
+        `Reembolso ${st.pct}% de tu pérdida acumulada`, ref,
         st.rolloverX > 0 ? { multiplier: st.rolloverX } : null);
     } catch (e) { credit = { success: false, error: e.message }; }
     if (!credit || !credit.success) {
@@ -12048,12 +12025,12 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     await CashbackClaim.updateOne({ id: claimDoc.id }, { $set: { status: 'credited', transactionId: txId } }).catch(() => {});
     await Transaction.create({
       id: uuidv4(), type: 'bonus', userId, username, amount,
-      description: `Cashback instantáneo ${st.pct}% (pérdida de la semana)`,
+      description: `Cashback instantáneo ${st.pct}% (pérdida acumulada 30d)`,
       transactionId: txId, metadata: { source: 'instant_cashback', dateKey: st.dateKey, seq: claimDoc.seq },
       timestamp: new Date()
     }).catch(() => {});
     await _emitAdminOnlyChatNote(userId, username,
-      `📉 CASHBACK instantáneo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de una pérdida de $${Number(st.netwinToday).toLocaleString('es-AR')} en la semana)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — no hay que hacer nada. Este monto se descuenta de su reembolso semanal/mensual.`);
+      `📉 REEMBOLSO acumulativo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de una pérdida neta acumulada de $${Number(st.netwinToday).toLocaleString('es-AR')} en 30 días, menos lo ya cobrado)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — el contador le arranca de 0. Este monto se descuenta de su reembolso semanal/mensual.`);
     logger.info(`[cashback] ${username} → $${amount} acreditado (netwin hoy $${st.netwinToday}, seq ${claimDoc.seq})`);
     res.json({ success: true, amount, rolloverX: st.rolloverX, pct: st.pct, transactionId: txId });
   } catch (e) {

@@ -89,6 +89,21 @@
 
 ## Sesión 2026-08-30
 
+### 257. Reembolso en Vivo ACUMULATIVO (se junta hasta reclamar; al reclamar arranca de 0)
+- **Pedido owner:** que el reembolso se acumule "todo el mes", que pueda reclamarlo
+  cuando quiera o seguir juntando, y que al reclamar el contador arranque de 0 — y que
+  sea reembolso de lo que CARGÓ, nunca de lo que ganó antes.
+- **Modelo (validado):** ventana rodante de 30 días, `reclamable = pct% ×
+  pérdidaNeta(30d) − cobrado(30d)` (pendientes incluidos). Propiedades: se acumula sin
+  vencer (chau cortes de medianoche/semana); al reclamar queda EXACTO en 0 y lo nuevo
+  suma desde ahí; las ganancias previas netean (el que ganó no cobra); bonus perdido ≈
+  5% del 5% (converge, despreciable); `maxDailyArs` sigue siendo tope POR DÍA; el
+  reembolso semanal/mensual sigue descontando lo adelantado. Se eliminó la ventana
+  semanal y `_cashbackWeekStartART` → UNA consulta de stats por evaluación (antes 2).
+- **Textos:** tarjeta "acumulativo… lo reclamás cuando quieras y arranca de 0"; nota
+  interna "REEMBOLSO acumulativo… el contador le arranca de 0". **SW → v153.**
+  Back necesita redeploy.
+
 ### 256f. Rueda legible + giro cada 24 h desde el último tiro (no a las 00:00)
 - **Etiquetas de las ruedas** (bienvenida y diaria): ancho 27%S y **radio escalonado**
   (pares 0.74·rr, impares 1.24·rr) → las vecinas ya no se pegan ("$1.000 GRATIS$500

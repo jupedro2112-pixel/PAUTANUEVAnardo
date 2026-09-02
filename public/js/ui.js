@@ -2670,20 +2670,20 @@ VIP.ui.openRewardsHub = function() {
       body = '<div style="font-size:13px;color:#cfd6de;">No pudimos calcular tu pérdida de hoy. Probá en unos minutos.</div>';
     } else if (cb.reclamable > 0 && cb.reclamable >= (cb.minArs || 0)) {
       body = '<div style="text-align:center;padding:4px 0 2px;">' +
-        '<div style="font-size:11.5px;color:#9aa4b0;">Perdiste esta semana ' + _rwFmt(cb.netwinToday) + ' → recuperá</div>' +
+        '<div style="font-size:11.5px;color:#9aa4b0;">Tu reembolso acumulado listo para reclamar</div>' +
         '<div style="font-size:30px;font-weight:900;color:#4dd0ff;text-shadow:0 2px 8px rgba(77,208,255,0.35);margin:2px 0;">' + _rwFmt(cb.reclamable) + '</div>' +
-        '<div style="font-size:11px;color:#9aa4b0;">Se acredita YA como bonus' + (cb.rolloverX > 0 ? ' · para retirarlo apostalo x' + cb.rolloverX : '') + '</div></div>';
+        '<div style="font-size:11px;color:#9aa4b0;">Se acredita YA como bonus' + (cb.rolloverX > 0 ? ' · para retirarlo apostalo x' + cb.rolloverX : '') + '<br>Podés reclamarlo ahora o seguir juntando. Al reclamar, el contador arranca de 0.</div></div>';
       cta = _rwCta('📉 RECLAMAR ' + _rwFmt(cb.reclamable), 'VIP.ui.casinoCashbackClaim()', true, '#4dd0ff');
     } else if (cb.netwinToday > 0) {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Perdiste esta semana ' + _rwFmt(cb.netwinToday) +
-        (cb.paidToday > 0 ? ' y ya recuperaste ' + _rwFmt(cb.paidToday) + '.' : '.') +
-        '<br><span style="font-size:12px;color:#9aa4b0;">Reclamás el ' + (cb.pct || 0) + '% de tu pérdida (mínimo ' + _rwFmt(cb.minArs) + ').</span></div>';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Tu reembolso se va <b>acumulando</b> a medida que jugás' +
+        (cb.paidMonth > 0 ? ' (ya recuperaste ' + _rwFmt(cb.paidMonth) + ')' : '') + '.' +
+        '<br><span style="font-size:12px;color:#9aa4b0;">Reclamás el ' + (cb.pct || 0) + '% de tu pérdida neta (mínimo ' + _rwFmt(cb.minArs) + '). Al reclamar, arranca de 0.</span></div>';
       cta = _rwCta('Todavía no llegás al mínimo', '', false);
     } else {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> de tu pérdida de la semana, al instante.</div>';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si perdés jugando, acá se te va <b>acumulando</b> el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> de tu pérdida. Lo reclamás cuando quieras — y arranca a juntar de nuevo.</div>';
     }
     body = _cbLive + body;
-    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Reembolso en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés en la semana') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
+    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Reembolso en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés — acumulativo') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
 
   // --- ℹ️ Qué es el ROLLOVER (owner 2026-09-01: explicado acá adentro) ---
