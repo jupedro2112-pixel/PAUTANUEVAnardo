@@ -11688,6 +11688,23 @@ app.post('/api/admin/daily-roulette', authMiddleware, adminMiddleware, async (re
 });
 
 // CASHBACK INSTANTÁNEO — config (GET admin; POST solo admin general). #254.
+// DIAGNÓSTICO (#257f): respuesta CRUDA del /stats de la Partner API para un
+// jugador — para verificar si la plataforma discrimina bono vs plata real en
+// las estadísticas (campos que hoy no parseamos). Solo admin general.
+app.get('/api/admin/girox/stats-raw', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin general' });
+    const username = String((req.query && req.query.username) || '').trim();
+    if (!username) return res.status(400).json({ error: 'Falta ?username=' });
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+    const to = new Date();
+    const from = new Date(Date.now() - days * 86400000);
+    const r = await girox.getPlayerStats(username, from, to, 'stats-raw', { fresh: true, includeRaw: true });
+    if (!r.success) return res.status(502).json({ error: r.error || 'stats falló' });
+    res.json({ parsed: { netwin: r.netwin, casinoNetwin: r.casinoNetwin, wagered: r.wagered, payout: r.payout }, raw: r.raw });
+  } catch (e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
 app.get('/api/admin/instant-cashback', authMiddleware, adminMiddleware, async (req, res) => {
   try { res.json(await getInstantCashbackConfig()); }
   catch (e) { res.status(500).json({ error: 'Error del servidor' }); }

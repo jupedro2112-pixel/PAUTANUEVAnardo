@@ -89,6 +89,16 @@
 
 ## Sesión 2026-08-30
 
+### 257f. Diagnóstico: ¿el /stats de la Partner API discrimina bono vs plata real?
+- El owner afirma que la Partner API diferencia el bono de la carga normal. Al
+  ACREDITAR sí (bonus_amount/multiplier); en el /stats nuestro parser solo lee
+  wagered/payout/netwin/bets_count — si la API trae un desglose de bono, lo estamos
+  descartando. Nuevo `GET /api/admin/girox/stats-raw?username=X&days=30` (solo admin
+  general): devuelve `parsed` + `raw` (respuesta completa de la API, fresh). Si el
+  raw trae el desglose → cambiar la base del cashback a ese campo y retirar la resta
+  local de bonos (#257e); si no, la resta local queda como la solución definitiva.
+  `getPlayerStats` acepta `opts.includeRaw` (no se cachea el raw).
+
 ### 257e. Bonos regalados FUERA de la base del reembolso (caso real en producción)
 - **Caso (gxelvira445, EB con build viejo #256):** cargó $20.000, la ruleta de
   bienvenida le regaló $20.000 (100%), perdió los $40.000 → cobró cashback 5% de

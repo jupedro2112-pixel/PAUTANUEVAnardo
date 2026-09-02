@@ -1162,6 +1162,10 @@ async function getPlayerStats(username, fromDate, toDate, label = 'stats', opts 
     betsCount: totals.betsCount,
     categories: { casino, sports }
   };
+  // Diagnóstico (#257f): la respuesta CRUDA completa, para ver si la API trae
+  // campos que no parseamos (p.ej. desglose de bono vs plata real). No se
+  // cachea junto al out normal para no engordar el cache.
+  if (opts && opts.includeRaw) return { ...out, raw: d };
   _statsCache.set(_statsKey, { data: out, ts: Date.now() }); // solo se cachea el éxito
   return out;
 }
