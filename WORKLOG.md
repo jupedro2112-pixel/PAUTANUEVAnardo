@@ -89,6 +89,22 @@
 
 ## Sesión 2026-08-30
 
+### 257b. Reembolso acumulativo DE POR VIDA (sin ventana — cierra la brecha del fin de mes)
+- **Pedido owner:** con 30 días rodantes quedaba la brecha "gana 10M al borde de la
+  ventana y, cuando la ganancia sale de los 30 días, sus pérdidas nuevas generan
+  reembolso". Ahora la memoria es **infinita**: `reclamable = pct% × max(0, netoDePorVida)
+  − cobradoDePorVida`. Una ganancia grande resta PARA SIEMPRE.
+- **Cómo se salva el tope de 92 días de la API:** acumulador PLEGADO —
+  `User.cashbackCarryNet` (neto viejo consolidado, puede ser negativo) +
+  `User.cashbackAnchorAt` (desde dónde se consulta en vivo; init = alta del usuario o
+  época 1girox 2026-07-31). Cuando el tramo vivo supera 85 días, se consolida un chunk
+  de 60 días dentro del carry y el ancla avanza (update atómico condicionado al ancla
+  previa → dos instancias no pliegan dos veces). Hoy (plataforma con ~1 mes de vida)
+  el plegado no corre; empieza a actuar solo alrededor de fin de octubre.
+- Cobrado y tope diario: suma de TODOS los claims (pendientes incluidos) + tope por
+  día intacto. Al reclamar sigue quedando exacto en 0. **SW → v154.** Back necesita
+  redeploy. Campos nuevos en User (default null/0, sin migración).
+
 ### 257. Reembolso en Vivo ACUMULATIVO (se junta hasta reclamar; al reclamar arranca de 0)
 - **Pedido owner:** que el reembolso se acumule "todo el mes", que pueda reclamarlo
   cuando quiera o seguir juntando, y que al reclamar el contador arranque de 0 — y que

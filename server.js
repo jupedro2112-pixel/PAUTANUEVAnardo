@@ -11889,40 +11889,82 @@ async function _cashbackPaidBetween(userId, fromDate, toDate) {
 //   · el bonus perdido casi no genera reembolso nuevo (5% del 5%, converge);
 //   · tope de reclamos POR DÍA (maxDailyArs) intacto.
 // Una sola consulta de stats por evaluación.
+// Plataforma 1girox: no hay stats anteriores a la migración.
+const CASHBACK_STATS_EPOCH = new Date('2026-07-31T00:00:00-03:00');
+const CASHBACK_FOLD_AFTER_DAYS = 85; // < 92 (tope de la API) con margen
+const CASHBACK_FOLD_CHUNK_DAYS = 60;
 async function _cashbackStateToday(userId, username, opts) {
   const cfg = await getInstantCashbackConfig();
   if (!cfg.enabled || !(cfg.pct > 0)) return { enabled: false };
   const fresh = !!(opts && opts.fresh);
   const today = periodRanges.getTodayRangeArgentinaEpoch();
-  const dayFrom = new Date(today.fromEpoch * 1000);
   const dayTo = new Date(today.toEpoch * 1000);
-  const monthFrom = new Date(dayFrom.getTime() - 29 * 86400000);
 
-  const monthRes = await girox.getPlayerStats(username, monthFrom, dayTo, 'cashback-30d', { fresh });
-  if (!monthRes.success) {
-    return { enabled: true, error: monthRes.error || 'stats_failed' };
+  // ANCLA de por vida: desde el alta del usuario (o la migración a 1girox).
+  const uDoc = await User.findOne({ id: userId }).select('createdAt cashbackAnchorAt cashbackCarryNet').lean();
+  if (!uDoc) return { enabled: true, error: 'user_not_found' };
+  let anchor = uDoc.cashbackAnchorAt ? new Date(uDoc.cashbackAnchorAt) : null;
+  if (!anchor) {
+    anchor = new Date(Math.max(
+      uDoc.createdAt ? new Date(uDoc.createdAt).getTime() : CASHBACK_STATS_EPOCH.getTime(),
+      CASHBACK_STATS_EPOCH.getTime()
+    ));
   }
-  const lossMonth = Math.max(0, Number(monthRes.casinoNetwin) || 0);
+  let carry = Number(uDoc.cashbackCarryNet) || 0;
 
-  // Cobrado (pendiente + acreditado — los pendientes cierran la carrera de
-  // doble click) en la ventana y en el día (para el tope diario).
+  // PLEGADO: si el tramo vivo supera el tope de la API, se consolida el tramo
+  // más viejo dentro de carryNet y el ancla avanza. Atómico por condición sobre
+  // el ancla previa → dos instancias no pliegan el mismo tramo dos veces.
+  let guard = 0;
+  while ((dayTo.getTime() - anchor.getTime()) / 86400000 > CASHBACK_FOLD_AFTER_DAYS && guard < 4) {
+    guard++;
+    const mid = new Date(anchor.getTime() + CASHBACK_FOLD_CHUNK_DAYS * 86400000);
+    const foldTo = new Date(mid.getTime() - 86400000); // hasta el día ANTERIOR a mid (sin solaparse)
+    const foldRes = await girox.getPlayerStats(username, anchor, foldTo, 'cashback-fold');
+    if (!foldRes.success) return { enabled: true, error: foldRes.error || 'stats_failed' };
+    const chunkNet = Number(foldRes.casinoNetwin) || 0;
+    const upd = await User.updateOne(
+      { id: userId, cashbackAnchorAt: uDoc.cashbackAnchorAt || null },
+      { $inc: { cashbackCarryNet: chunkNet }, $set: { cashbackAnchorAt: mid } }
+    );
+    if (!upd.modifiedCount) { // otra instancia plegó primero → releer y seguir
+      const re = await User.findOne({ id: userId }).select('cashbackAnchorAt cashbackCarryNet').lean();
+      anchor = re && re.cashbackAnchorAt ? new Date(re.cashbackAnchorAt) : mid;
+      carry = (re && Number(re.cashbackCarryNet)) || carry;
+      uDoc.cashbackAnchorAt = re && re.cashbackAnchorAt;
+      continue;
+    }
+    carry += chunkNet;
+    anchor = mid;
+    uDoc.cashbackAnchorAt = mid;
+    logger.info(`[cashback] fold ${username}: +$${chunkNet} al carry (total $${carry}), ancla → ${mid.toISOString().slice(0, 10)}`);
+  }
+
+  // Tramo VIVO (ancla → hoy) + carry = neto de POR VIDA. Las ganancias (netwin
+  // negativo) restan para siempre: jamás se reembolsa plata que ganó.
+  const liveRes = await girox.getPlayerStats(username, anchor, dayTo, 'cashback-vida', { fresh });
+  if (!liveRes.success) return { enabled: true, error: liveRes.error || 'stats_failed' };
+  const lifeNet = carry + (Number(liveRes.casinoNetwin) || 0);
+  const lossLife = Math.max(0, lifeNet);
+
+  // Cobrado de POR VIDA (pendiente + acreditado — los pendientes cierran la
+  // carrera de doble click) + lo de HOY (para el tope diario).
   const paidAgg = await CashbackClaim.aggregate([
-    { $match: { userId: String(userId), status: { $in: ['pending', 'credited'] }, createdAt: { $gte: monthFrom } } },
+    { $match: { userId: String(userId), status: { $in: ['pending', 'credited'] } } },
     { $group: { _id: null, total: { $sum: '$amount' },
                 today: { $sum: { $cond: [{ $eq: ['$dateKey', today.dateStr] }, '$amount', 0] } } } }
   ]);
-  const paidMonth = (paidAgg && paidAgg[0] && paidAgg[0].total) || 0;
+  const paidLife = (paidAgg && paidAgg[0] && paidAgg[0].total) || 0;
   const paidToday = (paidAgg && paidAgg[0] && paidAgg[0].today) || 0;
 
-  let reclamable = Math.floor(Math.max(0, (cfg.pct / 100) * lossMonth - paidMonth));
+  let reclamable = Math.floor(Math.max(0, (cfg.pct / 100) * lossLife - paidLife));
   if (cfg.maxDailyArs > 0) reclamable = Math.min(reclamable, Math.max(0, cfg.maxDailyArs - paidToday));
   return {
     enabled: true, pct: cfg.pct, rolloverX: cfg.rolloverX, minArs: cfg.minArs,
     maxDailyArs: cfg.maxDailyArs, dateKey: today.dateStr,
-    // netwinToday: nombre legacy del widget — es la pérdida NETA acumulada de
-    // la ventana, ya con lo cobrado fuera del cálculo del reclamable.
-    netwinToday: lossMonth, netwinMonth: lossMonth,
-    paidMonth, paidToday, reclamable,
+    // netwinToday: nombre legacy del widget — pérdida NETA acumulada de por vida.
+    netwinToday: lossLife, netwinLife: lossLife,
+    paidMonth: paidLife, paidToday, reclamable,
     belowMin: reclamable > 0 && reclamable < cfg.minArs
   };
 }
@@ -12025,12 +12067,12 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     await CashbackClaim.updateOne({ id: claimDoc.id }, { $set: { status: 'credited', transactionId: txId } }).catch(() => {});
     await Transaction.create({
       id: uuidv4(), type: 'bonus', userId, username, amount,
-      description: `Cashback instantáneo ${st.pct}% (pérdida acumulada 30d)`,
+      description: `Cashback instantáneo ${st.pct}% (pérdida neta acumulada)`,
       transactionId: txId, metadata: { source: 'instant_cashback', dateKey: st.dateKey, seq: claimDoc.seq },
       timestamp: new Date()
     }).catch(() => {});
     await _emitAdminOnlyChatNote(userId, username,
-      `📉 REEMBOLSO acumulativo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de una pérdida neta acumulada de $${Number(st.netwinToday).toLocaleString('es-AR')} en 30 días, menos lo ya cobrado)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — el contador le arranca de 0. Este monto se descuenta de su reembolso semanal/mensual.`);
+      `📉 REEMBOLSO acumulativo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de su pérdida neta acumulada de $${Number(st.netwinToday).toLocaleString('es-AR')}, menos lo ya cobrado)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — el contador le arranca de 0. Este monto se descuenta de su reembolso semanal/mensual.`);
     logger.info(`[cashback] ${username} → $${amount} acreditado (netwin hoy $${st.netwinToday}, seq ${claimDoc.seq})`);
     res.json({ success: true, amount, rolloverX: st.rolloverX, pct: st.pct, transactionId: txId });
   } catch (e) {

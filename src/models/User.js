@@ -617,6 +617,14 @@ const userSchema = new mongoose.Schema({
   // (que es una sola vez por cuenta). Un premio % nuevo PISA al pendiente anterior.
   dailyRoulettePendingPct: { type: Number, default: 0 },
   dailyRoulettePendingLabel: { type: String, default: null },
+
+  // REEMBOLSO ACUMULATIVO DE POR VIDA (#257b): la API de stats admite máx. 92
+  // días por consulta, así que el neto viejo se "pliega" acá y sólo se consulta
+  // en vivo desde el ancla. netoDePorVida = cashbackCarryNet + netwin(ancla→hoy).
+  // carryNet puede ser NEGATIVO (venía ganando) — así la ganancia vieja resta
+  // para siempre y nunca se reembolsa plata que el jugador ganó.
+  cashbackAnchorAt: { type: Date, default: null },
+  cashbackCarryNet: { type: Number, default: 0 },
   dailyRouletteWonAt: { type: Date, default: null },
 
   // Plan de notificaciones elegido en la encuesta inicial (app instalada).
