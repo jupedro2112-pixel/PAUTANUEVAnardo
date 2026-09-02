@@ -89,6 +89,20 @@
 
 ## Sesión 2026-08-30
 
+### 256c. Guía de instalación PROPIA del hub (la vieja quedaba tapada)
+- **Bug:** "Instalar la app — ver cómo" llamaba a `installApp()` cuyo modal
+  (`.ios-install-modal`) queda DEBAJO del overlay del casino → no se veía nada y el
+  cliente volvía al widget.
+- **Fix:** overlay propio `#rwInstallOverlay` (z-index por encima del hub) con:
+  pasos numerados según plataforma (iPhone: Safari→Compartir→Agregar a inicio;
+  Android: menú ⋮→Instalar app; + aceptar notificaciones), **checks en vivo**
+  "App instalada" (display-mode standalone) y "Notificaciones aceptadas"
+  (Notification.permission) con ✅ LISTO / ❌ FALTA, botón "📲 INSTALAR AHORA" si hay
+  `deferredPrompt` (Android), "🔄 Ya lo hice — verificar" (re-chequea), y
+  **"🎧 No puedo — hablar con soporte"**: abre el chat de soporte y manda SOLO el
+  mensaje "No puedo instalar la app…" (texto del cliente → el chat pasa a Abiertos y
+  lo agarra un agente). **SW → v149.** Solo front.
+
 ### 256b. Textos del hub (owner): "Reembolso en Vivo" + guía de instalación
 - La tarjeta pasa de "Cashback en Vivo" a **"Reembolso en Vivo"** (la palabra que los
   clientes conocen) en título, confirm y mensajes del server; se sacó el "Sin esperar

@@ -2634,10 +2634,9 @@ VIP.ui.openRewardsHub = function() {
       cta = _rwCta('⏰ Volvé mañana por otro giro', '', false);
     } else if (dy.needsApp) {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">📲 El giro diario se activa con la <b>app instalada y las notificaciones aceptadas</b>.</div>';
-      // Guía existente por plataforma (VIP.ui.installApp: prompt nativo en
-      // Android o instrucciones paso a paso + notificaciones). Se cierra el hub
-      // antes para que el modal de la guía quede a la vista.
-      cta = _rwCta('📲 Instalar la app — ver cómo', 'VIP.ui.closeRewardsHub(true);VIP.ui.installApp()', true, '#26e07f');
+      // Guía PROPIA del hub (#256c): la vieja (installApp) dibujaba su cartel
+      // DEBAJO del overlay del casino y no se veía nada.
+      cta = _rwCta('📲 Instalar la app — ver cómo', 'VIP.ui._rwShowInstallGuide()', true, '#26e07f');
     } else {
       body = '<div style="font-size:13px;color:#cfd6de;">La ruleta diaria no está disponible para tu cuenta todavía.</div>';
     }
@@ -2897,6 +2896,118 @@ VIP.ui.casinoDailySpin = function() {
       if (btn) { btn.disabled = false; btn.textContent = '🎰 GIRAR'; }
       VIP.ui.showToast('Error de conexión. Probá de nuevo.', 'error');
     });
+};
+
+// ---- GUÍA DE INSTALACIÓN de la app (#256c) — overlay PROPIO por encima del
+// hub y del casino, con pasos según plataforma y checks en vivo (✅/❌) de
+// "app instalada" y "notificaciones aceptadas". Si no puede: deriva a soporte
+// mandando el mensaje solo (texto del cliente → el chat pasa a Abiertos). ----
+VIP.ui._rwShowInstallGuide = function() {
+  VIP.ui._rwCloseInstallGuide();
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const installed = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  let notifOk = false;
+  try { notifOk = typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) {}
+  const chk = function(ok, label) {
+    return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:11px;margin-bottom:6px;' +
+      'background:' + (ok ? 'rgba(38,224,127,0.12)' : 'rgba(229,57,53,0.10)') + ';border:1px solid ' + (ok ? '#26e07f66' : '#e5393566') + ';">' +
+      '<span style="font-size:17px;">' + (ok ? '✅' : '❌') + '</span>' +
+      '<span style="font-size:13px;color:#fff;font-weight:700;">' + label + '</span>' +
+      '<span style="margin-left:auto;font-size:11px;color:' + (ok ? '#26e07f' : '#ff8a80') + ';font-weight:800;">' + (ok ? 'LISTO' : 'FALTA') + '</span></div>';
+  };
+  const step = function(n, html) {
+    return '<div style="display:flex;gap:10px;margin-bottom:9px;align-items:flex-start;">' +
+      '<span style="flex:none;width:22px;height:22px;border-radius:50%;background:#26e07f;color:#00301a;font-size:12px;font-weight:900;' +
+      'display:flex;align-items:center;justify-content:center;">' + n + '</span>' +
+      '<span style="font-size:13px;color:#cfd6de;line-height:1.45;">' + html + '</span></div>';
+  };
+  let steps;
+  if (isIOS) {
+    steps =
+      step(1, 'Abrí esta página en <b>Safari</b> y tocá el botón <b>Compartir</b> (el cuadradito con la flecha ⬆️, abajo al medio).') +
+      step(2, 'Bajá en la lista y tocá <b>"Agregar a inicio"</b> (Add to Home Screen) → <b>Agregar</b>.') +
+      step(3, 'Cerrá Safari y abrí la app desde el <b>ícono nuevo</b> en tu pantalla de inicio.') +
+      step(4, 'Cuando la app te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
+  } else {
+    steps =
+      step(1, 'Tocá el <b>menú ⋮</b> de Chrome (arriba a la derecha).') +
+      step(2, 'Tocá <b>"Instalar app"</b> o <b>"Agregar a la pantalla principal"</b> → <b>Instalar</b>.') +
+      step(3, 'Abrí la app desde el <b>ícono nuevo</b> en tu pantalla de inicio.') +
+      step(4, 'Cuando te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
+  }
+  const nativeBtn = (!isIOS && window.deferredPrompt)
+    ? '<button type="button" onclick="VIP.ui._rwNativeInstall()" style="width:100%;margin-bottom:8px;border:none;cursor:pointer;' +
+      'background:linear-gradient(135deg,#26e07f,#0f9d58);color:#00301a;border-radius:13px;padding:14px;font-size:16px;font-weight:900;">📲 INSTALAR AHORA (1 toque)</button>'
+    : '';
+  const ov = document.createElement('div');
+  ov.id = 'rwInstallOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483100;display:flex;flex-direction:column;align-items:center;' +
+    'background:radial-gradient(120% 90% at 50% 0%,#12241a 0%,#0a120d 55%,#070a08 100%);overflow:auto;' +
+    'padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;';
+  ov.innerHTML =
+    '<button type="button" onclick="VIP.ui._rwCloseInstallGuide(true)" aria-label="Volver" ' +
+      'style="position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:38px;height:38px;border-radius:50%;' +
+      'border:none;background:rgba(255,255,255,.12);color:#fff;font-size:19px;font-weight:900;cursor:pointer;">✕</button>' +
+    '<div style="width:100%;max-width:420px;">' +
+      '<div style="text-align:center;margin:6px 0 14px;">' +
+        '<div style="font-size:32px;line-height:1;">📲</div>' +
+        '<div style="font-size:20px;font-weight:900;color:#fff;margin-top:4px;">Instalá la app' + (isIOS ? ' (iPhone)' : ' (Android)') + '</div>' +
+        '<div style="font-size:12px;color:#9aa4b0;margin-top:2px;">Con la app instalada girás la ruleta GRATIS todos los días</div>' +
+      '</div>' +
+      chk(installed, 'App instalada') +
+      chk(notifOk, 'Notificaciones aceptadas') +
+      (installed ? '' : '<div style="font-size:11px;color:#9aa4b0;margin:2px 0 10px;">Si ya la instalaste, abrí esta pantalla DESDE la app (el ícono nuevo) para que quede en verde.</div>') +
+      '<div style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:14px 14px 6px;margin:8px 0 12px;">' + steps + '</div>' +
+      nativeBtn +
+      '<button type="button" onclick="VIP.ui._rwShowInstallGuide()" style="width:100%;margin-bottom:8px;border:none;cursor:pointer;' +
+        'background:linear-gradient(135deg,#ffd700,#ff9800);color:#231a00;border-radius:13px;padding:13px;font-size:15px;font-weight:900;">🔄 Ya lo hice — verificar</button>' +
+      '<button type="button" onclick="VIP.ui._rwSupportCantInstall()" style="width:100%;border:none;cursor:pointer;' +
+        'background:rgba(255,255,255,0.10);color:#fff;border-radius:13px;padding:13px;font-size:14px;font-weight:800;">🎧 No puedo — hablar con soporte</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  if (installed && notifOk) {
+    try { VIP.ui.showToast('✅ ¡Listo! App instalada y notificaciones activas.', 'success'); } catch (e) {}
+    try { VIP.ui._refreshRewards(); } catch (e) {}
+  }
+};
+VIP.ui._rwCloseInstallGuide = function(backToHub) {
+  const ov = document.getElementById('rwInstallOverlay');
+  if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  if (backToHub) { try { VIP.ui.openRewardsHub(); } catch (e) {} }
+};
+VIP.ui._rwNativeInstall = async function() {
+  try {
+    if (!window.deferredPrompt) { VIP.ui._rwShowInstallGuide(); return; }
+    window.deferredPrompt.prompt();
+    const r = await window.deferredPrompt.userChoice;
+    window.deferredPrompt = null;
+    if (r && r.outcome === 'accepted') VIP.ui.showToast('✅ Instalando… abrila desde el ícono nuevo', 'success');
+    VIP.ui._rwShowInstallGuide(); // re-chequear estados
+  } catch (e) {}
+};
+// "No puedo": cierra los overlays, abre SOPORTE y manda el mensaje SOLO —
+// al ser un texto del cliente, el chat pasa a Abiertos y lo agarra un agente.
+VIP.ui._rwSupportCantInstall = function() {
+  VIP.ui._rwCloseInstallGuide();
+  VIP.ui.closeRewardsHub(true);
+  try { if (!VIP.ui._casinoChatPh && VIP.ui.openCasinoChat) VIP.ui.openCasinoChat(); } catch (e) {}
+  try { VIP.ui.casinoBotSupport(); } catch (e) {}
+  const content = '📲 Hola! No puedo instalar la app / activar las notificaciones para la ruleta diaria. ¿Me ayudan?';
+  const sendHttp = function() {
+    fetch(`${VIP.config.API_URL}/api/messages/send`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content, type: 'text' })
+    }).catch(function() {});
+  };
+  setTimeout(function() {
+    try {
+      if (VIP.state.socket && VIP.state.socket.connected && VIP.state.socketAuthed) {
+        VIP.state.socket.emit('send_message', { content: content, type: 'text' });
+      } else { sendHttp(); }
+    } catch (e) { sendHttp(); }
+  }, 600);
 };
 
 // ---- CASHBACK: reclamo desde el hub ----
