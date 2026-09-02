@@ -1889,17 +1889,11 @@ VIP.ui.casinoBotGo = function(state) {
     // el saludo. Volver de cualquier flujo = las opciones siguen a la vista.
     VIP.ui._botMsg('👋 ¡Hola! Soy el <b>asistente de cargas automáticas</b>.<br>' +
       'Elegí una opción acá arriba: <b>depositar</b>, <b>retirar</b> o hablar con <b>soporte</b>.');
-    // Identidad SIEMPRE visible + salida limpia (#252): así el cliente sabe con
-    // qué usuario está chateando y puede cambiar de cuenta SIN hacerlo adentro
-    // de 1girox (que dejaba chat y casino con usuarios distintos).
-    try {
-      const _u = (VIP.state.currentUser && VIP.state.currentUser.username) || '';
-      if (_u) {
-        VIP.ui._botMsg('<span style="font-size:12px;opacity:.85;">👤 Estás como <b>' + _wrEsc(_u) + '</b>. ' +
-          '¿Es otra tu cuenta? Cerrá sesión acá y entrá con la correcta (no cambies de usuario dentro del casino).</span>');
-        VIP.ui._botRow(VIP.ui._botBtn('🔄 Cambiar de cuenta / Salir', 'VIP.ui.casinoLogout()', false));
-      }
-    } catch (e) {}
+    // (owner 2026-09-02: se SACÓ del asistente el "Estás como X" + botón
+    // "Cambiar de cuenta / Salir" de #252 — no quiere que el cliente pueda
+    // cerrar sesión desde el widget. VIP.ui.casinoLogout queda definido por si
+    // se reactiva; el resto del fix #252 —logout que limpia el casino, SSO
+    // fresco, teardown del access-link— sigue vigente.)
     // Las ruletas y el cashback viven en el hub "🎁 PREMIOS" (#254) — ya no se
     // ofrecen en el hilo del chat (pedido owner: recuadro propio, no en el chat).
     return;

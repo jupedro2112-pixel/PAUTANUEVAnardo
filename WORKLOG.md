@@ -89,6 +89,14 @@
 
 ## Sesión 2026-08-30
 
+### 253b. Sacado el "Cambiar de cuenta / Salir" del widget (owner 2026-09-02)
+- El owner pidió que el cliente NO pueda cerrar sesión ni cambiar de cuenta desde el
+  asistente → se quitó el mensaje "👤 Estás como X" y el botón "🔄 Cambiar de cuenta /
+  Salir" del inicio (agregados en #252). `VIP.ui.casinoLogout` queda definido (sin UI)
+  por si se reactiva. El RESTO de #252 sigue vigente: el logout de la PWA limpia el
+  casino, el SSO carga "fresco" (logout de 1girox previo si hay `GIROX_PLAY_LOGOUT_URL`)
+  y el canje del access-link cierra la sesión anterior. **SW → v145.**
+
 ### 253. Sin "flash" del login al recargar con sesión (splash oscuro hasta que abre el casino)
 - **Video del owner (bug.mp4, DevTools 320px "Fast 4G"):** cada recarga mostraba medio
   segundo la pantalla violeta de login aunque el token fuera válido, y después negro
