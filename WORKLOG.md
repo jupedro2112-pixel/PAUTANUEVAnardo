@@ -89,6 +89,18 @@
 
 ## Sesión 2026-08-30
 
+### 257c. Tarjeta "Tu Reembolso" simple (owner: un solo reembolso, del momento)
+- Presentación sin jerga: título **"💸 Tu Reembolso"**, subtítulo "El 5% de lo que
+  perdés vuelve a tu saldo", y SIEMPRE el monto grande ("TU REEMBOLSO DISPONIBLE
+  $X"), aunque sea $0 ("se va juntando solo a medida que jugás"). Con monto ≥ mínimo:
+  "Tocá RECLAMAR y entra YA a tu saldo. O seguí juntando — no se vence" + botón
+  "💸 RECLAMAR $X AHORA". Confirm y toast igual de directos. Nada de "netwin",
+  "ventanas", "semanal/mensual" ni "contador" en la cara del cliente.
+- Nota: para el cliente hay UN solo reembolso (esta tarjeta). Los endpoints del
+  reembolso semanal/mensual viejos siguen en el back (su UI está dormida bajo el
+  casino y ya descuentan lo adelantado) — si el owner quiere apagarlos formalmente,
+  es un flag aparte. **SW → v155.** Solo front.
+
 ### 257b. Reembolso acumulativo DE POR VIDA (sin ventana — cierra la brecha del fin de mes)
 - **Pedido owner:** con 30 días rodantes quedaba la brecha "gana 10M al borde de la
   ventana y, cuando la ganancia sale de los 30 días, sus pérdidas nuevas generan

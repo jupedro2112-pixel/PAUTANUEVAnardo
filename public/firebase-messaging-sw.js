@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v154'; // v154: reembolso acumulativo DE POR VIDA (sin ventana de 30 dias — las ganancias restan para siempre)
+const CACHE_VERSION = 'v155'; // v155: tarjeta 'Tu Reembolso' simple — monto grande siempre visible, un boton, sin jerga
+// v154: // v154: reembolso acumulativo DE POR VIDA (sin ventana de 30 dias — las ganancias restan para siempre)
 // v153: // v153: reembolso ACUMULATIVO (30 dias, se junta hasta reclamar, al reclamar arranca de 0)
 // v152: // v152: etiquetas de las ruedas escalonadas (no se pegan) + ruleta diaria con cooldown de 24h desde el ultimo giro y countdown
 // v151: // v151: guia de instalacion con TUS DATOS PARA ENTRAR EN LA APP (usuario+clave con copiar) y paso 'entra con tus datos'
