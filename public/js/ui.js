@@ -2465,7 +2465,7 @@ VIP.ui._renderRoulette = function() {
   const segs = VIP.ui._wrSegments || [];
   const n = Math.max(1, segs.length);
   const S = Math.max(240, Math.min(Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.46)), 360));
-  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.36);
+  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.27);
   const fs = S >= 320 ? 16 : (S >= 280 ? 14 : 12);
   const colors = ['#128c4a', '#0f7a3d', '#1aa356', '#0c6234'];
   let stops = '';
@@ -2477,7 +2477,10 @@ VIP.ui._renderRoulette = function() {
   for (let i = 0; i < n; i++) {
     const ang = (360 / n) * i + (360 / n) / 2;
     const rad = ang * Math.PI / 180;
-    const x = R + rr * Math.sin(rad), y = R - rr * Math.cos(rad);
+    // Radio ESCALONADO (owner 2026-09-03): las etiquetas vecinas alternan
+    // distancia al centro para no pegarse entre sí ("$1.000 GRATIS$500 GRATIS").
+    const ri = rr * (i % 2 === 0 ? 0.74 : 1.24);
+    const x = R + ri * Math.sin(rad), y = R - ri * Math.cos(rad);
     labels += '<div class="wrLbl" style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;' +
       'transform:translate(-50%,-50%);width:' + lw + 'px;text-align:center;font-size:' + fs + 'px;line-height:1.15;font-weight:900;' +
       'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' +
@@ -2632,8 +2635,8 @@ VIP.ui.openRewardsHub = function() {
         : tp.type === 'cash' && tp.prizeARS > 0 ? ('Hoy ganaste <b style="color:#26e07f;">' + _rwFmt(tp.prizeARS) + '</b> — acreditado 💰')
         : 'Hoy no hubo suerte 😅';
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">' + st + '<br>' +
-        '<span style="font-size:12px;color:#9aa4b0;">⏰ Próximo giro en <b>' + _rwCountdown(dy.nextResetAt) + '</b></span></div>';
-      cta = _rwCta('⏰ Volvé mañana por otro giro', '', false);
+        '<span style="font-size:12px;color:#9aa4b0;">⏰ Próximo giro en <b>' + _rwCountdown(dy.nextResetAt) + '</b> (24 h desde tu último giro)</span></div>';
+      cta = _rwCta('⏰ Próximo giro en ' + _rwCountdown(dy.nextResetAt), '', false);
     } else if (dy.needsApp) {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">📲 El giro diario se activa con la <b>app instalada y las notificaciones aceptadas</b>.</div>';
       // Guía PROPIA del hub (#256c): la vieja (installApp) dibujaba su cartel
@@ -2794,7 +2797,7 @@ VIP.ui._renderDailyRoulette = function() {
   const segs = VIP.ui._drSegments || [];
   const n = Math.max(1, segs.length);
   const S = Math.max(240, Math.min(Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.46)), 360));
-  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.36);
+  const R = S / 2, rr = S * 0.29, lw = Math.round(S * 0.27);
   const fs = S >= 320 ? (n > 5 ? 13 : 16) : 12;
   const colors = ['#0e7a5c', '#0b5d47', '#12996f', '#0a4d3b'];
   let stops = '';
@@ -2806,7 +2809,10 @@ VIP.ui._renderDailyRoulette = function() {
   for (let i = 0; i < n; i++) {
     const ang = (360 / n) * i + (360 / n) / 2;
     const rad = ang * Math.PI / 180;
-    const x = R + rr * Math.sin(rad), y = R - rr * Math.cos(rad);
+    // Radio ESCALONADO (owner 2026-09-03): las etiquetas vecinas alternan
+    // distancia al centro para no pegarse entre sí ("$1.000 GRATIS$500 GRATIS").
+    const ri = rr * (i % 2 === 0 ? 0.74 : 1.24);
+    const x = R + ri * Math.sin(rad), y = R - ri * Math.cos(rad);
     labels += '<div class="wrLbl" style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;' +
       'transform:translate(-50%,-50%);width:' + lw + 'px;text-align:center;font-size:' + fs + 'px;line-height:1.15;font-weight:900;' +
       'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);transition:transform 4.2s cubic-bezier(.17,.67,.2,1);">' +
@@ -2876,7 +2882,7 @@ VIP.ui.casinoDailySpin = function() {
           detalle = 'Se suma automático en tu <b>PRÓXIMA CARGA</b>. 💪';
         } else {
           titulo = '😅 Hoy no hubo suerte';
-          detalle = 'Mañana tenés <b>otro giro gratis</b>. ¡Volvé a intentar!';
+          detalle = '⏰ Tu próximo giro gratis es en <b>24 horas</b>. ¡Volvé a intentar!';
         }
         const rEl = document.getElementById('wrResult');
         if (rEl) {

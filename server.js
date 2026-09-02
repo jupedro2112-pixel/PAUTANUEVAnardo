@@ -12103,16 +12103,16 @@ app.get('/api/rewards/summary', authMiddleware, async (req, res) => {
         const dep = await _dailyRouletteDepositsOk(userId, username, dCfg.requireDeposits);
         if (!dep.ok) { dailyEligible = false; needsDeposit = true; }
       }
-      const dateKey = _rouletteDateKeyART();
-      const spin = dCfg.enabled ? await DailyRouletteSpin.findOne({ userId, dateKey }).lean() : null;
+      const cdS = dCfg.enabled ? await _dailyRouletteCooldown(userId) : { canSpin: false, nextSpinAt: null, lastSpin: null };
+      const spin = (dCfg.enabled && !cdS.canSpin) ? cdS.lastSpin : null;
       out.daily = {
         enabled: dCfg.enabled,
         eligible: dailyEligible,
         needsDeposit,
         needsApp,
-        canSpin: dailyEligible && !spin,
-        alreadySpun: !!spin,
-        nextResetAt: _dailyRouletteNextResetISO(),
+        canSpin: dailyEligible && cdS.canSpin,
+        alreadySpun: dCfg.enabled && !cdS.canSpin,
+        nextResetAt: cdS.nextSpinAt,
         segments: dCfg.prizes.map(p => ({ label: p.label })),
         todayPrize: spin ? { label: spin.prizeLabel, type: spin.prizeType || (spin.prizeARS > 0 ? 'cash' : 'none'), prizeARS: spin.prizeARS, prizePct: spin.prizePct || 0, status: spin.status } : null,
         pendingPct: (u && u.dailyRoulettePendingPct) || 0,
@@ -17972,7 +17972,16 @@ async function _dailyRouletteDepositsOk(userId, username, minDeposits) {
     return { ok: true, count: null }; // fail-open (no castigar por un error de DB)
   }
 }
-// Próximo giro: medianoche ART.
+// COOLDOWN de 24h desde el ÚLTIMO giro (owner 2026-09-03: no a las 00:00).
+// Devuelve { canSpin, nextSpinAt(ISO|null), lastSpin(doc|null) }.
+const DAILY_ROULETTE_COOLDOWN_MS = 24 * 3600 * 1000;
+async function _dailyRouletteCooldown(userId) {
+  const last = await DailyRouletteSpin.findOne({ userId }).sort({ spunAt: -1 }).lean();
+  if (!last) return { canSpin: true, nextSpinAt: null, lastSpin: null };
+  const nextMs = new Date(last.spunAt).getTime() + DAILY_ROULETTE_COOLDOWN_MS;
+  return { canSpin: Date.now() >= nextMs, nextSpinAt: new Date(nextMs).toISOString(), lastSpin: last };
+}
+// Próximo giro: medianoche ART. (Legacy; el gate real es el cooldown de 24h.)
 function _dailyRouletteNextResetISO() {
   const k = _rouletteDateKeyART();
   const next = new Date(new Date(`${k}T00:00:00-03:00`).getTime() + 24 * 3600 * 1000);
@@ -18063,7 +18072,8 @@ app.get('/api/roulette/status', authMiddleware, async (req, res) => {
     }
     const dep = await _dailyRouletteDepositsOk(userId, username, cfg.requireDeposits);
     const eligible = cfg.enabled && appOk && dep.ok;
-    const spin = await DailyRouletteSpin.findOne({ userId, dateKey }).lean();
+    const cd = await _dailyRouletteCooldown(userId);
+    const spin = cd.canSpin ? null : cd.lastSpin;
     const uPend = await User.findOne({ id: userId }).select('dailyRoulettePendingPct dailyRoulettePendingLabel').lean();
     res.json({
       success: true,
@@ -18073,11 +18083,11 @@ app.get('/api/roulette/status', authMiddleware, async (req, res) => {
       needsDeposit: appOk && !dep.ok,
       minDeposits: cfg.requireDeposits,
       dateKey,
-      nextResetAt: _dailyRouletteNextResetISO(),
+      nextResetAt: cd.canSpin ? null : cd.nextSpinAt,
       segments: cfg.prizes.map(p => ({ label: p.label })),
       pendingPct: (uPend && uPend.dailyRoulettePendingPct) || 0,
       pendingLabel: (uPend && uPend.dailyRoulettePendingLabel) || null,
-      alreadySpun: !!spin,
+      alreadySpun: !cd.canSpin,
       spin: spin ? {
         prizeARS: spin.prizeARS,
         prizeLabel: spin.prizeLabel,
@@ -18390,11 +18400,17 @@ app.post('/api/roulette/spin', authMiddleware, async (req, res) => {
       });
     }
 
-    // Pre-check: ya giró hoy? (el unique index igual cubre el race)
-    const already = await DailyRouletteSpin.findOne({ userId, dateKey }).lean();
-    if (already) {
+    // Pre-check: COOLDOWN de 24h desde el último giro (owner 2026-09-03 — antes
+    // era "una vez por día calendario"). El unique index (userId, dateKey) queda
+    // como red anti-race dentro del mismo día.
+    const _cd = await _dailyRouletteCooldown(userId);
+    if (!_cd.canSpin) {
+      const _ms = new Date(_cd.nextSpinAt).getTime() - Date.now();
+      const _h = Math.floor(_ms / 3600000), _m = Math.max(1, Math.ceil((_ms % 3600000) / 60000));
+      const already = _cd.lastSpin;
       return res.status(409).json({
-        error: 'Ya giraste la ruleta hoy. Volvé mañana.',
+        error: `Ya giraste. Volvés a girar en ${_h > 0 ? _h + ' h ' : ''}${_m} min.`,
+        nextSpinAt: _cd.nextSpinAt,
         alreadySpun: true,
         spin: {
           prizeARS: already.prizeARS,

@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v151'; // v151: guia de instalacion con TUS DATOS PARA ENTRAR EN LA APP (usuario+clave con copiar) y paso 'entra con tus datos'
+const CACHE_VERSION = 'v152'; // v152: etiquetas de las ruedas escalonadas (no se pegan) + ruleta diaria con cooldown de 24h desde el ultimo giro y countdown
+// v151: // v151: guia de instalacion con TUS DATOS PARA ENTRAR EN LA APP (usuario+clave con copiar) y paso 'entra con tus datos'
 // v150: // v150: la Ruleta de Bienvenida desaparece del hub una vez reclamado/aplicado el premio
 // v149: // v149: guia de instalacion propia del hub (pasos iPhone/Android + checks en vivo + derivar a soporte si no puede)
 // v148: // v148: 'Reembolso en Vivo' (sin 'esperar al lunes') + guia de instalacion de app desde la tarjeta de la ruleta diaria
