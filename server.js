@@ -9446,6 +9446,17 @@ io.on('connection', (socket) => {
         return socket.emit('error', { message: 'No autenticado' });
       }
 
+      // #258: BLOQUEADO no chatea — re-chequeo en vivo (el estado del socket es
+      // de cuando se autenticó; si lo bloquearon después, cortarlo acá).
+      if (socket.role === 'user') {
+        const _bu = await User.findOne({ id: socket.userId }).select('isBlocked isActive').lean();
+        if (!_bu || _bu.isBlocked === true || _bu.isActive === false) {
+          socket.emit('error', { message: 'Tu cuenta está bloqueada. Contactá a soporte.' });
+          try { socket.disconnect(true); } catch (_) {}
+          return;
+        }
+      }
+
       // Bienvenida-fantasma de clientes viejos cacheados → descartar (nunca la manda el cliente).
       if (socket.role === 'user' && _isStaleClientWelcome(content)) {
         logger.info(`[welcome-guard] descartada bienvenida-fantasma (socket) de ${socket.userId}`);
@@ -15981,6 +15992,11 @@ app.post('/api/admin/users/:id/block', authMiddleware, adminMiddleware, async (r
     await user.save();
 
     logger.info(`Admin ${req.user.username} bloqueó a ${user.username}: ${user.blockReason}`);
+    // #258: matar los SOCKETS VIVOS del usuario. Sin esto, un socket autenticado
+    // ANTES del bloqueo seguía chateando (el auth del socket solo chequea
+    // isBlocked al conectar). disconnectSockets cruza instancias (adapter Redis);
+    // al reconectar, el authenticate rechaza por isBlocked + tokenVersion.
+    try { io.in(`user_${user.id}`).disconnectSockets(true); } catch (_) {}
     res.json({ success: true, message: `Usuario ${user.username} bloqueado.` });
   } catch (e) {
     logger.error(`Error en block: ${e.message}`);

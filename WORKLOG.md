@@ -89,6 +89,16 @@
 
 ## Sesión 2026-08-30
 
+### 258. FIX: un usuario BLOQUEADO podía seguir chateando (socket vivo)
+- **Caso real (gxenzo741, bloqueado como estafador):** seguía mandando mensajes y
+  reabriendo el chat. Causa: el bloqueo invalida el token (HTTP muere con 403 +
+  tokenVersion) y el auth del SOCKET rechaza bloqueados… pero solo AL CONECTAR — un
+  socket autenticado antes del bloqueo quedaba vivo y `send_message` no re-chequeaba.
+- **Fix doble:** (1) al bloquear → `io.in('user_<id>').disconnectSockets(true)`
+  (cruza instancias vía adapter Redis; al reconectar el auth rechaza); (2) backstop
+  en `send_message`: cada mensaje de rol user re-chequea `isBlocked/isActive` en DB
+  y si está bloqueado emite error + desconecta. Back necesita redeploy.
+
 ### 257f. Diagnóstico: ¿el /stats de la Partner API discrimina bono vs plata real?
 - El owner afirma que la Partner API diferencia el bono de la carga normal. Al
   ACREDITAR sí (bonus_amount/multiplier); en el /stats nuestro parser solo lee
