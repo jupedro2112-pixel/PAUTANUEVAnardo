@@ -89,6 +89,14 @@
 
 ## Sesión 2026-08-30
 
+### 256b. Textos del hub (owner): "Reembolso en Vivo" + guía de instalación
+- La tarjeta pasa de "Cashback en Vivo" a **"Reembolso en Vivo"** (la palabra que los
+  clientes conocen) en título, confirm y mensajes del server; se sacó el "Sin esperar
+  al lunes" (el reembolso semanal del lunes sigue existiendo y confundía).
+- Tarjeta de la ruleta diaria sin app: botón **"📲 Instalar la app — ver cómo"** →
+  cierra el hub y abre la guía existente `VIP.ui.installApp()` (prompt nativo en
+  Android / pasos por plataforma + aviso de notificaciones). **SW → v148.**
+
 ### 256. Cashback: ventana SEMANAL (la pérdida de ayer se puede reclamar hoy)
 - **Caso real del owner (prueba en Render):** el cliente perdió todo AYER y hoy el
   recuadro no le ofrecía nada (el corte diario "vencía" a medianoche).

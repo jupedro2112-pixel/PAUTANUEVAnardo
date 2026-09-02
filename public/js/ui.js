@@ -2633,7 +2633,11 @@ VIP.ui.openRewardsHub = function() {
         '<span style="font-size:12px;color:#9aa4b0;">⏰ Próximo giro en <b>' + _rwCountdown(dy.nextResetAt) + '</b></span></div>';
       cta = _rwCta('⏰ Volvé mañana por otro giro', '', false);
     } else if (dy.needsApp) {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">📲 El giro diario se activa con la <b>app instalada y las notificaciones aceptadas</b>. Instalala desde el menú de tu navegador ("Agregar a pantalla de inicio").</div>';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">📲 El giro diario se activa con la <b>app instalada y las notificaciones aceptadas</b>.</div>';
+      // Guía existente por plataforma (VIP.ui.installApp: prompt nativo en
+      // Android o instrucciones paso a paso + notificaciones). Se cierra el hub
+      // antes para que el modal de la guía quede a la vista.
+      cta = _rwCta('📲 Instalar la app — ver cómo', 'VIP.ui.closeRewardsHub(true);VIP.ui.installApp()', true, '#26e07f');
     } else {
       body = '<div style="font-size:13px;color:#cfd6de;">La ruleta diaria no está disponible para tu cuenta todavía.</div>';
     }
@@ -2672,10 +2676,10 @@ VIP.ui.openRewardsHub = function() {
         '<br><span style="font-size:12px;color:#9aa4b0;">Reclamás el ' + (cb.pct || 0) + '% de tu pérdida (mínimo ' + _rwFmt(cb.minArs) + ').</span></div>';
       cta = _rwCta('Todavía no llegás al mínimo', '', false);
     } else {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> de tu pérdida de la semana, al instante. Sin esperar al lunes.</div>';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> de tu pérdida de la semana, al instante.</div>';
     }
     body = _cbLive + body;
-    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés en la semana') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
+    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Reembolso en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés en la semana') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
 
   // --- ℹ️ Qué es el ROLLOVER (owner 2026-09-01: explicado acá adentro) ---
@@ -2898,7 +2902,7 @@ VIP.ui.casinoDailySpin = function() {
 // ---- CASHBACK: reclamo desde el hub ----
 VIP.ui.casinoCashbackClaim = function() {
   const d = (VIP.ui._rwSummary && VIP.ui._rwSummary.cashback) || {};
-  if (!confirm('¿Reclamar ' + _rwFmt(d.reclamable) + ' de cashback ahora?' + (d.rolloverX > 0 ? '\n(Se acredita como bonus: para retirarlo apostalo x' + d.rolloverX + ')' : ''))) return;
+  if (!confirm('¿Reclamar ' + _rwFmt(d.reclamable) + ' de reembolso ahora?' + (d.rolloverX > 0 ? '\n(Se acredita como bonus: para retirarlo apostalo x' + d.rolloverX + ')' : ''))) return;
   fetch(`${VIP.config.API_URL}/api/cashback/claim`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${VIP.state.currentToken}`, 'Content-Type': 'application/json' },

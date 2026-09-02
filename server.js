@@ -11996,8 +11996,8 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     if (!(amount > 0) || amount < st.minArs) {
       return res.status(400).json({
         error: st.netwinToday <= 0
-          ? 'No tenés pérdida esta semana: el cashback aplica solo sobre lo que perdiste jugando.'
-          : `Tu cashback disponible es $${Number(amount).toLocaleString('es-AR')} y el mínimo para reclamarlo es $${Number(st.minArs).toLocaleString('es-AR')}. Seguí jugando y probá más tarde.`,
+          ? 'No tenés pérdida esta semana: el reembolso aplica solo sobre lo que perdiste jugando.'
+          : `Tu reembolso disponible es $${Number(amount).toLocaleString('es-AR')} y el mínimo para reclamarlo es $${Number(st.minArs).toLocaleString('es-AR')}. Seguí jugando y probá más tarde.`,
         reclamable: amount, minArs: st.minArs
       });
     }
@@ -12036,7 +12036,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     let credit;
     try {
       credit = await girox.depositToUser(username, amount,
-        `Cashback ${st.pct}% de tu pérdida de la semana`, ref,
+        `Reembolso ${st.pct}% de tu pérdida de la semana`, ref,
         st.rolloverX > 0 ? { multiplier: st.rolloverX } : null);
     } catch (e) { credit = { success: false, error: e.message }; }
     if (!credit || !credit.success) {
