@@ -89,6 +89,22 @@
 
 ## Sesión 2026-08-30
 
+### 256. Cashback: ventana SEMANAL (la pérdida de ayer se puede reclamar hoy)
+- **Caso real del owner (prueba en Render):** el cliente perdió todo AYER y hoy el
+  recuadro no le ofrecía nada (el corte diario "vencía" a medianoche).
+- **Cambio:** la base reclamable es ahora `min(pérdida de la SEMANA en curso,
+  pérdida de 30 días)`, siempre con lo ya cobrado descontado en cada ventana. La
+  pérdida de ayer (misma semana) cuenta hoy; lo no reclamado pasa al reembolso del
+  lunes (que ya descuenta los adelantos); el neto de 30 días sigue cerrando el caso
+  "venía ganando". `maxDailyArs` sigue siendo tope POR DÍA de reclamos. Una consulta
+  de stats menos por evaluación (2 en vez de 3). `netwinToday` del API ahora trae la
+  pérdida semanal (compatibilidad del widget); textos del widget/notas pasados a
+  "esta semana".
+- **Ruleta diaria:** flag `needsApp` en el summary + mensaje claro en la tarjeta
+  ("se activa con la app instalada") — antes decía "no disponible" sin explicar. El
+  caso del owner era el tilde "Exigir app instalada" del panel con un usuario sin PWA.
+- **SW → v147.** Back necesita redeploy.
+
 ### 255. Recuadro "🪪 TUS DATOS DE INGRESO" en el asistente (usuario + clave)
 - **Pedido owner:** muchos clientes preguntan cuál es su usuario. Al abrir el asistente,
   primer recuadro: usuario (siempre) + clave, ambos con botón "📋 copiar".

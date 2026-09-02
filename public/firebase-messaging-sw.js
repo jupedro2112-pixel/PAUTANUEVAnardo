@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v146'; // v146: recuadro 'TUS DATOS DE INGRESO' (usuario + clave con copiar) en el inicio del asistente
+const CACHE_VERSION = 'v147'; // v147: cashback sobre la perdida de la SEMANA en curso (ayer tambien cuenta) + aviso de app en ruleta diaria
+// v146: // v146: recuadro 'TUS DATOS DE INGRESO' (usuario + clave con copiar) en el inicio del asistente
 // v145: // v145: sacado del asistente el 'Estas como X' y el boton Cambiar de cuenta / Salir
 // v144: // v144: boton Actualizar del cashback fuerza lectura FRESCA (cooldown 30s por usuario con aviso de espera)
 // v143: // v143: cashback EN VIVO (auto-refresh cada 60s con el hub abierto + boton actualizar + 'hace Xs')

@@ -11901,15 +11901,19 @@ async function _cashbackStateToday(userId, username, opts) {
   const weekFrom = _cashbackWeekStartART();
   const monthFrom = new Date(dayFrom.getTime() - 29 * 86400000);
 
-  const [dayRes, weekRes, monthRes] = await Promise.all([
-    girox.getPlayerStats(username, dayFrom, dayTo, 'cashback-dia', { fresh }),
+  // AJUSTE owner 2026-09-02: la ventana corta es la SEMANA EN CURSO, no el día
+  // (el que perdió AYER puede reclamar HOY; el corte diario dejaba "vencer" la
+  // pérdida a medianoche). Lo no reclamado en la semana pasa al reembolso del
+  // lunes, que ya descuenta estos adelantos. El tope de 30 días sigue cerrando
+  // el caso "venía ganando y devuelve ganancias". El TOPE DIARIO de reclamos
+  // (maxDailyArs) sigue siendo por día calendario.
+  const [weekRes, monthRes] = await Promise.all([
     girox.getPlayerStats(username, weekFrom, dayTo, 'cashback-semana', { fresh }),
     girox.getPlayerStats(username, monthFrom, dayTo, 'cashback-30d', { fresh })
   ]);
-  if (!dayRes.success || !weekRes.success || !monthRes.success) {
-    return { enabled: true, error: (dayRes.error || weekRes.error || monthRes.error) || 'stats_failed' };
+  if (!weekRes.success || !monthRes.success) {
+    return { enabled: true, error: (weekRes.error || monthRes.error) || 'stats_failed' };
   }
-  const lossDay = Math.max(0, Number(dayRes.casinoNetwin) || 0);
   const lossWeek = Math.max(0, Number(weekRes.casinoNetwin) || 0);
   const lossMonth = Math.max(0, Number(monthRes.casinoNetwin) || 0);
 
@@ -11930,16 +11934,17 @@ async function _cashbackStateToday(userId, username, opts) {
   const paidMonth = await _paid(monthFrom);
 
   // Disponible por ventana: pct × (pérdida − cobrado) − cobrado. La base final
-  // es el MENOR de las tres (nunca se paga por pérdida que netea ganancias).
-  const availDay = (cfg.pct / 100) * (lossDay - paidToday) - paidToday;
+  // es el MENOR de las dos (nunca se paga por pérdida que netea ganancias).
   const availWeek = (cfg.pct / 100) * (lossWeek - paidWeek) - paidWeek;
   const availMonth = (cfg.pct / 100) * (lossMonth - paidMonth) - paidMonth;
-  let reclamable = Math.floor(Math.max(0, Math.min(availDay, availWeek, availMonth)));
+  let reclamable = Math.floor(Math.max(0, Math.min(availWeek, availMonth)));
   if (cfg.maxDailyArs > 0) reclamable = Math.min(reclamable, Math.max(0, cfg.maxDailyArs - paidToday));
   return {
     enabled: true, pct: cfg.pct, rolloverX: cfg.rolloverX, minArs: cfg.minArs,
     maxDailyArs: cfg.maxDailyArs, dateKey: today.dateStr,
-    netwinToday: lossDay, netwinWeek: lossWeek, netwinMonth: lossMonth,
+    // netwinToday se mantiene por compatibilidad del widget: ahora es la
+    // pérdida de la SEMANA en curso (lo que el cliente puede recuperar).
+    netwinToday: lossWeek, netwinWeek: lossWeek, netwinMonth: lossMonth,
     paidToday, reclamable,
     belowMin: reclamable > 0 && reclamable < cfg.minArs
   };
@@ -11991,7 +11996,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     if (!(amount > 0) || amount < st.minArs) {
       return res.status(400).json({
         error: st.netwinToday <= 0
-          ? 'Hoy no tenés pérdida: el cashback aplica solo sobre lo que perdiste jugando.'
+          ? 'No tenés pérdida esta semana: el cashback aplica solo sobre lo que perdiste jugando.'
           : `Tu cashback disponible es $${Number(amount).toLocaleString('es-AR')} y el mínimo para reclamarlo es $${Number(st.minArs).toLocaleString('es-AR')}. Seguí jugando y probá más tarde.`,
         reclamable: amount, minArs: st.minArs
       });
@@ -12031,7 +12036,7 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     let credit;
     try {
       credit = await girox.depositToUser(username, amount,
-        `Cashback ${st.pct}% de tu pérdida de hoy`, ref,
+        `Cashback ${st.pct}% de tu pérdida de la semana`, ref,
         st.rolloverX > 0 ? { multiplier: st.rolloverX } : null);
     } catch (e) { credit = { success: false, error: e.message }; }
     if (!credit || !credit.success) {
@@ -12043,12 +12048,12 @@ app.post('/api/cashback/claim', authMiddleware, authLimiter, async (req, res) =>
     await CashbackClaim.updateOne({ id: claimDoc.id }, { $set: { status: 'credited', transactionId: txId } }).catch(() => {});
     await Transaction.create({
       id: uuidv4(), type: 'bonus', userId, username, amount,
-      description: `Cashback instantáneo ${st.pct}% (pérdida de hoy)`,
+      description: `Cashback instantáneo ${st.pct}% (pérdida de la semana)`,
       transactionId: txId, metadata: { source: 'instant_cashback', dateKey: st.dateKey, seq: claimDoc.seq },
       timestamp: new Date()
     }).catch(() => {});
     await _emitAdminOnlyChatNote(userId, username,
-      `📉 CASHBACK instantáneo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de una pérdida de $${Number(st.netwinToday).toLocaleString('es-AR')} hoy)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — no hay que hacer nada. Este monto se descuenta de su reembolso semanal/mensual.`);
+      `📉 CASHBACK instantáneo: reclamó $${Number(amount).toLocaleString('es-AR')} (${st.pct}% de una pérdida de $${Number(st.netwinToday).toLocaleString('es-AR')} en la semana)${st.rolloverX ? ` con rollover x${st.rolloverX}` : ''}. Acreditado automático — no hay que hacer nada. Este monto se descuenta de su reembolso semanal/mensual.`);
     logger.info(`[cashback] ${username} → $${amount} acreditado (netwin hoy $${st.netwinToday}, seq ${claimDoc.seq})`);
     res.json({ success: true, amount, rolloverX: st.rolloverX, pct: st.pct, transactionId: txId });
   } catch (e) {
@@ -12089,9 +12094,10 @@ app.get('/api/rewards/summary', authMiddleware, async (req, res) => {
       const dCfg = await getDailyRouletteConfig();
       let dailyEligible = dCfg.enabled;
       let needsDeposit = false;
+      let needsApp = false;
       if (dailyEligible && dCfg.requireAppInstalled) {
         const uu = await User.findOne({ id: userId }, { fcmTokenContext: 1, fcmTokens: 1 }).lean();
-        if (!_rouletteHasAppInstalled(uu)) dailyEligible = false;
+        if (!_rouletteHasAppInstalled(uu)) { dailyEligible = false; needsApp = true; }
       }
       if (dailyEligible) {
         const dep = await _dailyRouletteDepositsOk(userId, username, dCfg.requireDeposits);
@@ -12103,6 +12109,7 @@ app.get('/api/rewards/summary', authMiddleware, async (req, res) => {
         enabled: dCfg.enabled,
         eligible: dailyEligible,
         needsDeposit,
+        needsApp,
         canSpin: dailyEligible && !spin,
         alreadySpun: !!spin,
         nextResetAt: _dailyRouletteNextResetISO(),

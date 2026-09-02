@@ -2632,6 +2632,8 @@ VIP.ui.openRewardsHub = function() {
       body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">' + st + '<br>' +
         '<span style="font-size:12px;color:#9aa4b0;">⏰ Próximo giro en <b>' + _rwCountdown(dy.nextResetAt) + '</b></span></div>';
       cta = _rwCta('⏰ Volvé mañana por otro giro', '', false);
+    } else if (dy.needsApp) {
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.4;">📲 El giro diario se activa con la <b>app instalada y las notificaciones aceptadas</b>. Instalala desde el menú de tu navegador ("Agregar a pantalla de inicio").</div>';
     } else {
       body = '<div style="font-size:13px;color:#cfd6de;">La ruleta diaria no está disponible para tu cuenta todavía.</div>';
     }
@@ -2660,20 +2662,20 @@ VIP.ui.openRewardsHub = function() {
       body = '<div style="font-size:13px;color:#cfd6de;">No pudimos calcular tu pérdida de hoy. Probá en unos minutos.</div>';
     } else if (cb.reclamable > 0 && cb.reclamable >= (cb.minArs || 0)) {
       body = '<div style="text-align:center;padding:4px 0 2px;">' +
-        '<div style="font-size:11.5px;color:#9aa4b0;">Perdiste hoy ' + _rwFmt(cb.netwinToday) + ' → recuperá</div>' +
+        '<div style="font-size:11.5px;color:#9aa4b0;">Perdiste esta semana ' + _rwFmt(cb.netwinToday) + ' → recuperá</div>' +
         '<div style="font-size:30px;font-weight:900;color:#4dd0ff;text-shadow:0 2px 8px rgba(77,208,255,0.35);margin:2px 0;">' + _rwFmt(cb.reclamable) + '</div>' +
         '<div style="font-size:11px;color:#9aa4b0;">Se acredita YA como bonus' + (cb.rolloverX > 0 ? ' · para retirarlo apostalo x' + cb.rolloverX : '') + '</div></div>';
       cta = _rwCta('📉 RECLAMAR ' + _rwFmt(cb.reclamable), 'VIP.ui.casinoCashbackClaim()', true, '#4dd0ff');
     } else if (cb.netwinToday > 0) {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Perdiste hoy ' + _rwFmt(cb.netwinToday) +
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Perdiste esta semana ' + _rwFmt(cb.netwinToday) +
         (cb.paidToday > 0 ? ' y ya recuperaste ' + _rwFmt(cb.paidToday) + '.' : '.') +
         '<br><span style="font-size:12px;color:#9aa4b0;">Reclamás el ' + (cb.pct || 0) + '% de tu pérdida (mínimo ' + _rwFmt(cb.minArs) + ').</span></div>';
       cta = _rwCta('Todavía no llegás al mínimo', '', false);
     } else {
-      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si hoy perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> al instante. Sin esperar al lunes.</div>';
+      body = '<div style="font-size:13px;color:#cfd6de;line-height:1.45;">Si perdés jugando, acá recuperás el <b style="color:#4dd0ff;">' + (cb.pct || 0) + '%</b> de tu pérdida de la semana, al instante. Sin esperar al lunes.</div>';
     }
     body = _cbLive + body;
-    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés hoy') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
+    cards += _rwCard({ icon: '📉', accent: '#4dd0ff', title: 'Cashback en Vivo', subtitle: cb.enabled ? ('Recuperá el ' + (cb.pct || 0) + '% de lo que perdés en la semana') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
 
   // --- ℹ️ Qué es el ROLLOVER (owner 2026-09-01: explicado acá adentro) ---
