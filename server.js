@@ -2462,14 +2462,40 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     // (misma regla que la carga manual). Reserva atómica; si la carga o el bono
     // fallan vuelve a pendiente (owner 2026-08-28: la auto-carga también lo aplica
     // y lo marca usado).
-    let _rouHg = await claimWelcomeRoulettePercent(user.id, 'auto-hgcash');
+    // #259 ANTI-MULTICUENTA por IDENTIDAD BANCARIA: si el CBU (o el titular
+    // exacto) de ORIGEN de esta transferencia ya fondeó a OTRA cuenta nuestra,
+    // es la MISMA persona con otra cuenta (señal infalible: el banco valida la
+    // identidad, no el navegador). La carga entra igual (es su plata), pero SIN
+    // ningún bono automático (ruleta % / 1ª carga) — así la multicuenta pierde
+    // sentido: el 100% se cobra UNA vez por persona real, no por cuenta.
+    let _dupBank = null;
+    try {
+      const _orB = [];
+      if (movement.fromCBU) _orB.push({ fromCBU: movement.fromCBU });
+      if (movement.fromName && String(movement.fromName).trim().length >= 8) {
+        _orB.push({ fromName: new RegExp('^' + String(movement.fromName).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') });
+      }
+      if (_orB.length) {
+        _dupBank = await BankMovement.findOne({
+          $or: _orB,
+          matchedUserId: { $exists: true, $nin: [null, user.id] },
+          matchStatus: { $in: ['auto_charged', 'manual_charged', 'shadow_matched', 'needs_review', 'duplicate'] }
+        }).select('matchedUsername fromName fromCBU').lean();
+      }
+    } catch (eDup) { logger.warn(`[hgcash] chequeo multicuenta bancaria falló (sigue con bonos): ${eDup.message}`); }
+    if (_dupBank) {
+      await _emitAdminOnlyChatNote(user.id, user.username,
+        `🚨 MULTICUENTA CONFIRMADA POR BANCO: la transferencia viene de ${_dupBank.fromName || _dupBank.fromCBU} que YA cargó en la cuenta @${_dupBank.matchedUsername || '?'}. La carga se acredita SIN bonos automáticos (ni ruleta ni 1ª carga). Verificá y bloqueá si corresponde.`);
+      logger.warn(`[hgcash] MULTICUENTA banco: ${user.username} fondeado por ${_dupBank.fromName || _dupBank.fromCBU} (ya usado por ${_dupBank.matchedUsername})`);
+    }
+    let _rouHg = _dupBank ? { pct: 0, claimed: false } : await claimWelcomeRoulettePercent(user.id, 'auto-hgcash');
     let _rouHgKind = 'welcome';
     if (!_rouHg.claimed) {
       const _rouHgD = await claimDailyRoulettePercent(user.id, 'auto-hgcash');
       if (_rouHgD.claimed) { _rouHg = _rouHgD; _rouHgKind = 'daily'; }
     }
     const _rouHgBonus = _rouHg.claimed ? Math.round(Number(amount) * _rouHg.pct / 100) : 0;
-    const _fcbHg = _rouHg.claimed ? { bonus: 0, claimed: false } : await claimFirstChargeBonus(user, Number(amount));
+    const _fcbHg = (_dupBank || _rouHg.claimed) ? { bonus: 0, claimed: false } : await claimFirstChargeBonus(user, Number(amount));
     const _hgBonus = _rouHgBonus > 0 ? _rouHgBonus : (_fcbHg.bonus || 0);
     const result = await girox.depositToUser(
       user.username, Number(amount), 'Carga automática (hgcash)', _ref,
@@ -15627,6 +15653,29 @@ app.get('/api/admin/users/:userId/fraud-check', authMiddleware, adminMiddleware,
       }).select('id username isBlocked').limit(50).lean();
       if (others.length) reasons.push({ type: 'phone', label: 'el mismo teléfono', strong: true, count: others.length, accounts: pick(others) });
     }
+
+    // CUENTA BANCARIA de origen compartida — la señal MÁS fuerte (#259): el
+    // banco validó la identidad del titular. Se buscan los CBU/titulares que
+    // fondearon a ESTE usuario y qué OTRAS cuentas fondearon esos mismos orígenes.
+    try {
+      const myMovs = await BankMovement.find({ matchedUserId: user.id, fromCBU: { $ne: null } })
+        .select('fromCBU fromName').limit(50).lean();
+      const myCbus = Array.from(new Set(myMovs.map(m => m.fromCBU).filter(Boolean)));
+      if (myCbus.length) {
+        const otherMovs = await BankMovement.find({
+          fromCBU: { $in: myCbus }, matchedUserId: { $exists: true, $nin: [null, user.id] }
+        }).select('matchedUserId matchedUsername fromName fromCBU').limit(100).lean();
+        if (otherMovs.length) {
+          const byUser = new Map();
+          for (const m of otherMovs) byUser.set(m.matchedUserId, { id: m.matchedUserId, username: m.matchedUsername || '?', isBlocked: false });
+          reasons.push({
+            type: 'bank', strong: true, count: byUser.size,
+            label: 'la MISMA cuenta bancaria de origen (' + ((myMovs[0] && myMovs[0].fromName) || myCbus[0]) + ') — señal confirmada por el banco',
+            accounts: Array.from(byUser.values()).slice(0, SAMPLE)
+          });
+        }
+      }
+    } catch (eBk) { logger.warn(`[fraud-check] señal bancaria falló: ${eBk.message}`); }
 
     // IP de registro compartida — señal débil (mismo wifi/datos del celu).
     if (user.registrationIp) {

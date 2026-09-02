@@ -89,6 +89,30 @@
 
 ## Sesión 2026-08-30
 
+### 259. Anti-multicuenta REAL: candado por identidad BANCARIA (el 100% se cobra una vez por persona)
+- **Caso owner:** una persona se crea multicuentas desde la landing (sin SMS) para
+  cobrar el bono 100% en cada cuenta. La delata el BANCO: mismo titular/CBU de origen
+  en las transferencias. El aviso de multicuenta actual (dispositivo/teléfono/IP) da
+  falsos positivos; la cuenta bancaria no — el banco ya validó la identidad.
+- **Estrategia:** no se puede impedir el registro (incógnito borra toda huella), pero
+  se puede hacer que la multicuenta NO SIRVA: el bono automático se otorga una vez por
+  IDENTIDAD BANCARIA, no por cuenta.
+- **Candado (hgcashAutoCarga):** antes de reclamar bonos, se busca si el `fromCBU`
+  (o el `fromName` exacto, ≥8 chars, case-insensitive) de la transferencia ya fondeó
+  a OTRA cuenta (`BankMovement.matchedUserId` distinto, en estados cargados/matcheados).
+  Si sí → la carga se acredita igual (es su plata) pero **SIN bonos automáticos** (ni
+  ruleta % ni 1ª carga; el pendiente de ruleta NO se consume — le queda por si es un
+  falso positivo que el agente resuelve) + nota interna "🚨 MULTICUENTA CONFIRMADA POR
+  BANCO: … ya cargó en @otra. Verificá y bloqueá si corresponde." Fail-open ante error
+  de DB (no frena cargas legítimas).
+- **fraud-check (aviso del panel):** nueva señal `bank` (strong): CBUs que fondearon a
+  este usuario vs qué otras cuentas fondearon esos mismos CBUs → "la MISMA cuenta
+  bancaria de origen (Titular) — señal confirmada por el banco" con la lista de
+  cuentas. Es la señal para bloquear sin dudar (las otras siguen siendo indicios).
+- **Nota:** la carga manual del agente no aplica el candado automático — el agente ve
+  la alerta de multicuenta (ahora con la señal bancaria) y decide. Back necesita
+  redeploy.
+
 ### 258. FIX: un usuario BLOQUEADO podía seguir chateando (socket vivo)
 - **Caso real (gxenzo741, bloqueado como estafador):** seguía mandando mensajes y
   reabriendo el chat. Causa: el bloqueo invalida el token (HTTP muere con 403 +
