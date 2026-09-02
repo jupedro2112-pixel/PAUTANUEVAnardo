@@ -2930,13 +2930,51 @@ VIP.ui._rwShowInstallGuide = function() {
       step(1, 'Abrí esta página en <b>Safari</b> y tocá el botón <b>Compartir</b> (el cuadradito con la flecha ⬆️, abajo al medio).') +
       step(2, 'Bajá en la lista y tocá <b>"Agregar a inicio"</b> (Add to Home Screen) → <b>Agregar</b>.') +
       step(3, 'Cerrá Safari y abrí la app desde el <b>ícono nuevo</b> en tu pantalla de inicio.') +
-      step(4, 'Cuando la app te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
+      step(4, 'La app te va a pedir iniciar sesión: <b>entrá con tus datos de acá abajo</b> 👇') +
+      step(5, 'Cuando la app te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
   } else {
     steps =
       step(1, 'Tocá el <b>menú ⋮</b> de Chrome (arriba a la derecha).') +
       step(2, 'Tocá <b>"Instalar app"</b> o <b>"Agregar a la pantalla principal"</b> → <b>Instalar</b>.') +
       step(3, 'Abrí la app desde el <b>ícono nuevo</b> en tu pantalla de inicio.') +
-      step(4, 'Cuando te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
+      step(4, 'Si te pide iniciar sesión, <b>entrá con tus datos de acá abajo</b> 👇') +
+      step(5, 'Cuando te pregunte, tocá <b>"Permitir notificaciones"</b>. 🔔');
+  }
+  // 🪪 Datos de ingreso DENTRO de la guía (#256e): al abrir la app instalada
+  // suele pedir login (sobre todo iPhone) → usuario + clave a mano, con copiar.
+  const _gUser = (VIP.state.currentUser && VIP.state.currentUser.username) || '';
+  const _gPass = VIP.state.sessionPassword || VIP.ui._credsDefaultPass || null;
+  let credsBox = '';
+  if (_gUser) {
+    credsBox = '<div style="background:linear-gradient(160deg,rgba(255,215,0,0.10),rgba(255,215,0,0.03));border:1px solid #ffd70055;' +
+      'border-radius:16px;padding:13px 14px;margin:0 0 12px;">' +
+      '<div style="font-size:13px;font-weight:900;color:#ffd700;margin-bottom:7px;">🪪 TUS DATOS PARA ENTRAR EN LA APP</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">' +
+        '<span style="font-size:12px;color:#9aa4b0;">👤 Usuario:</span>' +
+        '<b style="font-size:15px;color:#fff;">' + _wrEsc(_gUser) + '</b>' +
+        '<button type="button" onclick="VIP.ui._copyCred(\'' + _wrEsc(_gUser) + '\')" style="background:rgba(255,255,255,0.12);border:none;color:#fff;' +
+        'border-radius:7px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;">📋 copiar</button></div>' +
+      (_gPass
+        ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            '<span style="font-size:12px;color:#9aa4b0;">🔑 Clave:</span>' +
+            '<b style="font-size:15px;color:#fff;">' + _wrEsc(_gPass) + '</b>' +
+            '<button type="button" onclick="VIP.ui._copyCred(\'' + _wrEsc(_gPass) + '\')" style="background:rgba(255,255,255,0.12);border:none;color:#fff;' +
+            'border-radius:7px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;">📋 copiar</button></div>' +
+          '<div style="font-size:10.5px;color:#9aa4b0;margin-top:6px;">Anotalos o sacá captura antes de instalar. 📸</div>'
+        : '<div style="font-size:12px;color:#cfd6de;">🔑 Clave: la que elegiste al crear tu cuenta. ¿La olvidaste? Tocá Soporte y te la cambiamos.</div>') +
+    '</div>';
+    // Si la clave default todavía no se consultó, pedirla y re-pintar la guía.
+    if (!_gPass && !VIP.ui._credsFetched) {
+      VIP.ui._credsFetched = true;
+      fetch(`${VIP.config.API_URL}/api/users/my-credentials`, {
+        headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
+      }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+        if (d && d.defaultPassword) {
+          VIP.ui._credsDefaultPass = d.defaultPassword;
+          if (document.getElementById('rwInstallOverlay')) VIP.ui._rwShowInstallGuide();
+        }
+      }).catch(function() {});
+    }
   }
   const nativeBtn = (!isIOS && window.deferredPrompt)
     ? '<button type="button" onclick="VIP.ui._rwNativeInstall()" style="width:100%;margin-bottom:8px;border:none;cursor:pointer;' +
@@ -2961,6 +2999,7 @@ VIP.ui._rwShowInstallGuide = function() {
       chk(notifOk, 'Notificaciones aceptadas') +
       (installed ? '' : '<div style="font-size:11px;color:#9aa4b0;margin:2px 0 10px;">Si ya la instalaste, abrí esta pantalla DESDE la app (el ícono nuevo) para que quede en verde.</div>') +
       '<div style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:14px 14px 6px;margin:8px 0 12px;">' + steps + '</div>' +
+      credsBox +
       nativeBtn +
       '<button type="button" onclick="VIP.ui._rwShowInstallGuide()" style="width:100%;margin-bottom:8px;border:none;cursor:pointer;' +
         'background:linear-gradient(135deg,#ffd700,#ff9800);color:#231a00;border-radius:13px;padding:13px;font-size:15px;font-weight:900;">🔄 Ya lo hice — verificar</button>' +

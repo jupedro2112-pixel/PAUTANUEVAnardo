@@ -89,6 +89,17 @@
 
 ## Sesión 2026-08-30
 
+### 256e. Guía de instalación: credenciales adentro + paso "entrá con tus datos"
+- **Pedido owner:** al abrir la app instalada (sobre todo iPhone) pide login → la guía
+  ahora incluye el recuadro dorado "🪪 TUS DATOS PARA ENTRAR EN LA APP" (usuario +
+  clave con 📋 copiar; misma fuente que #255: sessionPassword o asd123 verificada por
+  hash — si no se conoce, pista de Soporte) y un paso nuevo "entrá con tus datos de acá
+  abajo 👇" en iPhone y Android, con el hint "anotalos o sacá captura antes de instalar".
+- Nota al owner sobre Android: instalación 100% silenciosa no existe (lo bloquea
+  Android); lo máximo es el botón "📲 INSTALAR AHORA (1 toque)" que ya dispara el
+  diálogo NATIVO de Chrome (deferredPrompt) — un solo tap "Instalar", sin ir al menú.
+  **SW → v151.** Solo front.
+
 ### 256d. La Ruleta de Bienvenida sale del hub cuando ya no hay nada que hacer
 - **Pedido owner:** con el premio ya reclamado/aplicado, la tarjeta seguía apareciendo
   ("Tu premio: 100% EXTRA · ya aplicado") y confundía. Ahora la tarjeta se muestra
