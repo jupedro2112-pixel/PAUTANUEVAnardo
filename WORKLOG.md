@@ -89,6 +89,18 @@
 
 ## Sesión 2026-08-30
 
+### 256f. Rueda legible + giro cada 24 h desde el último tiro (no a las 00:00)
+- **Etiquetas de las ruedas** (bienvenida y diaria): ancho 27%S y **radio escalonado**
+  (pares 0.74·rr, impares 1.24·rr) → las vecinas ya no se pegan ("$1.000 GRATIS$500
+  GRATIS" del screenshot del owner).
+- **Cooldown real de 24 h:** el gate de la diaria pasa de "una vez por día calendario"
+  a **24 h desde el último giro** (`_dailyRouletteCooldown`: último `DailyRouletteSpin`
+  + 24 h). El índice único (userId, dateKey) queda como red anti-race del mismo día.
+  `nextResetAt` de status/summary ahora es `últimoGiro+24h`; el spin rechazado devuelve
+  "Volvés a girar en X h Y min"; la tarjeta del hub muestra el countdown ("24 h desde
+  tu último giro") y el resultado sin premio dice "en 24 horas". **SW → v152.** Back
+  necesita redeploy.
+
 ### 256e. Guía de instalación: credenciales adentro + paso "entrá con tus datos"
 - **Pedido owner:** al abrir la app instalada (sobre todo iPhone) pide login → la guía
   ahora incluye el recuadro dorado "🪪 TUS DATOS PARA ENTRAR EN LA APP" (usuario +
