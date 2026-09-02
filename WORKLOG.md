@@ -89,6 +89,16 @@
 
 ## Sesión 2026-08-30
 
+### 257d. Sección "ℹ️ INFORMACIÓN — Reembolso y Rollover" dentro de PREMIOS
+- Reemplaza el recuadro suelto de rollover por una sección completa al pie del hub,
+  con los VALORES REALES de la config del panel (%, mínimo, tope diario, rollover x):
+  cómo funciona el reembolso (% que vuelve, se junta solo y no vence, reclamar cuando
+  quiera o seguir juntando, tope por día), **⚽ DEPORTES NO genera reembolso** (solo
+  slots/casino), acreditación instantánea como bonus, y rollover explicado con ejemplo
+  numérico real ("x2: reclamás $1.000 → apostás $2.000 y retirás sin problema"),
+  aclarando que se completa con SLOTS y RULETA (deportes no suma) y que mientras
+  tanto juega normal. **SW → v156.** Solo front.
+
 ### 257c. Tarjeta "Tu Reembolso" simple (owner: un solo reembolso, del momento)
 - Presentación sin jerga: título **"💸 Tu Reembolso"**, subtítulo "El 5% de lo que
   perdés vuelve a tu saldo", y SIEMPRE el monto grande ("TU REEMBOLSO DISPONIBLE

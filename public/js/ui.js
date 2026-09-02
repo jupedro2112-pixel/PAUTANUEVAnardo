@@ -2687,15 +2687,35 @@ VIP.ui.openRewardsHub = function() {
     cards += _rwCard({ icon: '💸', accent: '#4dd0ff', title: 'Tu Reembolso', subtitle: cb.enabled ? ('El ' + (cb.pct || 0) + '% de lo que perdés vuelve a tu saldo') : 'Recuperá parte de lo que perdés', body: body, cta: cta });
   }
 
-  // --- ℹ️ Qué es el ROLLOVER (owner 2026-09-01: explicado acá adentro) ---
-  cards += '<div style="background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:14px 16px;">' +
-    '<div style="font-size:13px;font-weight:900;color:#fff;margin-bottom:6px;">ℹ️ ¿Qué es el ROLLOVER?</div>' +
-    '<div style="font-size:12px;color:#b7c0ca;line-height:1.55;">' +
-      'Varios premios y reembolsos se acreditan como <b style="color:#fff;">BONUS con rollover</b>: la plata entra YA a tu saldo y podés jugarla, ' +
-      'pero para <b style="color:#fff;">retirarla</b> primero tenés que apostarla la cantidad de veces que indica ' +
-      '(ej. <b style="color:#ffd700;">x2</b> = apostar 2 veces ese monto).<br>' +
-      '⚠️ El rollover se completa jugando <b style="color:#26e07f;">SLOTS y RULETA</b> — las apuestas en <b style="color:#ff8a80;">DEPORTES NO suman</b> para el rollover.' +
-    '</div></div>';
+  // --- ℹ️ SECCIÓN INFORMACIÓN (#257d): reembolso + rollover explicado todo
+  // junto, con los VALORES REALES del panel (pct / mínimo / tope / rollover). ---
+  {
+    const iPct = (cb && cb.pct) || 5;
+    const iMin = (cb && cb.minArs) || 0;
+    const iMax = (cb && cb.maxDailyArs) || 0;
+    const iRoll = (cb && cb.rolloverX) || 0;
+    const li = function(emoji, html) {
+      return '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start;">' +
+        '<span style="flex:none;font-size:14px;">' + emoji + '</span>' +
+        '<span style="font-size:12px;color:#b7c0ca;line-height:1.55;">' + html + '</span></div>';
+    };
+    cards += '<div style="background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:14px 16px;">' +
+      '<div style="font-size:13.5px;font-weight:900;color:#fff;margin-bottom:10px;">ℹ️ INFORMACIÓN — Reembolso y Rollover</div>' +
+      '<div style="font-size:11px;font-weight:900;color:#4dd0ff;letter-spacing:0.5px;margin-bottom:6px;">💸 CÓMO FUNCIONA TU REEMBOLSO</div>' +
+      li('🔄', 'Te devolvemos el <b style="color:#fff;">' + iPct + '%</b> de lo que perdés jugando. Se va <b style="color:#fff;">juntando solo</b> y <b style="color:#fff;">no se vence</b>.') +
+      li('👆', 'Lo reclamás <b style="color:#fff;">cuando quieras</b>' + (iMin > 0 ? ' (desde ' + _rwFmt(iMin) + ')' : '') + ' o seguís juntándolo — vos elegís.') +
+      (iMax > 0 ? li('📅', 'Tope: podés reclamar hasta <b style="color:#fff;">' + _rwFmt(iMax) + ' por día</b>.') : '') +
+      li('⚽', '<b style="color:#ff8a80;">DEPORTES NO genera reembolso</b>: solo cuenta lo que jugás en <b style="color:#26e07f;">slots y casino</b>.') +
+      li('⚡', 'Al reclamar, entra <b style="color:#fff;">YA</b> a tu saldo como <b style="color:#fff;">BONUS</b> y podés jugarlo al instante.') +
+      '<div style="font-size:11px;font-weight:900;color:#ffd700;letter-spacing:0.5px;margin:12px 0 6px;">🔒 ¿QUÉ ES EL ROLLOVER?</div>' +
+      li('🎯', 'Para <b style="color:#fff;">RETIRAR</b> un bonus, primero tenés que <b style="color:#fff;">apostarlo la cantidad de veces que indica</b>. ' +
+        (iRoll > 0
+          ? 'Acá es <b style="color:#ffd700;">x' + iRoll + '</b>: reclamás $1.000 → apostás $' + (1000 * iRoll).toLocaleString('es-AR') + ' y lo retirás sin problema.'
+          : 'Ej.: <b style="color:#ffd700;">x2</b> = reclamás $1.000 → apostás $2.000 y lo retirás sin problema.')) +
+      li('🎰', 'El rollover se completa jugando <b style="color:#26e07f;">SLOTS y RULETA</b> — las apuestas en <b style="color:#ff8a80;">DEPORTES NO suman</b>.') +
+      li('💡', 'Mientras completás el rollover, la plata está en tu saldo y jugás normal. Solo afecta el momento de retirar.') +
+    '</div>';
+  }
 
   if (!cards) cards = '<div style="color:#9aa4b0;text-align:center;padding:30px 10px;font-size:14px;">Por ahora no hay premios activos. ¡Volvé pronto! 🎁</div>';
 
