@@ -89,6 +89,24 @@
 
 ## Sesión 2026-08-30
 
+### 260. Landing: escape del navegador embebido de Instagram/Facebook/TikTok
+- **Problema (owner):** los anuncios abren la landing DENTRO de la app (webview de
+  IG/FB): la cuenta queda "presa" ahí — sin instalar la PWA, sin notificaciones, y al
+  cerrar Instagram la pierden. Meta no ofrece "abrir afuera" desde el anuncio.
+- **Fix (landing/index.html):** detección por user-agent (Instagram|FBAN|FBAV|FB_IAB|
+  FBAG|TikTok|musical_ly|Bytedance) → overlay a pantalla completa "🌐 Abrí la página
+  en tu navegador":
+  - **Android:** botón "🚀 ABRIR EN CHROME" con `intent://…;package=com.android.chrome;
+    S.browser_fallback_url=…` + intento AUTOMÁTICO a los 350 ms (si el webview lo
+    permite, salta solo). La URL completa viaja intacta (código campaña + fbclid).
+  - **iPhone:** botón "🚀 ABRIR EN SAFARI" (`x-safari-https://…`, funciona en varias
+    versiones del webview) + instrucciones "⋯ → Abrir en el navegador externo".
+  - Link chico "Seguir acá de todos modos" para no perder la conversión si el escape
+    falla. En el navegador real el UA no matchea → no aparece nada.
+- Solo landing (Vercel con el push). Nota: el flujo posterior (signup + ENTRAR AL
+  CASINO + PWA) hereda el navegador real → la sesión queda guardada y puede instalar
+  la app.
+
 ### 259. Anti-multicuenta REAL: candado por identidad BANCARIA (el 100% se cobra una vez por persona)
 - **Caso owner:** una persona se crea multicuentas desde la landing (sin SMS) para
   cobrar el bono 100% en cada cuenta. La delata el BANCO: mismo titular/CBU de origen
