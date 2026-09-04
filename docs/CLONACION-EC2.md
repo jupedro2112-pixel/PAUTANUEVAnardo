@@ -9,19 +9,21 @@
 
 1. Entrá a la consola de la cuenta vieja → región **São Paulo (sa-east-1)**.
 2. Abrí **CloudShell** (ícono `>_` arriba a la derecha).
-3. Pegá (trae los scripts del repo, que es público):
+3. **Anotá los dos nombres** (sin tocar nada): buscador de la consola →
+   **Elastic Beanstalk** → menú izquierdo **Environments** → buscá la fila cuya
+   **URL** es `pauta.sa-east-1.elasticbeanstalk.com` (la misma del panel admin
+   de ESTE proyecto). De esa fila anotá **Environment name** y **Application
+   name** tal cual están escritos.
+4. Pegá (trae los scripts del repo, que es público):
    ```bash
    git clone https://github.com/jupedro2112-pixel/PAUTANUEVAnardo.git
    cd PAUTANUEVAnardo
    ```
-4. Averiguá los nombres EXACTOS de tu app/entorno viejos (si no los sabés):
+5. Exportá TODO (SSM + config del entorno), reemplazando por los nombres del
+   paso 3. ⚠️ El path SSM de ESTE proyecto es **`/nardo1girox/prod/`**
+   (el `/1girox/prod/` es de la OTRA página — no confundir):
    ```bash
-   aws elasticbeanstalk describe-environments \
-     --query 'Environments[].{App:ApplicationName,Env:EnvironmentName}' --output table
-   ```
-5. Exportá TODO (SSM + config del entorno). El path SSM viejo es `/1girox/prod/`:
-   ```bash
-   bash scripts/aws-export-config.sh /1girox/prod/ NOMBRE_APP_VIEJA NOMBRE_ENV_VIEJO
+   bash scripts/aws-export-config.sh /nardo1girox/prod/ NOMBRE_APPLICATION NOMBRE_ENVIRONMENT
    ```
 6. Descargá el resultado: **Actions → Download file** → escribí
    `PAUTANUEVAnardo/clon-export.tar.gz`. Queda en tu PC.
