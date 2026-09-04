@@ -34,7 +34,7 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Bump this version with every deploy so the admin PWA always loads fresh code.
-const CACHE_VERSION = 'v47'; // v47: editor de premios de la RULETA DIARIA + card de CASHBACK instantaneo en el panel
+const CACHE_VERSION = 'v48'; // v48: lote con regalo — % AUTOMATICO en la carga (primera/todas + franja horaria) + audiencia por segmento
 // v46: // v46: banner de RULETA de bienvenida en el chat (pendiente/usado/acreditado + marcar usado) y refresco tras carga
 // v45: // v45: FIX sonido fantasma (solo suena con mensajes REALES del cliente, no los de sistema) + sacada la seccion Comunidad (derivar + pestana + alertas)
 const CACHE_NAME = 'admin-sala-' + CACHE_VERSION;

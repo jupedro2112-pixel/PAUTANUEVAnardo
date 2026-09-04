@@ -4,7 +4,62 @@
 > commit por commit está en `git log --oneline`. Esto captura decisiones, umbrales de
 > negocio y pendientes que NO se ven leyendo el código.
 >
-> **Última actualización: 2026-09-01**
+> **Última actualización: 2026-09-04**
+
+## Sesión 2026-09-04
+
+### 263. Lote con regalo: % AUTOMÁTICO en la carga (1ª carga o TODAS + franja horaria) + audiencia por SEGMENTO
+- **Pedido owner:** que el "% en próxima carga" de los lotes NO dependa del cartel al
+  agente ("marcar usado"): que se sume solo en la próxima carga; poder elegir si vale
+  solo la primera carga o TODAS las cargas "de x horario a x horario"; y filtrar mejor
+  a quién se manda (no tanto lotes generales — ver más a los inactivos como opción).
+- **Modelo:** `PromoBonus` suma `autoApply`, `applyScope` ('first'|'all'),
+  `applyFromMin`/`applyToMin` (minutos del día, hora AR, puede cruzar medianoche),
+  `usesCount`, `usesTotalBonus`. `NotifBatch` suma `applyMode` ('agent'|'auto',
+  lotes viejos → 'agent'), `applyScope`, `applyFromMin/ToMin`, y para audiencias
+  `audienceType:'segment'` + `audienceFilter` + `audienceLabel`.
+- **Aplicación automática (server.js, junto a los claims de ruleta):**
+  `claimAutoPromoPercent(user, usedBy)` / `revertAutoPromoPercent` /
+  `settleAutoPromoPercent` — mismo contrato que el % de ruleta (reserva atómica antes
+  de cargar, reversión si la carga o el bono fallan). 'first': active→used al aplicar;
+  'all': queda active y `usesCount` cuenta. Fuera de la franja horaria la carga entra
+  sin bono y el bono sigue vivo. Enganchado en **`/api/admin/deposit`** (solo si el
+  agente NO pasó bonus a mano) y en la **auto-carga hgcash**. **Prioridad** (no se
+  suman): ruleta bienvenida → ruleta diaria → bono 1ª carga → lote auto. Multicuenta
+  bancaria (#259) → tampoco recibe este. Si el agente carga con bonus manual, el lote
+  'first' queda usado (regla existente); un lote 'all' NO se consume por eso. Nota
+  adminOnly "🎁 LOTE: se aplicó AUTOMÁTICO el X% = $Y … No hay que marcar nada".
+- **Mensajes al cliente:** "+X% EXTRA en TODAS tus cargas de 18:00 a 23:00" / "en tu
+  próxima carga" + "Se te suma SOLO cuando cargás, no tenés que avisar nada" (chat de
+  envío, canje por código y respuesta del claim). Modo 'agent' conserva los textos
+  viejos ("avisale al agente").
+- **Cartel del chat (`loadChatPromoBonus`):** bono auto → cartel celeste "⚡ BONO
+  AUTOMÁTICO: +X% en su PRÓXIMA carga / en TODAS sus cargas de HH a HH · aplicado N
+  veces — NO hay que marcar nada" con botón "✕ Cancelar bono" (mismo endpoint `/use`).
+  `GET /api/admin/promo-bonus` expone `autoApply/applyScope/applyFromMin/applyToMin/
+  usesCount`.
+- **Audiencia SEGMENTO** (`_resolveNotifBatchSegment`, reemplaza en el panel al
+  "Inactivos" simple — el `audienceType:'inactive'` viejo sigue soportado): base
+  `segBase` = 'nodeposit' (cargaron alguna vez y su última carga fue hace ≥ X días —
+  ex-cargadores, orden última carga DESC) | 'nologin' (sin entrar ≥ X días, el de
+  siempre) | 'deposited' (cargaron en los últimos X días, orden $ total DESC) +
+  `minDeposits` (cargas históricas), `minTotalArs` ($ histórico), `campaign`
+  (`acquisitionCampaign`, case-insensitive) y cupo. Stats de cargas por agregación de
+  Transaction (excluye `payout_refund`), solo cuando hace falta. La etiqueta legible
+  queda en `audienceLabel` ("💸 sin cargar ≥7d · ≥2 cargas · publicista santino (cupo
+  300)") y se muestra en el historial.
+- **Panel:** en la card, bloque "¿Cómo se aplica el %?" (⚡ Automático default / 🧑‍💼
+  agente) + "¿En qué cargas?" (1ª / TODAS) + franja horaria (inputs `time`, hora AR)
+  con hint en vivo; audiencia "🎯 Segmento" con select de base, X días, mín. cargas,
+  mín. $, publicista, cupo. Historial: chip "⚡ auto · todas las cargas 18:00-23:00" y
+  detalle "⚡ aplicado solo ($Y)" / "⚡ bono AUTO activo · aplicado Nx ($Y)". Guía
+  "Cómo funciona" actualizada. **admin-sw → v48.** (PWA sin cambios.)
+- **Validado:** `node --check` OK (server.js, PromoBonus.js, NotifBatch.js, admin.js,
+  admin-sw). **Back necesita redeploy**; panel se actualiza con el SW. PROBAR: lote %
+  auto 'first' por tiempo a un usuario → cartel celeste en su chat → carga manual SIN
+  bonus → entra con el % y nota "LOTE: se aplicó AUTOMÁTICO"; lote 'all' con franja →
+  carga dentro de la franja suma, fuera no y el cartel sigue; hgcash ídem; segmento
+  "sin cargar ≥7d, ≥1 carga" → Validar lista muestra ex-cargadores.
 
 ## Sesión 2026-09-01
 

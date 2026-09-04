@@ -35,6 +35,18 @@ const notifBatchSchema = new mongoose.Schema({
   giftType: { type: String, enum: ['percent', 'fixed'], required: true },
   amount: { type: Number, required: true, min: 1 },
 
+  // APLICACIÓN del % (owner 2026-09-04): 'auto' = el sistema lo suma SOLO en
+  // la carga (manual sin bonus del agente / hgcash), sin cartel que marcar;
+  // 'agent' = el flujo viejo (cartel verde + "Marcar usado"). Lotes viejos sin
+  // el campo → 'agent'.
+  applyMode: { type: String, enum: ['agent', 'auto'], default: 'agent' },
+  // 'first' = solo la primera carga; 'all' = TODAS las cargas hasta expiresAt.
+  applyScope: { type: String, enum: ['first', 'all'], default: 'first' },
+  // Franja horaria diaria (minutos del día, hora argentina) en la que aplica
+  // el % automático. null = a cualquier hora dentro de la vigencia.
+  applyFromMin: { type: Number, default: null },
+  applyToMin: { type: Number, default: null },
+
   // Rollover del regalo de fichas auto-acreditado (owner 2026-08-10):
   // 0 = sin rollover (retirable), x2/x5/etc = debe apostar N× el bono.
   // Se valida contra bonus.multipliers de 1girox al crear el lote.
@@ -70,9 +82,14 @@ const notifBatchSchema = new mongoose.Schema({
   // Cómo se armó la lista (para el historial): 'list' = usernames pegados,
   // 'inactive' = inactivos ≥ audienceDays sin login (tope audienceLimit,
   // los más recientes primero), 'all' = lote completo (todos los clientes).
-  audienceType: { type: String, enum: ['list', 'inactive', 'all', 'public'], default: 'list' },
+  // 'segment' (2026-09-04) = filtro fino: base (sin login / sin cargar /
+  // cargaron hace poco) + mín. cargas + mín. $ + publicista + cupo. El filtro
+  // exacto queda en audienceFilter y su texto legible en audienceLabel.
+  audienceType: { type: String, enum: ['list', 'inactive', 'all', 'public', 'segment'], default: 'list' },
   audienceDays: { type: Number, default: null },
   audienceLimit: { type: Number, default: null },
+  audienceFilter: { type: mongoose.Schema.Types.Mixed, default: null },
+  audienceLabel: { type: String, default: '' },
 
   // false hasta que TODOS los recipients tengan delivery final. El motor
   // (_processNotifBatchQueue, cron en server.js) retoma los lotes con

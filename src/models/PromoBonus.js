@@ -37,6 +37,24 @@ const promoBonusSchema = new mongoose.Schema({
   sourceRuleCode: { type: String, default: null },
   sourceRuleName: { type: String, default: null },
 
+  // APLICACIÓN AUTOMÁTICA (owner 2026-09-04, lotes con regalo): si es true, el
+  // % NO lo aplica el agente — lo suma SOLO el sistema en la carga (manual sin
+  // bonus del agente o auto-carga hgcash), igual que el % de la ruleta.
+  //  - applyScope 'first' = vale por UNA carga (se marca 'used' al aplicarse).
+  //  - applyScope 'all'   = vale para TODAS las cargas hasta expiresAt (queda
+  //    'active'; usesCount cuenta cuántas veces se aplicó).
+  //  - applyFromMin/applyToMin = franja HORARIA diaria (minutos del día, hora
+  //    argentina) en la que se aplica; null = a cualquier hora. Puede cruzar
+  //    medianoche (ej. 22:00 → 02:00).
+  autoApply:    { type: Boolean, default: false },
+  applyScope:   { type: String, enum: ['first', 'all'], default: 'first' },
+  applyFromMin: { type: Number, default: null },
+  applyToMin:   { type: Number, default: null },
+  usesCount:    { type: Number, default: 0 },
+  // Suma de los bonos ($) que efectivamente se acreditaron con este PromoBonus
+  // (ROI de los lotes automáticos; en scope 'all' acumula todas las cargas).
+  usesTotalBonus: { type: Number, default: 0 },
+
   activatedAt: { type: Date, default: Date.now, index: true },
   expiresAt:   { type: Date, required: true, index: true },
 

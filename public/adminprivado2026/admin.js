@@ -7257,6 +7257,8 @@ async function loadNotificationsPanel() {
         loadTagBroadcastOptions(),
         loadNotifBatches()
     ]);
+    // #263: estado inicial de la card "Lote con regalo" (hint del % automático).
+    try { updateGiftBatchTypeUI(); updateGiftBatchSegHint(); } catch (_) {}
 }
 
 // ===== Notificaciones programadas =====
@@ -11340,12 +11342,30 @@ async function loadChatPromoBonus(username) {
         // Lotes con regalo (2026-08-10): pueden ser % o REGALO de $ fijo — el
         // agente lo suma en la carga igual que un %. El origen muestra el lote.
         const esFijo = Number(b.montoFijoARS) > 0 && !(Number(b.percent) > 0);
-        const tituloBono = esFijo
-            ? 'REGALO PENDIENTE: $' + Number(b.montoFijoARS).toLocaleString('es-AR') + ' — sumáselo en su próxima carga'
-            : 'BONO VIGENTE: ' + b.percent + '% en la carga';
         const origen = b.sourceRuleCode === 'lote'
             ? escapeHtml(b.sourceRuleName || 'lote')
             : 'regla ' + escapeHtml(b.sourceRuleCode || '-');
+        // #263: bono de lote AUTOMÁTICO — lo aplica el sistema en la carga
+        // (manual sin bonus / hgcash). El cartel es informativo: no hay que
+        // marcar nada; el botón solo CANCELA el bono si hiciera falta.
+        if (b.autoApply) {
+            const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+            const franja = (b.applyFromMin != null && b.applyToMin != null) ? ' de ' + hm(b.applyFromMin) + ' a ' + hm(b.applyToMin) + ' (hora AR)' : '';
+            const alcance = b.applyScope === 'all'
+                ? 'en TODAS sus cargas' + franja + ' hasta que venza · aplicado ' + (b.usesCount || 0) + ' ' + ((b.usesCount || 0) === 1 ? 'vez' : 'veces')
+                : 'en su PRÓXIMA carga' + franja;
+            el.style.background = 'linear-gradient(90deg,#0b6e8f,#084d66)';
+            el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">' +
+                '<span style="font-size:18px;">⚡</span>' +
+                '<div style="flex:1;min-width:120px;"><strong style="font-size:13px;">BONO AUTOMÁTICO: +' + b.percent + '% ' + alcance + '</strong>' +
+                '<div style="font-size:11px;opacity:0.9;">Se suma SOLO al cargar (transferencia automática o carga manual sin bonus) — NO hay que marcar nada · Vence en ' + minsTxt + ' · ' + origen + '</div></div>' +
+                '<button onclick="markChatPromoBonusUsed(\'' + b.id + '\', true)" style="background:rgba(255,255,255,0.85);color:#7a1f1f;border:none;border-radius:7px;padding:6px 11px;font-weight:800;font-size:11.5px;cursor:pointer;">✕ Cancelar bono</button>' +
+                '</div>';
+            return;
+        }
+        const tituloBono = esFijo
+            ? 'REGALO PENDIENTE: $' + Number(b.montoFijoARS).toLocaleString('es-AR') + ' — sumáselo en su próxima carga'
+            : 'BONO VIGENTE: ' + b.percent + '% en la carga';
         el.style.background = 'linear-gradient(90deg,#0f8a2f,#0a6b25)';
         el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">' +
             '<span style="font-size:18px;">🎁</span>' +
@@ -11413,8 +11433,11 @@ async function markChatRouletteUsed(userId) {
     } catch (e) { showToast('Error de conexión', 'error'); }
 }
 
-async function markChatPromoBonusUsed(id) {
-    if (!confirm('¿Marcar el bono como usado? Vale por 1 sola carga — después de esto el cliente no lo tiene más.')) return;
+async function markChatPromoBonusUsed(id, esCancelar) {
+    const msg = esCancelar
+        ? '¿CANCELAR el bono automático? El cliente deja de recibir el % en sus cargas desde ahora.'
+        : '¿Marcar el bono como usado? Vale por 1 sola carga — después de esto el cliente no lo tiene más.';
+    if (!confirm(msg)) return;
     try {
         const r = await authFetch('/api/admin/promo-bonus/' + id + '/use', { method: 'POST' });
         const j = await r.json();
@@ -11451,6 +11474,37 @@ function updateGiftBatchTypeUI() {
     const tipo = (document.querySelector('input[name="giftBatchType"]:checked') || {}).value || 'percent';
     const wrap = document.getElementById('giftBatchRolloverWrap');
     if (wrap) wrap.style.display = (tipo === 'fixed') ? '' : 'none';
+    // #263: cómo se aplica el % (auto / agente), alcance y franja horaria.
+    const applyWrap = document.getElementById('giftBatchApplyWrap');
+    if (applyWrap) applyWrap.style.display = (tipo === 'percent') ? '' : 'none';
+    const apply = (document.querySelector('input[name="giftBatchApply"]:checked') || {}).value || 'auto';
+    const scope = (document.querySelector('input[name="giftBatchScope"]:checked') || {}).value || 'first';
+    const scopeW = document.getElementById('giftBatchScopeWrap');
+    const winW = document.getElementById('giftBatchWindowWrap');
+    if (scopeW) scopeW.style.display = apply === 'auto' ? '' : 'none';
+    if (winW) winW.style.display = apply === 'auto' ? 'flex' : 'none';
+    const hint = document.getElementById('giftBatchApplyHint');
+    if (hint) {
+        const from = (document.getElementById('giftBatchApplyFrom') || {}).value || '';
+        const to = (document.getElementById('giftBatchApplyTo') || {}).value || '';
+        const franja = (from && to) ? ' solo entre las ' + from + ' y las ' + to + ' (hora AR)' : '';
+        hint.textContent = apply === 'agent'
+            ? 'Modo viejo: el cajero ve el cartel verde y suma el % a mano.'
+            : scope === 'all'
+                ? '⚡ Se suma solo en TODAS las cargas del cliente' + franja + ', hasta que venza la vigencia. Nadie tiene que marcar nada.'
+                : '⚡ Se suma solo en la PRIMERA carga del cliente' + franja + ' (después queda consumido). Nadie tiene que marcar nada.';
+    }
+}
+
+function updateGiftBatchSegHint() {
+    const base = (document.getElementById('giftBatchSegBase') || {}).value || 'nodeposit';
+    const h = document.getElementById('giftBatchSegHint');
+    if (!h) return;
+    h.textContent = base === 'nodeposit'
+        ? 'Ex-cargadores: cargaron alguna vez y su ÚLTIMA carga fue hace ≥ X días. Van primero los que cargaron más recientemente.'
+        : base === 'deposited'
+            ? 'Cargadores activos: su última carga fue dentro de los últimos X días. Van primero los que más $ cargaron.'
+            : 'Sin entrar a la app hace ≥ X días (o nunca). Van primero los más recientes (más probables de volver).';
 }
 
 function updateGiftBatchAudienceUI() {
@@ -11461,6 +11515,7 @@ function updateGiftBatchAudienceUI() {
     const pubW = document.getElementById('giftBatchPublicWrap');
     if (listW) listW.style.display = aud === 'list' ? '' : 'none';
     if (inacW) inacW.style.display = aud === 'inactive' ? 'flex' : 'none';
+    if (aud === 'inactive') updateGiftBatchSegHint();
     if (allN) allN.style.display = aud === 'all' ? '' : 'none';
     if (pubW) pubW.style.display = aud === 'public' ? '' : 'none';
     // Código público: siempre es "con código" (no hay a quién notificar) →
@@ -11484,16 +11539,37 @@ function _giftBatchAudiencePayload() {
         return { audienceType: 'list', usernames };
     }
     if (aud === 'inactive') {
+        // #263: segmento fino (base + mín. cargas + mín. $ + publicista + cupo)
         const days = Number((document.getElementById('giftBatchInactiveDays') || {}).value);
-        if (!Number.isFinite(days) || days < 1) { showToast('Poné los días de inactividad', 'error'); return null; }
+        if (!Number.isFinite(days) || days < 1) { showToast('Poné los días (X)', 'error'); return null; }
         const limitRaw = ((document.getElementById('giftBatchInactiveLimit') || {}).value || '').trim();
-        return { audienceType: 'inactive', audienceDays: days, audienceLimit: limitRaw === '' ? null : Number(limitRaw) };
+        const v = (id) => ((document.getElementById(id) || {}).value || '').trim();
+        return {
+            audienceType: 'segment',
+            segBase: v('giftBatchSegBase') || 'nodeposit',
+            audienceDays: days,
+            minDeposits: v('giftBatchMinDeposits') === '' ? null : Number(v('giftBatchMinDeposits')),
+            minTotalArs: v('giftBatchMinTotal') === '' ? null : Number(v('giftBatchMinTotal')),
+            campaign: v('giftBatchCampaign'),
+            audienceLimit: limitRaw === '' ? null : Number(limitRaw)
+        };
     }
     if (aud === 'public') {
         const maxRaw = ((document.getElementById('giftBatchMaxClaims') || {}).value || '').trim();
         return { audienceType: 'public', maxClaims: maxRaw === '' ? null : Number(maxRaw) };
     }
     return { audienceType: 'all' };
+}
+
+function _giftBatchSegmentTxt(a) {
+    const base = a.segBase === 'nologin' ? ('sin entrar ≥' + a.audienceDays + 'd')
+        : a.segBase === 'deposited' ? ('cargaron en los últimos ' + a.audienceDays + 'd')
+        : ('sin cargar ≥' + a.audienceDays + 'd');
+    const ex = [];
+    if (a.minDeposits > 0) ex.push('≥' + a.minDeposits + ' cargas');
+    if (a.minTotalArs > 0) ex.push('≥$' + Number(a.minTotalArs).toLocaleString('es-AR'));
+    if (a.campaign) ex.push('publicista ' + a.campaign);
+    return base + (ex.length ? ' · ' + ex.join(' · ') : '') + (a.audienceLimit ? ' (cupo ' + a.audienceLimit + ')' : '');
 }
 
 function genGiftBatchCode() {
@@ -11580,12 +11656,24 @@ async function sendGiftBatch() {
     }
     const rolloverX = Number((document.getElementById('giftBatchRollover') || {}).value) || 0;
     const esFichas = giftType === 'fixed';
+    // #263: aplicación del %
+    const applyMode = (document.querySelector('input[name="giftBatchApply"]:checked') || {}).value || 'auto';
+    const applyScope = (document.querySelector('input[name="giftBatchScope"]:checked') || {}).value || 'first';
+    const applyFrom = ((document.getElementById('giftBatchApplyFrom') || {}).value || '').trim();
+    const applyTo = ((document.getElementById('giftBatchApplyTo') || {}).value || '').trim();
+    if (!esFichas && applyMode === 'auto' && ((applyFrom && !applyTo) || (!applyFrom && applyTo))) {
+        showToast('La franja horaria necesita DESDE y HASTA (o dejá los dos vacíos)', 'error'); return;
+    }
+    const franjaTxt = (applyFrom && applyTo) ? ' de ' + applyFrom + ' a ' + applyTo + ' (hora AR)' : '';
     const regaloTxt = giftType === 'percent'
-        ? ('+' + amount + '% en próxima carga (lo aplica el agente)')
+        ? (applyMode === 'agent'
+            ? ('+' + amount + '% en próxima carga (lo aplica el agente, cartel verde)')
+            : ('+' + amount + '% AUTOMÁTICO en ' + (applyScope === 'all' ? 'TODAS sus cargas' : 'su PRIMERA carga') + franjaTxt + ' — se suma solo, nadie marca nada'))
         : ('$' + amount.toLocaleString('es-AR') + ' en fichas — SE ACREDITAN SOLAS (rollover x' + rolloverX + ')');
     const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (' + validHours + 'hs)');
     const audTxt = esPublico ? ('📣 CÓDIGO PÚBLICO — cualquier cliente registrado' + (audience.maxClaims ? ' (cupo ' + audience.maxClaims + ' canjes)' : ' (SIN cupo)')) :
         audience.audienceType === 'all' ? '🌍 LOTE COMPLETO' :
+        audience.audienceType === 'segment' ? ('🎯 ' + _giftBatchSegmentTxt(audience)) :
         audience.audienceType === 'inactive' ? ('😴 inactivos ≥' + audience.audienceDays + ' días' + (audience.audienceLimit ? ' (cupo ' + audience.audienceLimit + ')' : '')) :
         '📋 lista pegada';
     let notaFinal;
@@ -11597,6 +11685,8 @@ async function sendGiftBatch() {
         notaFinal = '⚠️ La plata se acredita AUTOMÁTICAMENTE cuando cada uno canjea su código — sin intervención del agente.';
     } else if (esFichas) {
         notaFinal = '🚨 ATENCIÓN: se le acreditan $' + amount.toLocaleString('es-AR') + ' A CADA UNO apenas se envíe el lote — TOTAL ≈ $' + (amount * count).toLocaleString('es-AR') + ', automático, sin intervención del agente.';
+    } else if (applyMode === 'auto') {
+        notaFinal = '⚡ El % se suma SOLO cuando cada cliente carga (transferencia automática o carga manual sin bonus)' + (applyScope === 'all' ? ', en TODAS sus cargas' : ', una sola vez') + franjaTxt + ', hasta que venza la vigencia. Nadie tiene que marcar nada.';
     } else {
         notaFinal = 'El regalo lo aplicás VOS en la carga (cartel verde del chat).';
     }
@@ -11613,6 +11703,7 @@ async function sendGiftBatch() {
             method: 'POST',
             body: JSON.stringify({
                 mode, giftType, amount, validHours, message, rolloverX,
+                applyMode, applyScope, applyFrom, applyTo,
                 ...audience,
                 name: ((document.getElementById('giftBatchName') || {}).value || '').trim(),
                 title: ((document.getElementById('giftBatchTitle') || {}).value || '').trim(),
@@ -11633,7 +11724,7 @@ async function sendGiftBatch() {
             showToast('Lote enviado a ' + t.recipients + ' usuarios' + (j.code ? ' — código ' + j.code : ''), 'success');
             if (st) st.textContent = '✅ ' + t.recipients + ' destinatarios' + (j.code ? ' · código ' + j.code : '') + ' · las notificaciones salen en segundo plano';
         }
-        ['giftBatchAmount', 'giftBatchMessage', 'giftBatchUsers', 'giftBatchName', 'giftBatchCode', 'giftBatchTitle'].forEach((id) => {
+        ['giftBatchAmount', 'giftBatchMessage', 'giftBatchUsers', 'giftBatchName', 'giftBatchCode', 'giftBatchTitle', 'giftBatchApplyFrom', 'giftBatchApplyTo'].forEach((id) => {
             const el = document.getElementById(id); if (el) el.value = '';
         });
         const prev = document.getElementById('giftBatchPreview'); if (prev) prev.innerHTML = '';
@@ -11658,9 +11749,17 @@ async function loadNotifBatches() {
         box.innerHTML = rows.map((b) => {
             const fecha = new Date(b.sentAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
             const vencido = new Date(b.expiresAt).getTime() <= Date.now();
-            const regalo = b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'));
+            const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+            const franjaH = (b.applyFromMin != null && b.applyToMin != null) ? ' ' + hm(b.applyFromMin) + '-' + hm(b.applyToMin) : '';
+            const aplic = b.giftType === 'percent'
+                ? (b.applyMode === 'auto'
+                    ? ' <span style="color:#7fd7ff;" title="Se suma solo en la carga">⚡ auto · ' + (b.applyScope === 'all' ? 'todas las cargas' : '1ª carga') + franjaH + '</span>'
+                    : ' <span style="color:#aaa;">🧑‍💼 agente</span>')
+                : '';
+            const regalo = (b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'))) + aplic;
             const modo = b.mode === 'code' ? ('🔑 ' + escapeHtml(b.code || '')) : ('⏰ ' + b.validHours + 'hs');
             const aud = b.isPublic ? ('📣 código público' + (b.maxClaims ? ' (cupo ' + b.maxClaims + ')' : '')) :
+                b.audienceType === 'segment' ? ('🎯 ' + escapeHtml(b.audienceLabel || 'segmento')) :
                 b.audienceType === 'all' ? '🌍 todos' :
                 b.audienceType === 'inactive' ? ('😴 inactivos ≥' + (b.audienceDays || '?') + 'd' + (b.audienceLimit ? ' (cupo ' + b.audienceLimit + ')' : '')) :
                 '📋 lista';
@@ -11707,7 +11806,9 @@ async function toggleNotifBatchDetail(id) {
                 let estado;
                 if (u.creditedAt) estado = '<span style="color:#00ff88;">💰 acreditado automático</span>';
                 else if (u.creditError) estado = '<span style="color:#ff6b6b;" title="' + escapeHtml(u.creditError) + '">⚠ sin acreditar: ' + escapeHtml(u.creditError) + '</span>';
+                else if (u.bonusStatus === 'used' && u.autoApply) estado = '<span style="color:#7fd7ff;">⚡ aplicado solo' + (u.usesTotalBonus > 0 ? ' ($' + Number(u.usesTotalBonus).toLocaleString('es-AR') + ')' : '') + (u.usedBy ? ' · ' + escapeHtml(u.usedBy) : '') + '</span>';
                 else if (u.bonusStatus === 'used') estado = '<span style="color:#888;">✔ usado por ' + escapeHtml(u.usedBy || '-') + '</span>';
+                else if (u.bonusStatus === 'active' && u.autoApply) estado = '<span style="color:#7fd7ff;">⚡ bono AUTO activo' + (u.applyScope === 'all' ? ' · aplicado ' + (u.usesCount || 0) + 'x' + (u.usesTotalBonus > 0 ? ' ($' + Number(u.usesTotalBonus).toLocaleString('es-AR') + ')' : '') : '') + '</span>';
                 else if (u.bonusStatus === 'active') estado = '<span style="color:#00ff88;">🎁 bono ACTIVO</span>';
                 else if (u.bonusStatus === 'expired') estado = '<span style="color:#888;">⏰ bono vencido</span>';
                 else if (u.claimedAt) estado = '<span style="color:#00ff88;">canjeado</span>';

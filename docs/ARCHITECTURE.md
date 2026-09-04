@@ -152,16 +152,29 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   ELIMINADOS), **ScheduledNotif** (once/daily/weekly, worker cada 60s), **PromoBonus**
   (bono de carga vigente ≤30%, 1 sola carga, cap de LECTURA a 30% en
   `_getActivePromoBonus` — los bonos de LOTE `sourceRuleCode:'lote'` están EXENTOS
-  del cap y pueden ser de $ FIJO vía `montoFijoARS`), **BonusStrategyConfig** +
+  del cap y pueden ser de $ FIJO vía `montoFijoARS`; desde #263 pueden ser
+  **AUTOMÁTICOS**: `autoApply:true` + `applyScope` 'first'|'all' + franja horaria
+  `applyFromMin/applyToMin` (min. del día, hora AR) + `usesCount/usesTotalBonus` —
+  los consume `claimAutoPromoPercent` en `/api/admin/deposit` (sin bonus manual) y
+  en la auto-carga hgcash, con reversión si la carga falla; prioridad ruleta
+  bienvenida → diaria → 1ª carga → lote), **BonusStrategyConfig** +
   **StrategyEnrollment** (estrategia por voto de encuesta — APAGADA),
   **EncuestaVote/EncuestaFire** (motor encuesta — bonos apagados),
   **InactividadFire** (motor inactivos — APAGADO).
 - **NotifBatch** (2026-08-10) — LOTE de notificaciones con regalo enviado por un
   agente (roles admin|depositor; withdrawer solo lee el historial): audiencia
   (`audienceType`: 'list' usernames pegados / 'inactive' sin login ≥ N días con
-  cupo opcional, los más recientes primero / 'all' lote completo — tope de
-  sanidad 20k) + regalo (`percent` próxima carga o `fixed` $) + `validHours`
-  (1-168). **El envío lo hace un MOTOR reanudable** (`_processNotifBatchQueue`,
+  cupo opcional, los más recientes primero / **'segment'** (#263,
+  `_resolveNotifBatchSegment`): base `nodeposit` ex-cargadores sin cargar ≥ N días |
+  `nologin` | `deposited` cargaron en los últimos N días, + `minDeposits`,
+  `minTotalArs`, `campaign` y cupo, stats por agregación de Transaction, etiqueta
+  legible en `audienceLabel` / 'all' lote completo — tope de sanidad 20k) + regalo
+  (`percent` en la carga o `fixed` $) + `validHours` (1-168). **El % tiene
+  `applyMode`** (#263): 'auto' (default del panel) = el sistema lo suma SOLO en la
+  carga vía PromoBonus `autoApply` — `applyScope` 'first' (una carga) | 'all' (todas
+  hasta vencer) y franja horaria opcional `applyFromMin/ToMin`; 'agent' = flujo
+  viejo del cartel verde + "Marcar usado". El cartel del chat muestra los auto como
+  "⚡ BONO AUTOMÁTICO" (informativo, botón cancelar). **El envío lo hace un MOTOR reanudable** (`_processNotifBatchQueue`,
   cron 45s + kick al crear): cada destinatario arranca `delivery:null` y se
   procesa con CLAIM ATÓMICO ($elemMatch delivery:null → 'sending' via
   findOneAndUpdate con proyección posicional) → deploy/reinicio a mitad de lote
