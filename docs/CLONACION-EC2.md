@@ -19,11 +19,12 @@
    git clone https://github.com/jupedro2112-pixel/PAUTANUEVAnardo.git
    cd PAUTANUEVAnardo
    ```
-5. Exportá TODO (SSM + config del entorno), reemplazando por los nombres del
-   paso 3. ⚠️ El path SSM de ESTE proyecto es **`/nardo1girox/prod/`**
-   (el `/1girox/prod/` es de la OTRA página — no confundir):
+5. Exportá TODO (SSM + config del entorno). **Valores REALES verificados en la
+   consola (2026-09-04):** Application `paginaaaacreada` · Environment
+   `pauprueba` · SSM_PATH `/pautomaticonar/prod/` (visto en Configuración →
+   propiedades del entorno; NO es el /nardo1girox/ que decía el plan viejo):
    ```bash
-   bash scripts/aws-export-config.sh /nardo1girox/prod/ NOMBRE_APPLICATION NOMBRE_ENVIRONMENT
+   bash scripts/aws-export-config.sh /pautomaticonar/prod/ paginaaaacreada pauprueba
    ```
 6. Descargá el resultado: **Actions → Download file** → escribí
    `PAUTANUEVAnardo/clon-export.tar.gz`. Queda en tu PC.
