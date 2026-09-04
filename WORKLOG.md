@@ -103,6 +103,13 @@
     versiones del webview) + instrucciones "⋯ → Abrir en el navegador externo".
   - Link chico "Seguir acá de todos modos" para no perder la conversión si el escape
     falla. En el navegador real el UA no matchea → no aparece nada.
+- **FIX iPhone (2026-09-04, "toco Abrir en Safari y no hace nada"):** el scheme
+  `x-safari-https://` está bloqueado en las versiones nuevas del webview de IG iOS →
+  se sacó el botón muerto. Ahora en iPhone: **flecha 👆 animada** apuntando al menú ⋯
+  + los 2 pasos como acción principal (recuadro verde grande), botón "📋 O COPIÁ EL
+  LINK y pegalo en Safari" (clipboard con fallback), la aclaración del usuario
+  guardado, y un intento silencioso del scheme a los 500 ms por si esa versión del
+  webview lo permite.
 - Solo landing (Vercel con el push). Nota: el flujo posterior (signup + ENTRAR AL
   CASINO + PWA) hereda el navegador real → la sesión queda guardada y puede instalar
   la app.
