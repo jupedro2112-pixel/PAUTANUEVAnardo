@@ -89,6 +89,27 @@
 
 ## Sesión 2026-08-30
 
+### 262. Scripts de clonación de la infra AWS a OTRA cuenta (automatización ~80%)
+- **Pedido owner:** replicar todo el EB en un Amazon nuevo de cero, lo más automático
+  posible. Ya existía el runbook `docs/MIGRACION-AWS.md` (inventario completo del
+  entorno) + `clon-ssm-put.sh`/`ssm-clone-path.sh` (misma cuenta). Se suman:
+- **`scripts/aws-export-config.sh`** (CloudShell cuenta VIEJA): exporta SSM
+  desencriptado + config del environment EB + metadata, filtra las option-settings
+  reutilizables (dropea VPC/SG/keypair/cert/rol, que son de la cuenta) → un solo
+  `clon-export.tar.gz` para descargar. ⚠️ Contiene secretos: jamás al repo.
+- **`scripts/aws-bootstrap-clone.sh`** (CloudShell cuenta NUEVA, por ETAPAS
+  re-ejecutables): `iam` (instance profile + 5 policies) → `ssm PATH` (importa los
+  parámetros) → `redis` (ElastiCache t4g.micro 7.1 TLS) → `cert DOMINIO` (ACM +
+  imprime el CNAME p/ Cloudflare y espera ISSUED) → `eb APP ENV SSM_PATH BASE_URL`
+  (crea app + environment con las option-settings exportadas, stack Node AL2023 más
+  nuevo, inyecta SSM_PATH/PUBLIC_BASE_URL/cert vía env `CERT_ARN`) → `status`.
+- **Lo que queda manual (documentado en el header del script):** crear la cuenta /
+  tarjeta; caso de soporte SNS (cuenta nueva = sandbox SMS $1 — pedirlo TEMPRANO,
+  tarda días); pegar el CNAME del cert en Cloudflare; REDIS_URL y PUBLIC_BASE_URL
+  nuevos en SSM; SG del Redis (6379 desde el SG del entorno); dominio → CNAME del
+  entorno; allowlist Atlas si aplica; webhook de hgcash a la URL nueva; subir el ZIP.
+- Scripts sin secretos (el repo es público); `bash -n` OK.
+
 ### 261. FIX: el hub PREMIOS "se bugeaba" al deslizar en el celular
 - **Tres causas:** (1) el auto-refresh (al abrir + cada 60 s) RE-ARMABA el hub entero
   aunque nada hubiera cambiado → si el cliente estaba deslizando, el scroll se cortaba
