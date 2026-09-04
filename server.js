@@ -20278,6 +20278,7 @@ async function _creditNotifBatchGift(uDoc, batch) {
 
 // Texto que ve el cliente en el chat (el push lleva title + message pelado).
 function _notifBatchChatContent(batch) {
+  if (batch.giftType === 'none') return String(batch.message || ''); // #264 solo aviso
   if (batch.mode === 'code') {
     // Fichas por código = acreditación AUTOMÁTICA al canjear; % = lo aplica
     // el agente en la próxima carga.
@@ -20333,7 +20334,7 @@ async function _processOneNotifBatch(batchId) {
   const batch = await NotifBatch.findOne({ id: batchId }).select('-recipients').lean();
   if (!batch) return;
   const chatContent = _notifBatchChatContent(batch);
-  const pushTitle = batch.title || '🎁 Tenés un regalo';
+  const pushTitle = batch.title || (batch.giftType === 'none' ? '📢 Aviso' : '🎁 Tenés un regalo');
   const pushBody = String(batch.message || '').slice(0, 150);
   let procesados = 0;
 
@@ -20403,7 +20404,7 @@ async function _processOneNotifBatch(batchId) {
               : '';
             mensajeChat = `${batch.message}\n\n💰 ¡Te ACREDITAMOS $${Number(batch.amount).toLocaleString('es-AR')} en fichas${rollTxt}! Ya están en tu cuenta. ¡A jugarlas! 🎰`;
           }
-        } else if (batch.mode === 'window' && !rec.promoBonusId) {
+        } else if (batch.mode === 'window' && batch.giftType !== 'none' && !rec.promoBonusId) {
           // % por tiempo: cartel verde del agente (PromoBonus), como siempre.
           const pb = await _activateBatchPromoBonus(u, batch);
           await NotifBatch.updateOne(
@@ -20505,6 +20506,7 @@ function _batchRolloverTxt(batch) {
   return r > 0 ? ` El extra entra como bono con rollover x${r} (apostá ${r}× el bono y después podés retirar).` : '';
 }
 function _giftLabelOf(batch) {
+  if (batch.giftType === 'none') return '';
   if (batch.giftType !== 'percent') {
     return `regalo de $${Number(batch.amount).toLocaleString('es-AR')} en tu próxima carga`;
   }
@@ -20737,10 +20739,15 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
     const b = req.body || {};
     const mode = b.mode === 'window' ? 'window' : (b.mode === 'code' ? 'code' : null);
     if (!mode) return res.status(400).json({ error: 'Modo inválido (code | window).' });
-    const giftType = b.giftType === 'fixed' ? 'fixed' : (b.giftType === 'percent' ? 'percent' : null);
-    if (!giftType) return res.status(400).json({ error: 'Tipo de regalo inválido (percent | fixed).' });
+    const giftType = b.giftType === 'fixed' ? 'fixed' : (b.giftType === 'percent' ? 'percent' : (b.giftType === 'none' ? 'none' : null));
+    if (!giftType) return res.status(400).json({ error: 'Tipo de regalo inválido (percent | fixed | none).' });
+    // #264 SOLO AVISO: sin regalo → siempre "por tiempo" (un código sin regalo no
+    // tiene sentido) y sin código público.
+    if (giftType === 'none' && (mode !== 'window' || b.audienceType === 'public')) {
+      return res.status(400).json({ error: 'Un aviso sin regalo se manda "por tiempo" a una audiencia (no lleva código).' });
+    }
 
-    const amount = Math.round(Number(b.amount));
+    const amount = giftType === 'none' ? 0 : Math.round(Number(b.amount));
     if (giftType === 'percent' && (!Number.isFinite(amount) || amount < 1 || amount > 200)) {
       return res.status(400).json({ error: 'El % del regalo tiene que estar entre 1 y 200.' });
     }
@@ -20815,7 +20822,7 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
     if (esPublico && message.length > 500) {
       return res.status(400).json({ error: 'El mensaje puede tener hasta 500 caracteres.' });
     }
-    const title = String(b.title || '').trim().slice(0, 100) || '🎁 Tenés un regalo';
+    const title = String(b.title || '').trim().slice(0, 100) || (giftType === 'none' ? '📢 Aviso' : '🎁 Tenés un regalo');
     const name = String(b.name || '').trim().slice(0, 60);
 
     // Código (solo modo code): el que mandó el panel o uno autogenerado.
@@ -20895,7 +20902,7 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
         channel: _notifChannelOf(u), delivery: null, deliveryAt: null,
         // Modo window: el bono nace activado para todos → claimedAt = envío
         // (el PromoBonus lo crea el motor al procesar a cada uno).
-        claimedAt: mode === 'window' ? sentAt : null,
+        claimedAt: (mode === 'window' && giftType !== 'none') ? sentAt : null,
         promoBonusId: null
       }))
     };

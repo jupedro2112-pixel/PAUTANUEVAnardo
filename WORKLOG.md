@@ -8,6 +8,25 @@
 
 ## Sesión 2026-09-04
 
+### 264. Notificaciones: limpieza — todo sale desde "Lote con regalo (o solo aviso)"; compositor y difusión por etiqueta OCULTOS
+- **Pedido owner:** "todo lo demás limpialo, las demás notificaciones que no se usan;
+  lo que es automático dejalo". Respuesta: dejarlas era casi indistinto (no corren
+  nada solas ni cuestan), pero confunden a los cajeros → se limpian del panel SIN
+  borrar código (reversible).
+- **Lote "📢 Sin regalo (solo aviso)"** (`giftType:'none'`, amount 0): manda solo el
+  mensaje (push + chat) a la audiencia elegida (lista / segmento / todos). Siempre
+  "por tiempo" (sin código; sin código público). Sin PromoBonus, sin `claimedAt`,
+  historial muestra "📢 aviso" y no cuenta "con bono". Título de push default
+  "📢 Aviso". Con esto el Lote cubre lo que hacían el compositor y la difusión.
+- **Ocultos en el panel** (envueltos en `#notifLegacyTools` display:none, botón
+  "🧰 herramientas viejas" junto a "Cómo funciona" para mostrarlos si hace falta):
+  "✉️ Redactar notificación" (compositor por segmento/todos/usuarios) y "📣 Difusión
+  por etiqueta". Sus endpoints y JS siguen intactos. Se mantienen visibles: stats de
+  tokens, "🎯 Estrategia de Notificaciones" + "⏰ Notificaciones programadas" (lo
+  automático), Lote, Lotes enviados y "👥 Usuarios y estado de app".
+- **Validado:** `node --check` OK + divs balanceados (90/90) en la sección.
+  **admin-sw → v50.** Back necesita redeploy (por el giftType 'none').
+
 ### 263. Lote con regalo: % AUTOMÁTICO en la carga (1ª carga o TODAS + franja horaria) + audiencia por SEGMENTO
 - **Pedido owner:** que el "% en próxima carga" de los lotes NO dependa del cartel al
   agente ("marcar usado"): que se sume solo en la próxima carga; poder elegir si vale

@@ -1518,6 +1518,11 @@ document.addEventListener('change', function (ev) {
                     </div>
                 </div>
 
+                <!-- #264 (owner 2026-09-04): el compositor y la difusión por etiqueta
+                     quedan OCULTOS — todo se manda desde "🎁 Lote con regalo" (que ahora
+                     también permite "solo aviso"). Se conservan (no se borraron) por si
+                     hace falta volver: botón "mostrar herramientas viejas". -->
+                <div id="notifLegacyTools" style="display:none">
                 <!-- Compositor de notificación -->
                 <div class="commands-section" style="background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
                     <h3 style="margin-bottom:1rem;font-size:1rem;color:var(--text-secondary,#aaa)">✉️ Redactar notificación</h3>
@@ -1630,6 +1635,7 @@ document.addEventListener('change', function (ev) {
                         <span id="tagBroadcastStatus" style="font-size:.85rem;color:#a5b4fc"></span>
                     </div>
                 </div>
+                </div><!-- /notifLegacyTools -->
 
                 <!-- LOTE CON REGALO (owner 2026-08-10): notificación a una lista
                      de usuarios con bono (% próxima carga o $ fijo), por CÓDIGO
@@ -1637,8 +1643,11 @@ document.addEventListener('change', function (ev) {
                      PromoBonus → cartel verde del chat + "Marcar usado". -->
                 <div class="commands-section" style="background:var(--bg-secondary,#1a1a2e);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
-                        <h3 style="margin:0;font-size:1rem;color:#d4af37">🎁 Lote con regalo</h3>
-                        <button class="btn btn-secondary btn-sm" onclick="var e=document.getElementById('giftBatchAyuda');e.style.display=(e.style.display==='none'?'':'none')">❓ Cómo funciona</button>
+                        <h3 style="margin:0;font-size:1rem;color:#d4af37">🎁 Lote con regalo (o solo aviso)</h3>
+                        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+                            <button class="btn btn-secondary btn-sm" onclick="var e=document.getElementById('giftBatchAyuda');e.style.display=(e.style.display==='none'?'':'none')">❓ Cómo funciona</button>
+                            <button class="btn btn-secondary btn-sm" style="opacity:.6" title="Compositor viejo y difusión por etiqueta (ya no hacen falta: todo sale desde acá)" onclick="var e=document.getElementById('notifLegacyTools');e.style.display=(e.style.display==='none'?'':'none')">🧰 herramientas viejas</button>
+                        </div>
                     </div>
                     <!-- Guía completa para agentes (owner 2026-08-10). Toggle con ❓. -->
                     <div id="giftBatchAyuda" style="display:none;background:rgba(83,189,235,0.06);border:1px solid rgba(83,189,235,0.35);border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#ccc;font-size:12px;line-height:1.7;">
@@ -1648,7 +1657,7 @@ document.addEventListener('change', function (ev) {
                         <p style="margin:0 0 8px;color:#ffd166;"><b>⚠️ Regla de oro — quién pone la plata:</b> el <b>% con "🧑‍💼 Lo aplica el agente"</b> lo aplica el agente a mano (cartel verde + marcar usado) — es el modo viejo, por si querés controlarlo vos. Las <b>FICHAS se acreditan SOLAS, siempre</b>: con código, al canjearlo; por tiempo, apenas se envía el lote a todos. Entran como BONO con el rollover que elegiste al armar el lote (0 = sin rollover, retirable; x2/x5 = tiene que apostar N× antes de retirar). El agente no hace nada con las fichas — le llega una nota informativa.</p>
                         <p style="margin:0 0 8px;color:#ff9d76;"><b>🛡️ Candados anti-abuso (automáticos):</b> cada usuario tiene tope de regalos de lote (máx 3 acreditaciones en 24hs y $300.000 en 7 días). Si alguien lo supera, el crédito SE BLOQUEA solo y salta una <b>alerta roja urgente</b> a todos los admins conectados + una nota en el chat de ese usuario. Tampoco se acredita si ya tiene un bono activo en el casino (se pisarían). Todo lo bloqueado queda visible en el detalle del lote ("⚠ sin acreditar").</p>
                         <ul style="margin:0 0 8px;padding-left:18px;">
-                            <li><b>Tipos de regalo:</b> <b>% extra en la próxima carga</b> (ej. +50%: carga $10.000 → le acreditás $15.000, siempre a mano) o <b>fichas</b> (ej. $5.000 — SIEMPRE automático).</li>
+                            <li><b>Tipos de regalo:</b> <b>% extra en la carga</b> (ej. +50%: carga $10.000 → recibe $15.000; automático o a mano según elijas), <b>fichas</b> (ej. $5.000 — SIEMPRE automático) o <b>📢 sin regalo</b>: solo el aviso (push + chat) a la audiencia que elijas — reemplaza al compositor viejo y a la difusión por etiqueta.</li>
                             <li><b>🔑 CON CÓDIGO:</b> la notificación lleva un código que el cliente canjea en su app (menú ☰ → "Reclamar Bono con Código"). <b>Solo funciona para los que están EN el lote</b> — si lo comparten en un grupo, al resto le dice "código no válido". Una sola vez por persona, hasta que venza el plazo. Si el regalo es %, al canjear aparece el cartel verde; si es fichas, la plata entra al toque y al agente le llega una nota "no hay que hacer nada". Si el cliente ya tiene un bono activo en el casino, el canje de fichas se rechaza (que lo termine y vuelva a intentar).</li>
                             <li><b>⏰ POR TIEMPO:</b> sin código — al enviar, el bono queda ACTIVADO solo para todos los del lote por las horas que elijas. Ideal promos relámpago ("tenés 2 horas para cargar con +30%"). Al vencer desaparece solo.</li>
                             <li><b>Audiencias:</b> 📋 lista pegada (usuarios a dedo) · 🎯 <b>segmento</b>: elegís la base — 💸 <b>cargaron antes y no cargan hace ≥ X días</b> (los que más vale recuperar), 😴 sin entrar hace ≥ X días, o 🔥 cargaron en los últimos X días (activos/VIP) — y la afinás con mínimo de cargas históricas, mínimo de $ cargados, publicista y cupo (ej. "los 300 mejores ex-cargadores de santino") · 🌍 lote completo (todos) · 📣 <b>CÓDIGO PÚBLICO</b>: no se envía nada — el código se crea y lo subís VOS a la Comunidad de Telegram o a la red que quieras; CUALQUIER cliente registrado puede canjearlo (una vez por cuenta) mientras esté vigente, con cupo total de canjes opcional (ej. "los primeros 100"). Mismo regalo, mismos topes anti-abuso, y en el historial ves quiénes lo canjearon.</li>
@@ -1694,7 +1703,8 @@ document.addEventListener('change', function (ev) {
                         <div>
                             <label class="form-label" style="display:block;margin-bottom:.3rem">Regalo</label>
                             <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="percent" checked onchange="updateGiftBatchTypeUI()"> ％ extra en la carga</label>
-                            <label style="font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="fixed" onchange="updateGiftBatchTypeUI()"> 💵 Fichas (se acreditan solas)</label>
+                            <label style="margin-right:1rem;font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="fixed" onchange="updateGiftBatchTypeUI()"> 💵 Fichas (se acreditan solas)</label>
+                            <label style="font-size:.85rem;cursor:pointer"><input type="radio" name="giftBatchType" value="none" onchange="updateGiftBatchTypeUI()"> 📢 Sin regalo (solo aviso)</label>
                         </div>
                     </div>
                     <!-- #263 (owner 2026-09-04): el % se aplica SOLO en la carga (auto) —
@@ -1725,7 +1735,7 @@ document.addEventListener('change', function (ev) {
                         </div>
                     </div>
                     <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.75rem;align-items:flex-end">
-                        <div>
+                        <div id="giftBatchAmountWrap">
                             <label class="form-label" style="display:block;margin-bottom:.3rem">Monto (% o $)</label>
                             <input type="number" id="giftBatchAmount" class="form-input" min="1" step="1" placeholder="Ej: 50" style="width:120px" />
                         </div>

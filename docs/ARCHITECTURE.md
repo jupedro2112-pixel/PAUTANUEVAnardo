@@ -171,7 +171,9 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   `nologin` | `deposited` cargaron en los últimos N días, + `minDeposits`,
   `minTotalArs`, `campaign` y cupo, stats por agregación de Transaction, etiqueta
   legible en `audienceLabel` / 'all' lote completo — tope de sanidad 20k) + regalo
-  (`percent` en la carga o `fixed` $) + `validHours` (1-168). **El % tiene
+  (`percent` en la carga, `fixed` $ o **`none` = solo aviso** (#264: sin bono, solo
+  push+chat; el compositor "Redactar notificación" y "Difusión por etiqueta" quedaron
+  ocultos en `#notifLegacyTools`, código intacto)) + `validHours` (1-168). **El % tiene
   `applyMode`** (#263): 'auto' (default del panel) = el sistema lo suma SOLO en la
   carga vía PromoBonus `autoApply` — `applyScope` 'first' (una carga) | 'all' (todas
   hasta vencer) y franja horaria opcional `applyFromMin/ToMin`; 'agent' = flujo

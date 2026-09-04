@@ -11478,7 +11478,26 @@ function updateGiftBatchTypeUI() {
     if (applyWrap) applyWrap.style.display = (tipo === 'percent') ? '' : 'none';
     const apply = (document.querySelector('input[name="giftBatchApply"]:checked') || {}).value || 'auto';
     // Rollover: fichas siempre; % solo si es automático (el agente pone el suyo).
-    if (wrap) wrap.style.display = (tipo === 'fixed' || apply === 'auto') ? '' : 'none';
+    if (wrap) wrap.style.display = (tipo === 'fixed' || (tipo === 'percent' && apply === 'auto')) ? '' : 'none';
+    // #264 SOLO AVISO: sin monto, sin código (siempre por tiempo), sin código público.
+    const amountW = document.getElementById('giftBatchAmountWrap');
+    if (amountW) amountW.style.display = (tipo === 'none') ? 'none' : '';
+    const esAviso = tipo === 'none';
+    document.querySelectorAll('input[name="giftBatchMode"]').forEach((r) => {
+        if (esAviso) { if (r.value === 'window') r.checked = true; r.disabled = r.value === 'code'; }
+        else if (r.value === 'code') r.disabled = false;
+    });
+    const pubRadio = document.querySelector('input[name="giftBatchAudience"][value="public"]');
+    if (pubRadio) {
+        pubRadio.disabled = esAviso;
+        if (esAviso && pubRadio.checked) {
+            const listR = document.querySelector('input[name="giftBatchAudience"][value="list"]');
+            if (listR) listR.checked = true;
+            updateGiftBatchAudienceUI();
+        }
+    }
+    const codeWrap = document.getElementById('giftBatchCodeWrap');
+    if (codeWrap && esAviso) codeWrap.style.display = 'none';
     const scope = (document.querySelector('input[name="giftBatchScope"]:checked') || {}).value || 'first';
     const scopeW = document.getElementById('giftBatchScopeWrap');
     const winW = document.getElementById('giftBatchWindowWrap');
@@ -11640,7 +11659,9 @@ async function sendGiftBatch() {
     const amount = Number((document.getElementById('giftBatchAmount') || {}).value);
     const validHours = Number((document.getElementById('giftBatchHours') || {}).value);
     const message = ((document.getElementById('giftBatchMessage') || {}).value || '').trim();
-    if (!Number.isFinite(amount) || amount < 1) { showToast('Poné el monto del regalo (% o $)', 'error'); return; }
+    const esAviso = giftType === 'none';
+    if (!esAviso && (!Number.isFinite(amount) || amount < 1)) { showToast('Poné el monto del regalo (% o $)', 'error'); return; }
+    if (esAviso && mode !== 'window') { showToast('Un aviso sin regalo se manda "por tiempo"', 'error'); return; }
     if (!Number.isFinite(validHours) || validHours < 1 || validHours > 168) { showToast('La vigencia va de 1 a 168 horas', 'error'); return; }
     const audience = _giftBatchAudiencePayload();
     if (!audience) return;
@@ -11666,7 +11687,7 @@ async function sendGiftBatch() {
         showToast('La franja horaria necesita DESDE y HASTA (o dejá los dos vacíos)', 'error'); return;
     }
     const franjaTxt = (applyFrom && applyTo) ? ' de ' + applyFrom + ' a ' + applyTo + ' (hora AR)' : '';
-    const regaloTxt = giftType === 'percent'
+    const regaloTxt = esAviso ? '📢 SIN REGALO — solo el aviso (push + chat)' : giftType === 'percent'
         ? (applyMode === 'agent'
             ? ('+' + amount + '% en próxima carga (lo aplica el agente, cartel verde)')
             : ('+' + amount + '% AUTOMÁTICO en ' + (applyScope === 'all' ? 'TODAS sus cargas' : 'su PRIMERA carga') + franjaTxt + ' — se suma solo, nadie marca nada · bono con ' + (rolloverX > 0 ? 'rollover x' + rolloverX : 'SIN rollover (retirable)')))
@@ -11678,7 +11699,9 @@ async function sendGiftBatch() {
         audience.audienceType === 'inactive' ? ('😴 inactivos ≥' + audience.audienceDays + ' días' + (audience.audienceLimit ? ' (cupo ' + audience.audienceLimit + ')' : '')) :
         '📋 lista pegada';
     let notaFinal;
-    if (esPublico && esFichas) {
+    if (esAviso) {
+        notaFinal = 'Solo se envía el mensaje (push a los que tienen notis + queda en el chat de todos). No activa ningún bono.';
+    } else if (esPublico && esFichas) {
         notaFinal = '⚠️ Cualquier cliente que consiga el código recibe $' + amount.toLocaleString('es-AR') + ' AUTOMÁTICO (una vez por cuenta' + (audience.maxClaims ? ', máx ' + audience.maxClaims + ' canjes en total' : ', SIN CUPO TOTAL — pensalo bien') + '). Los topes anti-abuso por usuario aplican igual.';
     } else if (esPublico) {
         notaFinal = 'Cualquier cliente que consiga el código activa su +' + amount + '% (cartel verde al agente), una vez por cuenta.';
@@ -11757,7 +11780,7 @@ async function loadNotifBatches() {
                     ? ' <span style="color:#7fd7ff;" title="Se suma solo en la carga">⚡ auto · ' + (b.applyScope === 'all' ? 'todas las cargas' : '1ª carga') + franjaH + (Number(b.rolloverX) > 0 ? ' · x' + b.rolloverX : ' · sin rollover') + '</span>'
                     : ' <span style="color:#aaa;">🧑‍💼 agente</span>')
                 : '';
-            const regalo = (b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'))) + aplic;
+            const regalo = (b.giftType === 'none' ? '📢 aviso' : b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'))) + aplic;
             const modo = b.mode === 'code' ? ('🔑 ' + escapeHtml(b.code || '')) : ('⏰ ' + b.validHours + 'hs');
             const aud = b.isPublic ? ('📣 código público' + (b.maxClaims ? ' (cupo ' + b.maxClaims + ')' : '')) :
                 b.audienceType === 'segment' ? ('🎯 ' + escapeHtml(b.audienceLabel || 'segmento')) :
@@ -11777,7 +11800,7 @@ async function loadNotifBatches() {
                     '<button class="btn btn-secondary btn-sm" onclick="toggleNotifBatchDetail(\'' + b.id + '\')">👥 Ver lote</button>' +
                 '</div>' +
                 '<div style="color:#999;margin-top:.25rem;">' + fecha + ' · envió <b>' + escapeHtml(b.sentBy || '-') + '</b> · ' +
-                    b.total + ' destinatarios · ' + envio + ' · ' + b.claimed + ' con bono' +
+                    b.total + ' destinatarios · ' + envio + (b.giftType === 'none' ? '' : ' · ' + b.claimed + ' con bono') +
                     (b.sinNotis ? ' · <span style="color:#ff9d76;">' + b.sinNotis + ' sin notis</span>' : '') + '</div>' +
                 '<div id="notifBatchDetail_' + b.id + '" style="display:none;margin-top:.5rem;"></div>' +
             '</div>';
