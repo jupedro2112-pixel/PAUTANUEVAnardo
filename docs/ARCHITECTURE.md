@@ -154,7 +154,9 @@ modelos); sus migraciones corren únicamente si algo llamara a ese connectDB.
   `_getActivePromoBonus` — los bonos de LOTE `sourceRuleCode:'lote'` están EXENTOS
   del cap y pueden ser de $ FIJO vía `montoFijoARS`; desde #263 pueden ser
   **AUTOMÁTICOS**: `autoApply:true` + `applyScope` 'first'|'all' + franja horaria
-  `applyFromMin/applyToMin` (min. del día, hora AR) + `usesCount/usesTotalBonus` —
+  `applyFromMin/applyToMin` (min. del día, hora AR) + `rolloverX` propio (null =
+  `GIROX_BONUS_MULTIPLIER` global; va como `bonus_multiplier` del depósito vía
+  `_bonusMultiplierFor`) + `usesCount/usesTotalBonus` —
   los consume `claimAutoPromoPercent` en `/api/admin/deposit` (sin bonus manual) y
   en la auto-carga hgcash, con reversión si la carga falla; prioridad ruleta
   bienvenida → diaria → 1ª carga → lote), **BonusStrategyConfig** +

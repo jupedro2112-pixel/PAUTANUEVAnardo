@@ -51,6 +51,10 @@ const promoBonusSchema = new mongoose.Schema({
   applyFromMin: { type: Number, default: null },
   applyToMin:   { type: Number, default: null },
   usesCount:    { type: Number, default: 0 },
+  // Rollover del bono automático (multiplier de 1girox, validado contra
+  // bonus.multipliers al crear el lote). null = usar el global
+  // (GIROX_BONUS_MULTIPLIER). 0 = sin rollover (retirable).
+  rolloverX:    { type: Number, default: null },
   // Suma de los bonos ($) que efectivamente se acreditaron con este PromoBonus
   // (ROI de los lotes automáticos; en scope 'all' acumula todas las cargas).
   usesTotalBonus: { type: Number, default: 0 },

@@ -11358,7 +11358,7 @@ async function loadChatPromoBonus(username) {
             el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;">' +
                 '<span style="font-size:18px;">⚡</span>' +
                 '<div style="flex:1;min-width:120px;"><strong style="font-size:13px;">BONO AUTOMÁTICO: +' + b.percent + '% ' + alcance + '</strong>' +
-                '<div style="font-size:11px;opacity:0.9;">Se suma SOLO al cargar (transferencia automática o carga manual sin bonus) — NO hay que marcar nada · Vence en ' + minsTxt + ' · ' + origen + '</div></div>' +
+                '<div style="font-size:11px;opacity:0.9;">Se suma SOLO al cargar (transferencia automática o carga manual sin bonus) — NO hay que marcar nada · ' + (b.rolloverX != null ? (b.rolloverX > 0 ? 'rollover x' + b.rolloverX : 'sin rollover') : 'rollover global') + ' · Vence en ' + minsTxt + ' · ' + origen + '</div></div>' +
                 '<button onclick="markChatPromoBonusUsed(\'' + b.id + '\', true)" style="background:rgba(255,255,255,0.85);color:#7a1f1f;border:none;border-radius:7px;padding:6px 11px;font-weight:800;font-size:11.5px;cursor:pointer;">✕ Cancelar bono</button>' +
                 '</div>';
             return;
@@ -11473,11 +11473,12 @@ function updateGiftBatchModeUI() {
 function updateGiftBatchTypeUI() {
     const tipo = (document.querySelector('input[name="giftBatchType"]:checked') || {}).value || 'percent';
     const wrap = document.getElementById('giftBatchRolloverWrap');
-    if (wrap) wrap.style.display = (tipo === 'fixed') ? '' : 'none';
     // #263: cómo se aplica el % (auto / agente), alcance y franja horaria.
     const applyWrap = document.getElementById('giftBatchApplyWrap');
     if (applyWrap) applyWrap.style.display = (tipo === 'percent') ? '' : 'none';
     const apply = (document.querySelector('input[name="giftBatchApply"]:checked') || {}).value || 'auto';
+    // Rollover: fichas siempre; % solo si es automático (el agente pone el suyo).
+    if (wrap) wrap.style.display = (tipo === 'fixed' || apply === 'auto') ? '' : 'none';
     const scope = (document.querySelector('input[name="giftBatchScope"]:checked') || {}).value || 'first';
     const scopeW = document.getElementById('giftBatchScopeWrap');
     const winW = document.getElementById('giftBatchWindowWrap');
@@ -11668,7 +11669,7 @@ async function sendGiftBatch() {
     const regaloTxt = giftType === 'percent'
         ? (applyMode === 'agent'
             ? ('+' + amount + '% en próxima carga (lo aplica el agente, cartel verde)')
-            : ('+' + amount + '% AUTOMÁTICO en ' + (applyScope === 'all' ? 'TODAS sus cargas' : 'su PRIMERA carga') + franjaTxt + ' — se suma solo, nadie marca nada'))
+            : ('+' + amount + '% AUTOMÁTICO en ' + (applyScope === 'all' ? 'TODAS sus cargas' : 'su PRIMERA carga') + franjaTxt + ' — se suma solo, nadie marca nada · bono con ' + (rolloverX > 0 ? 'rollover x' + rolloverX : 'SIN rollover (retirable)')))
         : ('$' + amount.toLocaleString('es-AR') + ' en fichas — SE ACREDITAN SOLAS (rollover x' + rolloverX + ')');
     const modoTxt = mode === 'code' ? 'CON CÓDIGO (solo los del lote pueden canjearlo)' : ('POR TIEMPO (' + validHours + 'hs)');
     const audTxt = esPublico ? ('📣 CÓDIGO PÚBLICO — cualquier cliente registrado' + (audience.maxClaims ? ' (cupo ' + audience.maxClaims + ' canjes)' : ' (SIN cupo)')) :
@@ -11753,7 +11754,7 @@ async function loadNotifBatches() {
             const franjaH = (b.applyFromMin != null && b.applyToMin != null) ? ' ' + hm(b.applyFromMin) + '-' + hm(b.applyToMin) : '';
             const aplic = b.giftType === 'percent'
                 ? (b.applyMode === 'auto'
-                    ? ' <span style="color:#7fd7ff;" title="Se suma solo en la carga">⚡ auto · ' + (b.applyScope === 'all' ? 'todas las cargas' : '1ª carga') + franjaH + '</span>'
+                    ? ' <span style="color:#7fd7ff;" title="Se suma solo en la carga">⚡ auto · ' + (b.applyScope === 'all' ? 'todas las cargas' : '1ª carga') + franjaH + (Number(b.rolloverX) > 0 ? ' · x' + b.rolloverX : ' · sin rollover') + '</span>'
                     : ' <span style="color:#aaa;">🧑‍💼 agente</span>')
                 : '';
             const regalo = (b.giftType === 'percent' ? ('+' + b.amount + '%') : ('$' + Number(b.amount).toLocaleString('es-AR'))) + aplic;

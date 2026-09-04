@@ -639,6 +639,12 @@ function _fmtMinOfDay(min) {
   const h = Math.floor(min / 60), m = min % 60;
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
 }
+// Multiplier a mandar en el depósito: el del lote si lo tiene (ya validado
+// contra bonus.multipliers al crearlo), si no el global (GIROX_BONUS_MULTIPLIER).
+async function _bonusMultiplierFor(claim) {
+  if (claim && claim.claimed && claim.rolloverX != null) return claim.rolloverX;
+  return getGiroxBonusMultiplier();
+}
 async function claimAutoPromoPercent(user, usedBy) {
   try {
     const uname = String(user.username || '').toLowerCase();
@@ -665,7 +671,8 @@ async function claimAutoPromoPercent(user, usedBy) {
     if (!upd.modifiedCount) return { pct: 0, claimed: false };
     const label = `${pb.percent}% ${pb.sourceRuleName || 'lote'}` +
       (scope === 'all' ? ' (todas las cargas' + (pb.applyFromMin != null ? ` ${_fmtMinOfDay(pb.applyFromMin)}-${_fmtMinOfDay(pb.applyToMin)}` : '') + ')' : '');
-    return { pct: Number(pb.percent), claimed: true, id: pb.id, scope, label, usedBy: usedBy || 'auto' };
+    const rolloverX = (pb.rolloverX == null || !Number.isFinite(Number(pb.rolloverX))) ? null : Number(pb.rolloverX);
+    return { pct: Number(pb.percent), claimed: true, id: pb.id, scope, label, usedBy: usedBy || 'auto', rolloverX };
   } catch (e) {
     logger.warn(`[promo-auto] claim % falló: ${e.message}`);
     return { pct: 0, claimed: false };
@@ -2587,7 +2594,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     const _hgBonus = _rouHgBonus > 0 ? _rouHgBonus : (_fcbHg.bonus || _loteHgBonus || 0);
     const result = await girox.depositToUser(
       user.username, Number(amount), 'Carga automática (hgcash)', _ref,
-      _hgBonus > 0 ? { bonusAmount: _hgBonus, bonusMultiplier: await getGiroxBonusMultiplier() } : null
+      _hgBonus > 0 ? { bonusAmount: _hgBonus, bonusMultiplier: await _bonusMultiplierFor(_loteHgBonus > 0 && _hgBonus === _loteHgBonus ? _loteHg : null) } : null
     );
     if (!result.success) {
       if (_rouHg.claimed) {
@@ -2696,7 +2703,7 @@ async function hgcashAutoCarga({ movement, comprobante, mode }) {
     }
     if (_loteHg.claimed && _hgBonusApplied) {
       await _emitAdminOnlyChatNote(user.id, user.username,
-        `🎁 LOTE: se aplicó AUTOMÁTICO el ${_loteHg.pct}% (${_loteHg.label}) = $${Number(_loteHgBonus).toLocaleString('es-AR')} en la carga automática de $${Number(amount).toLocaleString('es-AR')}. ${_loteHg.scope === 'all' ? 'El bono sigue vigente para sus próximas cargas.' : 'Bono consumido (valía una carga).'} No hay que marcar nada.`);
+        `🎁 LOTE: se aplicó AUTOMÁTICO el ${_loteHg.pct}% (${_loteHg.label}) = $${Number(_loteHgBonus).toLocaleString('es-AR')} en la carga automática de $${Number(amount).toLocaleString('es-AR')}${_loteHg.rolloverX != null ? ' · rollover x' + _loteHg.rolloverX : ''}. ${_loteHg.scope === 'all' ? 'El bono sigue vigente para sus próximas cargas.' : 'Bono consumido (valía una carga).'} No hay que marcar nada.`);
     }
     await _emitAdminOnlyChatNote(user.id, user.username, `🏦 ✅ CARGA AUTOMÁTICA hgcash — ${dataDesc}. Acreditado.`);
     // Todo automático y OK → no hace falta agente: el chat se cierra por Sistema
@@ -8677,7 +8684,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
     const result = await girox.depositToUser(
       user.username, parseFloat(amount), description, `vip-dep-${_depTxId}`,
       bonusRequested
-        ? { bonusAmount: _effectiveBonus, bonusMultiplier: await getGiroxBonusMultiplier() }
+        ? { bonusAmount: _effectiveBonus, bonusMultiplier: await _bonusMultiplierFor(_lotePct > 0 ? _loteClaim : null) }
         : null
     );
 
@@ -8746,7 +8753,7 @@ app.post('/api/admin/deposit', authMiddleware, depositorMiddleware, async (req, 
         if (_loteClaim && bonusActuallyApplied) {
           await settleAutoPromoPercent(_loteClaim, parseFloat(amount), _autoBonus);
           await _emitAdminOnlyChatNote(user.id, user.username,
-            `🎁 LOTE: se aplicó AUTOMÁTICO el ${_lotePct}% (${_loteClaim.label}) = $${Number(_autoBonus).toLocaleString('es-AR')} sobre esta carga de $${Number(amount).toLocaleString('es-AR')}. ${_loteClaim.scope === 'all' ? 'El bono sigue vigente para sus próximas cargas.' : 'Bono consumido (valía una carga).'} No hay que marcar nada.`);
+            `🎁 LOTE: se aplicó AUTOMÁTICO el ${_lotePct}% (${_loteClaim.label}) = $${Number(_autoBonus).toLocaleString('es-AR')} sobre esta carga de $${Number(amount).toLocaleString('es-AR')}${_loteClaim.rolloverX != null ? ' · rollover x' + _loteClaim.rolloverX : ''}. ${_loteClaim.scope === 'all' ? 'El bono sigue vigente para sus próximas cargas.' : 'Bono consumido (valía una carga).'} No hay que marcar nada.`);
         }
         if (_roulClaimed && bonusActuallyApplied) {
           await _emitAdminOnlyChatNote(user.id, user.username,
@@ -19974,7 +19981,8 @@ app.get('/api/admin/promo-bonus', authMiddleware, adminMiddleware, async (req, r
         applyScope: b.applyScope || 'first',
         applyFromMin: b.applyFromMin == null ? null : b.applyFromMin,
         applyToMin: b.applyToMin == null ? null : b.applyToMin,
-        usesCount: b.usesCount || 0
+        usesCount: b.usesCount || 0,
+        rolloverX: b.rolloverX == null ? null : b.rolloverX
       }
     });
   } catch (err) {
@@ -20282,7 +20290,7 @@ function _notifBatchChatContent(batch) {
   const como = (batch.giftType === 'percent' && batch.applyMode === 'auto')
     ? 'Se te suma SOLO cuando cargás, no tenés que avisar nada.'
     : 'Avisale al agente cuando cargues.';
-  return `${batch.message}\n\n🎁 Tenés un ${_giftLabelOf(batch)}, ya activado. ${como} ⏰ Válido por ${batch.validHours}hs.`;
+  return `${batch.message}\n\n🎁 Tenés un ${_giftLabelOf(batch)}, ya activado. ${como}${_batchRolloverTxt(batch)} ⏰ Válido por ${batch.validHours}hs.`;
 }
 
 // ============================================================
@@ -20477,7 +20485,10 @@ async function _activateBatchPromoBonus(user, batch) {
     autoApply: batch.giftType === 'percent' && batch.applyMode === 'auto',
     applyScope: batch.applyScope === 'all' ? 'all' : 'first',
     applyFromMin: batch.applyFromMin == null ? null : batch.applyFromMin,
-    applyToMin: batch.applyToMin == null ? null : batch.applyToMin
+    applyToMin: batch.applyToMin == null ? null : batch.applyToMin,
+    // rollover propio del % automático (owner 2026-09-04: "que se use rollover
+    // en bonus y evitamos cosas raras"); null = global
+    rolloverX: (batch.giftType === 'percent' && batch.applyMode === 'auto' && Number.isFinite(Number(batch.rolloverX))) ? Number(batch.rolloverX) : null
   });
 }
 
@@ -20487,6 +20498,12 @@ function _batchWindowTxt(batch) {
   return ` de ${_fmtMinOfDay(batch.applyFromMin)} a ${_fmtMinOfDay(batch.applyToMin)}`;
 }
 
+// Frase de rollover del % automático para el cliente ('' si no tiene).
+function _batchRolloverTxt(batch) {
+  if (batch.giftType !== 'percent' || batch.applyMode !== 'auto') return '';
+  const r = Number(batch.rolloverX) || 0;
+  return r > 0 ? ` El extra entra como bono con rollover x${r} (apostá ${r}× el bono y después podés retirar).` : '';
+}
 function _giftLabelOf(batch) {
   if (batch.giftType !== 'percent') {
     return `regalo de $${Number(batch.amount).toLocaleString('es-AR')} en tu próxima carga`;
@@ -20649,7 +20666,7 @@ async function _tryClaimNotifBatchCode(reqUser, attempt) {
   await Message.create({
     id: uuidv4(), senderId: 'system', senderUsername: 'Sistema', senderRole: 'admin',
     receiverId: uDoc.id, receiverRole: 'user',
-    content: `🎉 ¡Código canjeado, ${uDoc.username}!\n\n🎁 Tenés un ${giftTxt}.\n\n${comoTxt} ⏰ Válido hasta ${hastaFmt}.`,
+    content: `🎉 ¡Código canjeado, ${uDoc.username}!\n\n🎁 Tenés un ${giftTxt}.\n\n${comoTxt}${_batchRolloverTxt(batch)} ⏰ Válido hasta ${hastaFmt}.`,
     type: 'system', timestamp: new Date(), read: false
   }).catch(() => {});
   await _emitAdminOnlyChatNote(
@@ -20764,8 +20781,10 @@ app.post('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req
     // enviar). Se valida contra bonus.multipliers de 1girox (⚠️ NO los de
     // depósito) para que la acreditación jamás falle — mismo criterio que el
     // código de bienvenida (#143).
+    // #263b: también aplica al % AUTOMÁTICO (el depósito lo manda como
+    // bonus_multiplier). Con % modo agente no se usa (el cajero pone el suyo).
     let rolloverX = 0;
-    if (giftType === 'fixed') {
+    if (giftType === 'fixed' || (giftType === 'percent' && applyMode === 'auto')) {
       rolloverX = Number(b.rolloverX);
       if (!Number.isFinite(rolloverX) || rolloverX < 0 || rolloverX > 50) {
         return res.status(400).json({ error: 'El rollover debe ser un número entre 0 y 50 (0 = sin rollover).' });
@@ -20926,7 +20945,7 @@ app.get('/api/admin/notif-batches', authMiddleware, adminMiddleware, async (req,
         sentBy: 1, sentByRole: 1,
         audienceType: 1, audienceDays: 1, audienceLimit: 1, audienceLabel: 1, sendDone: 1,
         isPublic: 1, maxClaims: 1,
-        applyMode: 1, applyScope: 1, applyFromMin: 1, applyToMin: 1,
+        applyMode: 1, applyScope: 1, applyFromMin: 1, applyToMin: 1, rolloverX: 1,
         total: { $size: { $ifNull: ['$recipients', []] } },
         claimed: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $ne: ['$$r.claimedAt', null] } } } },
         delivered: { $size: { $filter: { input: { $ifNull: ['$recipients', []] }, as: 'r', cond: { $in: ['$$r.delivery', ['socket', 'push']] } } } },

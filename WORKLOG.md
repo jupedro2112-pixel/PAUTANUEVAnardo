@@ -54,6 +54,16 @@
   mín. $, publicista, cupo. Historial: chip "⚡ auto · todas las cargas 18:00-23:00" y
   detalle "⚡ aplicado solo ($Y)" / "⚡ bono AUTO activo · aplicado Nx ($Y)". Guía
   "Cómo funciona" actualizada. **admin-sw → v48.** (PWA sin cambios.)
+- **#263b ROLLOVER propio del % automático** (owner: "que se use rollover en bonus y
+  evitamos cosas raras"): el campo "🎯 Rollover del bono (x)" de la card (default
+  **x2**) ahora aplica también al % automático (antes solo a las fichas). Se guarda
+  en `NotifBatch.rolloverX` → `PromoBonus.rolloverX` (null = global) y el depósito lo
+  manda como `bonus_multiplier` vía `_bonusMultiplierFor(claim)` (lote → su
+  rollover; si no → `GIROX_BONUS_MULTIPLIER` global, como ruleta/1ª carga/bonus
+  manual). Validado contra `bonus.multipliers` de 1girox al crear el lote. Mensaje
+  al cliente: "El extra entra como bono con rollover xN…". Cartel y historial
+  muestran "x2" / "sin rollover". Con % modo agente el campo se oculta (el cajero
+  pone el suyo). **admin-sw → v49.**
 - **Validado:** `node --check` OK (server.js, PromoBonus.js, NotifBatch.js, admin.js,
   admin-sw). **Back necesita redeploy**; panel se actualiza con el SW. PROBAR: lote %
   auto 'first' por tiempo a un usuario → cartel celeste en su chat → carga manual SIN
