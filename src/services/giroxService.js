@@ -788,7 +788,11 @@ async function changeUserPassword(username, newPassword) {
  * @returns { success, redirectUrl, token } | { success:false, error, code }
  */
 async function createSession(username, password = null) {
-  const body = {};
+  // MODO EMBEBIDO (Partner API v1.15, #265): el casino OCULTA sus controles de
+  // sesión (Cerrar sesión / Iniciar sesión / Registrarse) en el iframe → el
+  // cambio de usuario pasa SOLO por nuestra app y nunca quedan cruzados el
+  // usuario de la PWA y el del juego (el bug del "usuario viejo logueado", #252).
+  const body = { embed: true };
   if (password) body.password = String(password);
 
   const r = await _request({
@@ -808,7 +812,9 @@ async function createSession(username, password = null) {
     logger.error(`[girox] session(${username}) — respuesta sin redirect_url: ${JSON.stringify(r.data).slice(0, 200)}`);
     return { success: false, error: 'La plataforma no devolvió el link de acceso.', code: 'no_redirect_url' };
   }
-  return { success: true, redirectUrl, token: (r.data && r.data.token) || null };
+  // logout_url (v1.15): la manda la plataforma en cada sesión → ya no depende de
+  // la env GIROX_PLAY_LOGOUT_URL (queda como fallback).
+  return { success: true, redirectUrl, token: (r.data && r.data.token) || null, logoutUrl: (r.data && r.data.logout_url) || null };
 }
 
 // ============================================================
@@ -856,6 +862,13 @@ async function depositToUser(username, amount, description = '', reference = nul
     if (wagering.bonusAmount != null) body.bonus_amount = Number(wagering.bonusAmount);
     if (wagering.bonusMultiplier != null) body.bonus_multiplier = Number(wagering.bonusMultiplier);
   }
+  // OPT-OUT de las reglas automáticas de bono de 1girox (Partner API v1.12+,
+  // decisión owner 2026-09-04 #265): un depósito SIN bonus_percent/bonus_amount
+  // heredaría la campaña del agente configurada en admin.1girox.com (1er
+  // depósito / promo / regla global) → bono que nuestro panel no ve ni controla.
+  // Los únicos bonos que se regalan son los NUESTROS (ruleta, 1ª carga, lote,
+  // cashback...). Con bono explícito nuestro la regla no aplica igual.
+  if (body.bonus_percent == null && body.bonus_amount == null) body.no_bonus = true;
 
   let r = await _request({
     method: 'post',

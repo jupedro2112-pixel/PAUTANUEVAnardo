@@ -110,6 +110,11 @@ Deploy: AWS Elastic Beanstalk. Dominio público: vipcargas.com. Git user: jupedr
 - **Montos en PESOS.** ⚠️ Ojo si mirás código o docs viejos: JUGAYGANA trabajaba en
   centavos y todo se multiplicaba ×100. **1girox NO** — se manda el monto tal cual, con
   decimales si hace falta. Multiplicar por 100 sería cargar 100 veces de más.
+- **Partner API v1.15 (2026-09-04):** `/session` va con `embed:true` (el casino oculta
+  sus controles de sesión en el iframe — NO sacarlo, es el fix del usuario cruzado) y
+  devuelve `logout_url`. Todo depósito SIN bono nuestro lleva `no_bonus:true` para que
+  1girox no aplique sus campañas automáticas por herencia. `/stats` sigue sin separar
+  bono de real. Manual: pedir `Partner-API-Manual_v_1.15.pdf` al owner (no está en el repo).
 - **No hay NINGUNA sesión que renovar.** Auth por `X-Api-Key` fija en todo, incluido
   el netwin. Se fueron `ensureSession`, el mutex de login, `isHtmlBlocked` y el Bearer
   del panel (con `giroxReportsService`, eliminado el 2026-07-31).

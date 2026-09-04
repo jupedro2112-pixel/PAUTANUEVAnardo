@@ -5338,10 +5338,11 @@ async function platformSessionHandler(req, res) {
       success: true,
       redirectUrl: session.redirectUrl,
       platformUrl: girox.getPlayUrl(),
-      // URL de LOGOUT del casino (SSM `GIROX_PLAY_LOGOUT_URL`, opcional): la PWA la
+      // URL de LOGOUT del casino: desde v1.15 viene en la respuesta de /session
+      // (#265); la env `GIROX_PLAY_LOGOUT_URL` queda como fallback. La PWA la
       // carga en el iframe ANTES del SSO para matar la sesión del usuario anterior
       // en el mismo celular (#252). null = no se conoce → se carga el SSO directo.
-      logoutUrl: process.env.GIROX_PLAY_LOGOUT_URL || null
+      logoutUrl: session.logoutUrl || process.env.GIROX_PLAY_LOGOUT_URL || null
     });
   } catch (error) {
     logger.error(`Error en platform session (SSO): ${error.message}`);
@@ -17014,11 +17015,11 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
     // vence a los 60s pero el front lo mete en el iframe en el mismo instante.
     // Si falla (plataforma saturada, etc.) se responde sin casinoUrl y el front
     // cae al camino normal de VIP.ui.enterCasino() — nunca bloquea el login.
-    let casinoUrl = null;
+    let casinoUrl = null, casinoLogoutUrl = null;
     if (req.body && req.body.casino === true && girox.isEnabled()) {
       try {
         const session = await girox.createSession(user.username);
-        if (session.success) casinoUrl = session.redirectUrl;
+        if (session.success) { casinoUrl = session.redirectUrl; casinoLogoutUrl = session.logoutUrl || null; }
         else logger.warn(`[access-link] SSO adelantado falló para ${user.username}: ${session.code || session.error} — el front reintenta por /api/platform/session`);
       } catch (e) {
         logger.warn(`[access-link] SSO adelantado error para ${user.username}: ${e.message}`);
@@ -17029,7 +17030,7 @@ app.post('/api/auth/access-link', authLimiter, async (req, res) => {
     res.json({
       token: jwtToken,
       casinoUrl,
-      casinoLogoutUrl: process.env.GIROX_PLAY_LOGOUT_URL || null,
+      casinoLogoutUrl: casinoLogoutUrl || process.env.GIROX_PLAY_LOGOUT_URL || null,
       user: { id: user.id, username: user.username, role: user.role, mustChangePassword: forcePwd }
     });
   } catch (error) {

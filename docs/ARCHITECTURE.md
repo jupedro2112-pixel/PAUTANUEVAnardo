@@ -48,6 +48,11 @@ El sistema VIPCARGAS:
   reclamos y el registro permanente de transacciones.
 - Al casino se entra por **login único (SSO)**: el botón CASINO pide un link de acceso
   de un solo uso — el cliente ya no tipea usuario ni contraseña de la plataforma.
+  Desde #265 (Partner API v1.15) la sesión se pide con `embed:true` (el casino oculta
+  sus controles de sesión en el iframe → el usuario de la PWA y el del juego nunca se
+  cruzan) y la API devuelve `logout_url` (fallback env `GIROX_PLAY_LOGOUT_URL`).
+  Todo depósito sin bono nuestro lleva `no_bonus:true` (1girox no aplica sus campañas
+  automáticas por herencia).
 
 UX del cliente: PWA (`public/`) con chat en vivo (Socket.IO) + push (FCM). Los
 agentes operan desde `public/adminprivado2026/`. Deploy: AWS Elastic Beanstalk

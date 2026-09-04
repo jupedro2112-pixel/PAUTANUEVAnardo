@@ -8,6 +8,34 @@
 
 ## Sesión 2026-09-04
 
+### 265. Partner API v1.15: modo EMBEBIDO en /session (fix usuario cruzado) + logout_url de la API + `no_bonus` en depósitos
+- **Manual nuevo** (`Partner-API-Manual_v_1.15.pdf`, owner 2026-09-04). Novedades vs la
+  1.8 que teníamos: 1.9 claim/config (ya implementado), 1.10 bono 0 directo, 1.11
+  `agent_id` + `GET /agents`, 1.12 **reglas automáticas de bono** (herencia en
+  depósitos sin bono, `promo_code`, `no_bonus`, bono de bienvenida al crear jugador),
+  1.13 reglas globales, y sin fila en el changelog pero presentes: **`embed:true` en
+  `/session`**, **`logout_url` en la respuesta de `/session`**, whitelist de IPs,
+  **`GET /chip-requests`** (cargas/retiros hechos desde el sitio del casino, para
+  conciliar — requiere habilitación del operador). **`/stats` sigue SIN desglose
+  bono/real** → la base del reembolso sigue restando los bonos regalados (#256f).
+- **Implementado (decisión owner: "que no le ponga nada suyo"):**
+  1. `createSession` manda `embed:true` → el casino oculta Cerrar sesión / Iniciar
+     sesión / Registrarse dentro del iframe; el cambio de usuario pasa solo por la
+     PWA. Es la respuesta al ticket de #252 (usuario viejo logueado en el casino).
+  2. `createSession` devuelve `logoutUrl` (campo `logout_url`); `/api/platform/session`
+     y el access-link lo usan con fallback a la env `GIROX_PLAY_LOGOUT_URL` (ya no
+     hace falta cargarla en SSM). El front no cambió (ya consumía `logoutUrl`).
+  3. `depositToUser` manda **`no_bonus:true`** cuando el depósito no lleva
+     `bonus_percent`/`bonus_amount` nuestro → 1girox NO aplica sus campañas
+     (1er depósito / promo / global) por herencia. Los únicos bonos son los nuestros.
+- **No implementado (a pedido):** `promo_code`, `agent_id`/`/agents` (seguimos con una
+  key por publicista), whitelist de IPs (incompatible con EB), `/chip-requests`
+  (posible conciliación futura), aviso de `bonus.auto_rules` en el panel.
+- **Validado:** `node --check` OK (giroxService.js, server.js). **Back necesita
+  redeploy.** PROBAR: entrar al casino desde la PWA → sin botón "Cerrar sesión" en el
+  iframe; dos usuarios en el mismo celular → el segundo entra con SU usuario; carga
+  manual sin bonus → en 1girox la carga entra sin bono.
+
 ### 264. Notificaciones: limpieza — todo sale desde "Lote con regalo (o solo aviso)"; compositor y difusión por etiqueta OCULTOS
 - **Pedido owner:** "todo lo demás limpialo, las demás notificaciones que no se usan;
   lo que es automático dejalo". Respuesta: dejarlas era casi indistinto (no corren
