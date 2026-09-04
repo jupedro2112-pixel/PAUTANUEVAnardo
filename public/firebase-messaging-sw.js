@@ -34,7 +34,8 @@ try {
 // ============================================
 // CONFIGURACIÓN DE CACHÉ
 // ============================================
-const CACHE_VERSION = 'v156'; // v156: seccion INFORMACION del hub (reembolso completo + rollover, con valores reales del panel; deportes no cuenta)
+const CACHE_VERSION = 'v157'; // v157: scroll del hub PREMIOS arreglado en celu (sin re-render que corta el deslizamiento, scroll tactil iOS, ruedas sin recorte arriba)
+// v156: // v156: seccion INFORMACION del hub (reembolso completo + rollover, con valores reales del panel; deportes no cuenta)
 // v155: // v155: tarjeta 'Tu Reembolso' simple — monto grande siempre visible, un boton, sin jerga
 // v154: // v154: reembolso acumulativo DE POR VIDA (sin ventana de 30 dias — las ganancias restan para siempre)
 // v153: // v153: reembolso ACUMULATIVO (30 dias, se junta hasta reclamar, al reclamar arranca de 0)

@@ -2489,7 +2489,10 @@ VIP.ui._renderRoulette = function() {
   const ov = document.createElement('div');
   ov.id = 'wrOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.9);display:flex;flex-direction:column;' +
-    'align-items:center;justify-content:center;padding:18px 16px;box-sizing:border-box;font-family:inherit;overflow:auto;';
+    // justify-content:center RECORTABA la parte de arriba en pantallas cortas
+    // (bug de flex+overflow) → top-aligned con padding; scroll táctil iOS (#261).
+    'align-items:center;padding:calc(26px + env(safe-area-inset-top,0px)) 16px calc(26px + env(safe-area-inset-bottom,0px));' +
+    'box-sizing:border-box;font-family:inherit;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
   ov.innerHTML =
     '<button type="button" onclick="VIP.ui.casinoRouletteClose()" aria-label="Cerrar" ' +
       'style="position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.14);' +
@@ -2534,6 +2537,8 @@ VIP.ui._refreshRewards = function() {
     headers: { 'Authorization': `Bearer ${VIP.state.currentToken}` }
   }).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
     if (!d) return;
+    const changed = JSON.stringify(d) !== VIP.ui._rwSumJson;
+    VIP.ui._rwSumJson = JSON.stringify(d);
     VIP.ui._rwSummary = d;
     if (d.welcome && d.welcome.segments) VIP.ui._wrSegments = d.welcome.segments.map(function(x) { return x.label; });
     const btn = document.getElementById('casinoRewardsBtn');
@@ -2544,8 +2549,15 @@ VIP.ui._refreshRewards = function() {
       (d.daily && d.daily.canSpin) ||
       (d.cashback && d.cashback.reclamable >= (d.cashback.minArs || 1) && d.cashback.reclamable > 0);
     if (dot) dot.style.display = claimable ? 'block' : 'none';
-    // Si el hub está abierto, re-pintarlo con los datos frescos.
-    if (document.getElementById('rwHubOverlay')) VIP.ui.openRewardsHub();
+    // Re-pintar el hub SOLO si los datos cambiaron (#261): el re-armado entero
+    // en medio de un deslizamiento cortaba el scroll ("se bugea al deslizar").
+    if (changed && document.getElementById('rwHubOverlay')) {
+      const ovh = document.getElementById('rwHubOverlay');
+      const st = ovh ? ovh.scrollTop : 0;
+      VIP.ui.openRewardsHub();
+      const ov2 = document.getElementById('rwHubOverlay');
+      if (ov2) ov2.scrollTop = st;
+    }
   }).catch(function() {});
 };
 
@@ -2722,7 +2734,8 @@ VIP.ui.openRewardsHub = function() {
   const ov = document.createElement('div');
   ov.id = 'rwHubOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147482900;display:flex;flex-direction:column;align-items:center;' +
-    'background:radial-gradient(120% 90% at 50% 0%,#141b2e 0%,#0a0e1a 55%,#070a12 100%);overflow:auto;' +
+    'background:radial-gradient(120% 90% at 50% 0%,#141b2e 0%,#0a0e1a 55%,#070a12 100%);' +
+    'overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;' +
     'padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;';
   ov.innerHTML =
     '<button type="button" onclick="VIP.ui.closeRewardsHub()" aria-label="Cerrar" ' +
@@ -2783,11 +2796,14 @@ VIP.ui._rwPollCashback = function(manual) {
       const d = res.j;
       if (!d) return;
       if (!VIP.ui._rwSummary) VIP.ui._rwSummary = {};
+      const changed = JSON.stringify(d) !== JSON.stringify(VIP.ui._rwSummary.cashback || null);
       VIP.ui._rwSummary.cashback = d;
       VIP.ui._rwCbAt = Date.now();
-      // Re-pintar el hub conservando el scroll (la lista es corta, no molesta).
+      // Re-pintar SOLO si cambió algo (#261): re-armar el hub en medio de un
+      // deslizamiento cortaba el scroll. El sello "hace Xs" se actualiza en el
+      // próximo cambio real o al reabrir — preferible a un hub que salta.
       const ov = document.getElementById('rwHubOverlay');
-      if (ov) {
+      if (ov && (changed || manual)) {
         const st = ov.scrollTop;
         VIP.ui.openRewardsHub();
         const ov2 = document.getElementById('rwHubOverlay');
@@ -2842,7 +2858,10 @@ VIP.ui._renderDailyRoulette = function() {
   const ov = document.createElement('div');
   ov.id = 'wrOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.9);display:flex;flex-direction:column;' +
-    'align-items:center;justify-content:center;padding:18px 16px;box-sizing:border-box;font-family:inherit;overflow:auto;';
+    // justify-content:center RECORTABA la parte de arriba en pantallas cortas
+    // (bug de flex+overflow) → top-aligned con padding; scroll táctil iOS (#261).
+    'align-items:center;padding:calc(26px + env(safe-area-inset-top,0px)) 16px calc(26px + env(safe-area-inset-bottom,0px));' +
+    'box-sizing:border-box;font-family:inherit;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
   ov.innerHTML =
     '<button type="button" onclick="VIP.ui.casinoRouletteClose()" aria-label="Cerrar" ' +
       'style="position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.14);' +
@@ -3010,7 +3029,8 @@ VIP.ui._rwShowInstallGuide = function() {
   const ov = document.createElement('div');
   ov.id = 'rwInstallOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483100;display:flex;flex-direction:column;align-items:center;' +
-    'background:radial-gradient(120% 90% at 50% 0%,#12241a 0%,#0a120d 55%,#070a08 100%);overflow:auto;' +
+    'background:radial-gradient(120% 90% at 50% 0%,#12241a 0%,#0a120d 55%,#070a08 100%);' +
+    'overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;' +
     'padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;';
   ov.innerHTML =
     '<button type="button" onclick="VIP.ui._rwCloseInstallGuide(true)" aria-label="Volver" ' +

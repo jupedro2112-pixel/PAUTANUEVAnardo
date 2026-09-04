@@ -89,6 +89,18 @@
 
 ## Sesión 2026-08-30
 
+### 261. FIX: el hub PREMIOS "se bugeaba" al deslizar en el celular
+- **Tres causas:** (1) el auto-refresh (al abrir + cada 60 s) RE-ARMABA el hub entero
+  aunque nada hubiera cambiado → si el cliente estaba deslizando, el scroll se cortaba
+  o saltaba; (2) faltaban `-webkit-overflow-scrolling:touch` y
+  `overscroll-behavior:contain` (iOS trababa el scroll del overlay fijo y lo
+  encadenaba al casino de fondo); (3) las RUEDAS usaban `justify-content:center` con
+  overflow → en pantallas cortas la parte de ARRIBA quedaba recortada e inalcanzable
+  (bug clásico de flex).
+- **Fix (`ui.js`):** re-render SOLO si el JSON del resumen/cashback cambió (con scroll
+  preservado); props de scroll táctil en hub + guía de instalación + ambas ruedas;
+  ruedas top-aligned con padding en vez de centrado flex. **SW → v157.** Solo front.
+
 ### 260. Landing: escape del navegador embebido de Instagram/Facebook/TikTok
 - **Problema (owner):** los anuncios abren la landing DENTRO de la app (webview de
   IG/FB): la cuenta queda "presa" ahí — sin instalar la PWA, sin notificaciones, y al
