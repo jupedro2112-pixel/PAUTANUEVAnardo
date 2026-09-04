@@ -89,6 +89,20 @@
 
 ## Sesión 2026-08-30
 
+### 262b. Guía novato: clonación vía EC2 sin puente entre cuentas (`docs/CLONACION-EC2.md`)
+- CloudShell de la cuenta nueva tarda días en activarse y el owner no quiere correr
+  las credenciales nuevas desde el CloudShell viejo (vinculación). Camino elegido:
+  **EC2 t3.micro EN la cuenta nueva** (rol `ec2-bootstrap` AdministratorAccess, sin
+  key pair, terminal por EC2 Instance Connect) + el tar.gz viajando por S3 subido
+  desde el navegador. Guía paso a paso completa en `docs/CLONACION-EC2.md`:
+  Parte A export en la vieja, B preparación por consola, C etapas del bootstrap
+  (app nueva = **PAUTANUEVAnardo** / env `PAUTANUEVAnardo-env` / SSM
+  `/pautanuevanardo/prod/`), D remates manuales (REDIS_URL, SG 6379, deploy ZIP,
+  dominio, webhook hgcash, limpieza). **SNS NO se activa** (decisión owner — el SMS
+  ya es opcional #225). Riesgos de vinculación documentados: el método no cruza
+  APIs; lo que vincula es tarjeta/identidad, misma IP/navegador en ambas consolas,
+  y el MISMO dominio certificado en las dos cuentas (ACM).
+
 ### 262. Scripts de clonación de la infra AWS a OTRA cuenta (automatización ~80%)
 - **Pedido owner:** replicar todo el EB en un Amazon nuevo de cero, lo más automático
   posible. Ya existía el runbook `docs/MIGRACION-AWS.md` (inventario completo del
